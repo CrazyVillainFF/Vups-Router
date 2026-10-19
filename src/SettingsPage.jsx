@@ -25,6 +25,40 @@ import "./settings.css";
 
 const EMPTY_FORM = { provider: "OpenAI-compatible", baseUrl: "", apiKey: "", model: "" };
 
+const PROVIDER_PRESETS = [
+  {
+    id: "deepseek",
+    label: "DeepSeek",
+    values: { provider: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-chat" },
+    note: "DeepSeek's official OpenAI-compatible API. Default model deepseek-chat; use Load models to confirm it is still available."
+  }
+];
+
+function providerStatus(config, testResult) {
+  if (!config?.configured) {
+    return { label: "Configuration Required — save a provider and key", tone: "warn" };
+  }
+  const last = testResult || config.lastTest;
+  if (!last) return { label: "Saved — run Test connection to verify", tone: "neutral" };
+  if (last.status === "connected") return { label: "Connected", tone: "ok" };
+  if (last.status === "insufficient_balance") return { label: "Insufficient Balance — top up your provider account", tone: "warn" };
+  if (last.status === "model_unavailable") return { label: "Model Unavailable — pick a model from the list", tone: "warn" };
+  if (last.status === "invalid_key") return { label: "Connection Failed — invalid API key", tone: "error" };
+  if (last.status === "timeout") return { label: "Connection Failed — provider timed out", tone: "error" };
+  if (last.status === "unreachable") return { label: "Connection Failed — provider unreachable", tone: "error" };
+  return { label: "Connection Failed", tone: "error" };
+}
+
+function testStatusFromError(error) {
+  const code = error?.response?.data?.code;
+  if (code === "invalid_api_key") return "invalid_key";
+  if (code === "insufficient_credits") return "insufficient_balance";
+  if (code === "model_unavailable") return "model_unavailable";
+  if (code === "timeout") return "timeout";
+  if (code === "network_error") return "unreachable";
+  return "failed";
+}
+
 function validateForm(form, hasStoredKey) {
   if (form.provider.trim().length < 2 || form.provider.trim().length > 80) {
     return "Provider name must be between 2 and 80 characters.";
@@ -53,6 +87,7 @@ export default function SettingsPage() {
   const [alert, setAlert] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
+  const [testResult, setTestResult] = useState(null);
 
   const loadModels = useCallback(async ({ silent = false } = {}) => {
     setBusy(current => (current ? current : "models"));
@@ -151,12 +186,20 @@ export default function SettingsPage() {
       if (Array.isArray(result.availableModels) && result.availableModels.length > 0) {
         setModels(result.availableModels);
       }
+      setTestResult({ status: "connected" });
       setAlert({ severity: "success", message: result.message });
+      fetchProviderConfig().then(setConfig).catch(() => {});
     } catch (error) {
+      setTestResult({ status: testStatusFromError(error) });
       setAlert({ severity: "error", message: getApiErrorMessage(error) });
     } finally {
       setBusy("");
     }
+  }
+
+  function applyPreset(preset) {
+    setForm(current => ({ ...current, ...preset.values }));
+    setAlert({ severity: "info", message: `${preset.note} Paste your API key, then Save and Test.` });
   }
 
   async function handleDelete() {
@@ -177,6 +220,8 @@ export default function SettingsPage() {
       setBusy("");
     }
   }
+
+  const status = providerStatus(config, testResult);
 
   if (loading) {
     return (
@@ -203,6 +248,11 @@ export default function SettingsPage() {
             </p>
           </div>
 
+          <div className={`settings-status settings-status--${status.tone}`} role="status">
+            <span className="settings-status-dot" aria-hidden="true" />
+            <strong>{status.label}</strong>
+          </div>
+
           {alert && (
             <Alert severity={alert.severity} sx={{ mb: 3 }} onClose={() => setAlert(null)}>
               {alert.message}
@@ -224,6 +274,22 @@ export default function SettingsPage() {
           )}
 
           <form className="settings-card" onSubmit={handleSave}>
+            <div className="settings-presets">
+              <span className="settings-models-label">QUICK START — ONE CLICK TO FILL THE FORM</span>
+              <div className="settings-models-list">
+                {PROVIDER_PRESETS.map(preset => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className={`settings-model-chip${form.baseUrl === preset.values.baseUrl ? " is-active" : ""}`}
+                    onClick={() => applyPreset(preset)}
+                    title={preset.note}
+                  >
+                    {preset.label} · {preset.values.model}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="settings-form-grid">
               <TextField
                 label="Provider name"
@@ -330,9 +396,10 @@ export default function SettingsPage() {
           <div className="settings-help">
             <h2>How testing works</h2>
             <ul>
-              <li><b>Test connection</b> calls your provider's model list and, when a model ID is set, sends one tiny request to confirm the model works.</li>
+              <li><b>Test connection</b> calls your provider's model list and, when a model ID is set, sends one tiny request to confirm the model works. The status badge above shows Connected, Insufficient Balance, or the exact failure.</li>
               <li><b>Chat</b> always uses the provider, base URL, and model you save here. If a model fails, VupsRouter reports the provider's error instead of switching models silently.</li>
-              <li>Popular OpenAI-compatible base URLs end in <code>/v1</code>, for example <code>https://api.airforce/v1</code>.</li>
+              <li>Use <b>Load models</b> to see what the provider currently offers — model IDs change over time, so pick one from the live list instead of trusting old documentation.</li>
+              <li>DeepSeek's base URL is <code>https://api.deepseek.com</code> (no <code>/v1</code> needed; <code>/v1</code> also works).</li>
             </ul>
             <Link to="/chat" className="settings-chat-link">Go to chat →</Link>
           </div>
