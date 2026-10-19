@@ -1,130 +1,135 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Alert,
   Button,
   CircularProgress,
+  IconButton,
+  InputAdornment,
   TextField,
   Typography
 } from "@mui/material";
-import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import BoltRoundedIcon from "@mui/icons-material/BoltRounded";
+import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import KeyRoundedIcon from "@mui/icons-material/KeyRounded";
+import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
+import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
+import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import SiteHeader from "./components/SiteHeader.jsx";
+import { PROVIDERS, PROVIDER_CATEGORIES, providerById } from "./providers/registry.js";
 import {
-  deleteProviderConfig,
-  fetchProviderConfig,
-  fetchProviderModels,
+  activateProvider,
+  fetchProviderModelsDetailed,
   getApiErrorMessage,
-  saveProviderConfig,
+  listProviders,
+  removeProvider,
+  saveManagedProvider,
+  saveProviderModels,
+  testManagedProvider,
   testProviderConnection
 } from "./services/api.js";
 import "./settings.css";
 
-const EMPTY_FORM = { provider: "OpenAI-compatible", baseUrl: "", apiKey: "", model: "" };
+const EMPTY_FORM = {
+  providerId: "",
+  provider: "",
+  baseUrl: "",
+  apiKey: "",
+  model: "",
+  providerType: "openai_compatible",
+  compatibility: "openai",
+  status: "supported",
+  registryId: ""
+};
 
-const PROVIDER_PRESETS = [
-  {
-    id: "deepseek",
-    label: "DeepSeek",
-    values: { provider: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-chat" },
-    note: "DeepSeek's official OpenAI-compatible API. Default model deepseek-chat; use Load models to confirm it is still available."
-  }
-];
-
-function providerStatus(config, testResult) {
-  if (!config?.configured) {
-    return { label: "Configuration Required — save a provider and key", tone: "warn" };
-  }
-  const last = testResult || config.lastTest;
-  if (!last) return { label: "Saved — run Test connection to verify", tone: "neutral" };
-  if (last.status === "connected") return { label: "Connected", tone: "ok" };
-  if (last.status === "insufficient_balance") return { label: "Insufficient Balance — top up your provider account", tone: "warn" };
-  if (last.status === "model_unavailable") return { label: "Model Unavailable — pick a model from the list", tone: "warn" };
-  if (last.status === "invalid_key") return { label: "Connection Failed — invalid API key", tone: "error" };
-  if (last.status === "timeout") return { label: "Connection Failed — provider timed out", tone: "error" };
-  if (last.status === "unreachable") return { label: "Connection Failed — provider unreachable", tone: "error" };
-  return { label: "Connection Failed", tone: "error" };
+function slugify(name) {
+  return String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60) || "provider";
 }
 
-function testStatusFromError(error) {
-  const code = error?.response?.data?.code;
-  if (code === "invalid_api_key") return "invalid_key";
-  if (code === "insufficient_credits") return "insufficient_balance";
-  if (code === "model_unavailable") return "model_unavailable";
-  if (code === "timeout") return "timeout";
-  if (code === "network_error") return "unreachable";
-  return "failed";
+function statusLabel(provider) {
+  const last = provider.lastTest;
+  if (last) {
+    if (last.status === "connected") return { label: "Connected", tone: "ok" };
+    if (last.status === "invalid_key") return { label: "Last test: invalid key", tone: "error" };
+    if (last.status === "insufficient_balance") return { label: "Last test: insufficient balance", tone: "warn" };
+    if (last.status === "unreachable") return { label: "Last test: unreachable", tone: "error" };
+    if (last.status === "timeout") return { label: "Last test: timed out", tone: "error" };
+    return { label: "Last test failed", tone: "error" };
+  }
+  return { label: "Saved — run a test to verify", tone: "neutral" };
 }
 
-function validateForm(form, hasStoredKey) {
-  if (form.provider.trim().length < 2 || form.provider.trim().length > 80) {
-    return "Provider name must be between 2 and 80 characters.";
-  }
-  const rawUrl = form.baseUrl.trim();
-  if (!rawUrl) return "API base URL is required.";
-  let parsed;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    return "Enter a valid API base URL such as https://api.example.com/v1.";
-  }
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    return "API base URL must start with http:// or https://.";
-  }
-  if (!hasStoredKey && form.apiKey.trim().length < 4) return "Enter the API key from your provider.";
-  if (form.apiKey.length > 4096) return "That API key is too long.";
-  if (form.model.length > 200) return "Model ID must be 200 characters or fewer.";
-  return null;
+function formFromProvider(provider, registryEntry) {
+  return {
+    providerId: provider?.providerId || registryEntry?.id || "",
+    provider: provider?.provider || registryEntry?.name || "",
+    baseUrl: provider?.baseUrl ?? registryEntry?.baseUrl ?? "",
+    apiKey: "",
+    model: provider?.model || provider?.defaultModel || "",
+    providerType: provider?.providerType || (registryEntry?.compatibility === "anthropic" ? "anthropic_compatible" : "openai_compatible"),
+    compatibility: registryEntry?.compatibility || "openai",
+    status: registryEntry?.status || (provider ? "supported" : "listed"),
+    registryId: registryEntry?.id || ""
+  };
+}
+
+function GuideLinks({ entry }) {
+  const links = [
+    entry?.keysUrl && { href: entry.keysUrl, label: "Create a key" },
+    entry?.docsUrl && { href: entry.docsUrl, label: "API docs" },
+    entry?.pricingUrl && { href: entry.pricingUrl, label: "Pricing" },
+    entry?.website && { href: entry.website, label: "Website" }
+  ].filter(Boolean);
+  if (links.length === 0) return null;
+  return (
+    <div className="settings-guides-links">
+      {links.map(link => (
+        <a key={link.href} href={link.href} target="_blank" rel="noopener noreferrer">
+          {link.label} <OpenInNewRoundedIcon fontSize="inherit" />
+        </a>
+      ))}
+    </div>
+  );
 }
 
 export default function SettingsPage() {
-  const [config, setConfig] = useState(null);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [models, setModels] = useState([]);
-  const [alert, setAlert] = useState(null);
+  const [providers, setProviders] = useState([]);
+  const [activeProviderId, setActiveProviderId] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
-  const [testResult, setTestResult] = useState(null);
+  const [alert, setAlert] = useState(null);
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("all");
+  const [form, setForm] = useState(null);
+  const [showKey, setShowKey] = useState(false);
+  const [models, setModels] = useState([]);
+  const [modelsWarning, setModelsWarning] = useState("");
+  const [selectedModels, setSelectedModels] = useState([]);
+  const [defaultModel, setDefaultModel] = useState("");
+  const [manualModel, setManualModel] = useState("");
 
-  const loadModels = useCallback(async ({ silent = false } = {}) => {
-    setBusy(current => (current ? current : "models"));
-    try {
-      const list = await fetchProviderModels();
-      setModels(list);
-      if (!silent) {
-        setAlert(
-          list.length > 0
-            ? { severity: "success", message: `Loaded ${list.length} models from your provider.` }
-            : { severity: "info", message: "The provider returned no models. Enter the model ID manually." }
-        );
-      }
-    } catch (error) {
-      if (!silent) {
-        setAlert({
-          severity: "info",
-          message: `${getApiErrorMessage(error)} You can still enter the model ID manually.`
-        });
-      }
-    } finally {
-      setBusy(current => (current === "models" ? "" : current));
-    }
+  const refresh = useCallback(async () => {
+    const data = await listProviders();
+    setProviders(data.providers || []);
+    setActiveProviderId(data.activeProviderId || "");
+    return data.providers || [];
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    fetchProviderConfig()
-      .then(stored => {
+    listProviders()
+      .then(data => {
         if (cancelled) return;
-        setConfig(stored);
-        setForm({
-          provider: stored.provider || EMPTY_FORM.provider,
-          baseUrl: stored.baseUrl || "",
-          apiKey: "",
-          model: stored.model || ""
-        });
+        setProviders(data.providers || []);
+        setActiveProviderId(data.activeProviderId || "");
       })
       .catch(error => {
         if (!cancelled) setAlert({ severity: "error", message: getApiErrorMessage(error) });
@@ -137,31 +142,85 @@ export default function SettingsPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (config?.configured) loadModels({ silent: true });
-  }, [config?.configured, loadModels]);
+  const savedProvider = form ? providers.find(provider => provider.providerId === form.providerId) || null : null;
 
-  const update = key => event => setForm(current => ({ ...current, [key]: event.target.value }));
+  const registryEntry = useMemo(() => {
+    if (!form) return null;
+    return providerById(form.registryId) || null;
+  }, [form]);
+
+  const visibleProviders = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return PROVIDERS.filter(entry => {
+      if (category !== "all" && entry.category !== category) return false;
+      if (!query) return true;
+      return `${entry.name} ${entry.note} ${entry.category}`.toLowerCase().includes(query);
+    });
+  }, [search, category]);
+
+  function startConfigure(entry, existingProvider) {
+    const nextForm = formFromProvider(existingProvider, entry);
+    setForm(nextForm);
+    setShowKey(false);
+    setManualModel("");
+    setModelsWarning("");
+    if (existingProvider) {
+      setSelectedModels(existingProvider.models || []);
+      setDefaultModel(existingProvider.defaultModel || "");
+    } else {
+      setSelectedModels([]);
+      setDefaultModel("");
+    }
+    setModels([]);
+    setAlert({ severity: "info", message: existingProvider ? `Editing ${existingProvider.provider}.` : `Configuring ${entry.name}. Paste your key, then Save and Test.` });
+    window.requestAnimationFrame(() => {
+      const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      document.getElementById("provider-form")?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+    });
+  }
+
+  function startCustom() {
+    startConfigure(providerById("custom-openai"), null);
+    setForm(current => ({ ...current, provider: "", baseUrl: "" }));
+  }
 
   async function handleSave(event) {
-    event.preventDefault();
+    event?.preventDefault?.();
+    if (!form) return;
     setAlert(null);
-    const validationError = validateForm(form, config?.hasApiKey);
-    if (validationError) {
-      setAlert({ severity: "error", message: validationError });
+    if (form.compatibility !== "openai") {
+      setAlert({ severity: "warning", message: "This endpoint speaks a different API shape and cannot chat through VupsRouter yet, so it cannot be saved as a working provider." });
+      return;
+    }
+    const providerId = savedProvider ? form.providerId : slugify(form.providerId || form.provider);
+    if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(providerId)) {
+      setAlert({ severity: "error", message: "Provider name must contain letters or digits." });
+      return;
+    }
+    if (form.provider.trim().length < 2) {
+      setAlert({ severity: "error", message: "Provider name must be at least 2 characters." });
+      return;
+    }
+    if (!form.baseUrl.trim()) {
+      setAlert({ severity: "error", message: "Enter the API base URL (for example https://api.example.com/v1)." });
+      return;
+    }
+    if (!savedProvider?.hasApiKey && form.apiKey.trim().length < 4) {
+      setAlert({ severity: "error", message: "Paste the API key from your provider." });
       return;
     }
     setBusy("save");
     try {
-      const result = await saveProviderConfig({
+      const result = await saveManagedProvider(providerId, {
         provider: form.provider.trim(),
         baseUrl: form.baseUrl.trim(),
         apiKey: form.apiKey.trim(),
-        model: form.model.trim()
+        model: form.model.trim(),
+        providerType: form.providerType
       });
-      setConfig(result.config);
-      setForm(current => ({ ...current, apiKey: "" }));
-      setAlert({ severity: "success", message: `${result.message} Saved key: ${result.config.apiKeyMasked}` });
+      await refresh();
+      setForm(current => ({ ...current, providerId, apiKey: "" }));
+      setAlert({ severity: "success", message: `${result.message} Key: ${result.config.apiKeyMasked || "saved"}.` });
     } catch (error) {
       setAlert({ severity: "error", message: getApiErrorMessage(error) });
     } finally {
@@ -170,6 +229,7 @@ export default function SettingsPage() {
   }
 
   async function handleTest() {
+    if (!form) return;
     setAlert(null);
     if (!form.baseUrl.trim()) {
       setAlert({ severity: "error", message: "Enter an API base URL first." });
@@ -177,43 +237,71 @@ export default function SettingsPage() {
     }
     setBusy("test");
     try {
-      const result = await testProviderConnection({
-        provider: form.provider.trim(),
+      const payload = {
         baseUrl: form.baseUrl.trim(),
         apiKey: form.apiKey.trim() || undefined,
         model: form.model.trim() || undefined
-      });
+      };
+      const result = savedProvider
+        ? await testManagedProvider(savedProvider.providerId, payload)
+        : await testProviderConnection({ provider: form.provider.trim() || "Custom", ...payload });
       if (Array.isArray(result.availableModels) && result.availableModels.length > 0) {
         setModels(result.availableModels);
+        setSelectedModels(current => (current.length > 0 ? current : result.availableModels.map(model => model.id)));
       }
-      setTestResult({ status: "connected" });
       setAlert({ severity: "success", message: result.message });
-      fetchProviderConfig().then(setConfig).catch(() => {});
+      await refresh();
     } catch (error) {
-      setTestResult({ status: testStatusFromError(error) });
       setAlert({ severity: "error", message: getApiErrorMessage(error) });
     } finally {
       setBusy("");
     }
   }
 
-  function applyPreset(preset) {
-    setForm(current => ({ ...current, ...preset.values }));
-    setAlert({ severity: "info", message: `${preset.note} Paste your API key, then Save and Test.` });
+  async function handleLoadModels() {
+    if (!savedProvider) return;
+    setBusy("models");
+    setModelsWarning("");
+    try {
+      const data = await fetchProviderModelsDetailed(savedProvider.providerId);
+      const list = Array.isArray(data.models) ? data.models : [];
+      setModels(list);
+      setSelectedModels(current => (current.length > 0 ? current : list.map(model => model.id)));
+      if (data.warning) {
+        setModelsWarning(data.warning.message);
+      } else {
+        setAlert({ severity: list.length > 0 ? "success" : "info", message: list.length > 0 ? `Loaded ${list.length} models.` : "The provider returned no models. Add model IDs manually." });
+      }
+    } catch (error) {
+      setAlert({ severity: "error", message: `${getApiErrorMessage(error)} Saved models were not changed.` });
+    } finally {
+      setBusy("");
+    }
   }
 
-  async function handleDelete() {
-    if (!window.confirm("Delete your saved provider configuration? Chat will stop working until you save a new one.")) {
+  function toggleModel(id) {
+    setSelectedModels(current => (current.includes(id) ? current.filter(entry => entry !== id) : [...current, id]));
+    setDefaultModel(current => (current === id ? "" : current));
+  }
+
+  function addManualModel() {
+    const id = manualModel.trim();
+    if (!id) return;
+    if (id.length > 200) {
+      setAlert({ severity: "error", message: "Model IDs must be 200 characters or fewer." });
       return;
     }
-    setAlert(null);
-    setBusy("delete");
+    setSelectedModels(current => (current.includes(id) ? current : [...current, id]));
+    setManualModel("");
+  }
+
+  async function handleSaveModels() {
+    if (!savedProvider) return;
+    setBusy("models-save");
     try {
-      await deleteProviderConfig();
-      setConfig(null);
-      setModels([]);
-      setForm(EMPTY_FORM);
-      setAlert({ severity: "success", message: "Provider configuration deleted." });
+      const result = await saveProviderModels(savedProvider.providerId, { models: selectedModels, defaultModel });
+      await refresh();
+      setAlert({ severity: "success", message: `${result.message} Default model: ${result.config.defaultModel || "none"}.` });
     } catch (error) {
       setAlert({ severity: "error", message: getApiErrorMessage(error) });
     } finally {
@@ -221,7 +309,35 @@ export default function SettingsPage() {
     }
   }
 
-  const status = providerStatus(config, testResult);
+  async function handleActivate(providerId) {
+    setBusy(`activate-${providerId}`);
+    try {
+      await activateProvider(providerId);
+      await refresh();
+      setAlert({ severity: "success", message: "Selected provider updated. Chat now uses it." });
+    } catch (error) {
+      setAlert({ severity: "error", message: getApiErrorMessage(error) });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function handleDelete(provider) {
+    if (!window.confirm(`Remove the saved configuration for ${provider.provider}? Its key and model list will be deleted. Other providers are not affected.`)) {
+      return;
+    }
+    setBusy(`delete-${provider.providerId}`);
+    try {
+      await removeProvider(provider.providerId);
+      await refresh();
+      if (form?.providerId === provider.providerId) setForm(null);
+      setAlert({ severity: "success", message: `${provider.provider} removed.` });
+    } catch (error) {
+      setAlert({ severity: "error", message: getApiErrorMessage(error) });
+    } finally {
+      setBusy("");
+    }
+  }
 
   if (loading) {
     return (
@@ -240,17 +356,12 @@ export default function SettingsPage() {
       <main className="settings-page">
         <div className="settings-shell">
           <div className="settings-heading">
-            <span className="auth-kicker">YOUR OWN AI PROVIDER</span>
-            <Typography component="h1">API settings</Typography>
+            <span className="auth-kicker">PROVIDERS &amp; MODELS</span>
+            <Typography component="h1">Provider settings</Typography>
             <p>
-              Connect any OpenAI-compatible provider. Paste your key once — it is encrypted on the server
-              with AES-256-GCM, never stored in your browser, and never shown in full again.
+              Save as many providers as you like — each keeps its own key, base URL, and models.
+              Keys are encrypted on the server with AES-256-GCM, never stored in your browser, and never shown in full again.
             </p>
-          </div>
-
-          <div className={`settings-status settings-status--${status.tone}`} role="status">
-            <span className="settings-status-dot" aria-hidden="true" />
-            <strong>{status.label}</strong>
           </div>
 
           {alert && (
@@ -259,150 +370,332 @@ export default function SettingsPage() {
             </Alert>
           )}
 
-          {config?.configured && (
-            <div className="settings-saved">
-              <span className="settings-saved-badge">SAVED</span>
-              <div>
-                <strong>{config.provider}</strong>
-                <span className="settings-saved-detail">{config.baseUrl}</span>
-                {config.model && <span className="settings-saved-detail">Model: {config.model}</span>}
-                <span className="settings-saved-detail">
-                  <KeyRoundedIcon fontSize="inherit" /> Key: {config.apiKeyMasked || "saved"}
-                </span>
-              </div>
-            </div>
-          )}
-
-          <form className="settings-card" onSubmit={handleSave}>
+          {/* ─── Saved providers ─────────────────────────────────────────── */}
+          <section className="settings-card" aria-labelledby="saved-providers-heading">
             <div className="settings-presets">
-              <span className="settings-models-label">QUICK START — ONE CLICK TO FILL THE FORM</span>
-              <div className="settings-models-list">
-                {PROVIDER_PRESETS.map(preset => (
+              <span className="settings-models-label" id="saved-providers-heading">YOUR SAVED PROVIDERS ({providers.length})</span>
+              <Button size="small" variant="outlined" startIcon={<AddRoundedIcon />} onClick={startCustom}>
+                Add provider
+              </Button>
+            </div>
+            {providers.length === 0 && (
+              <p className="settings-empty">No providers saved yet. Pick one from the directory below to get started.</p>
+            )}
+            <div className="settings-saved-list">
+              {providers.map(provider => {
+                const status = statusLabel(provider);
+                const isActive = provider.providerId === activeProviderId;
+                return (
+                  <div key={provider.providerId} className={`settings-saved-card${isActive ? " is-active" : ""}`}>
+                    <div className="settings-saved-card-main">
+                      <div className="settings-provider-name">
+                        {provider.provider}
+                        {isActive && <span className="settings-badge settings-badge--ok">ACTIVE</span>}
+                        <span className={`settings-badge settings-badge--${status.tone}`}>{status.label}</span>
+                      </div>
+                      <div className="settings-provider-meta">
+                        <span>{provider.baseUrl}</span>
+                        <span><KeyRoundedIcon fontSize="inherit" /> {provider.apiKeyMasked || "saved"}</span>
+                        <span>{provider.models?.length || 0} saved model{provider.models?.length === 1 ? "" : "s"}</span>
+                        <span>Default: {provider.defaultModel || provider.model || "none"}</span>
+                      </div>
+                    </div>
+                    <div className="settings-saved-actions">
+                      {!isActive && (
+                        <Button size="small" variant="contained" disabled={Boolean(busy)} onClick={() => handleActivate(provider.providerId)}>
+                          {busy === `activate-${provider.providerId}` ? "Switching…" : "Use for chat"}
+                        </Button>
+                      )}
+                      <Button size="small" variant="outlined" onClick={() => startConfigure(providerById(provider.providerId), provider)}>
+                        Edit
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        disabled={Boolean(busy)}
+                        startIcon={busy === `test-${provider.providerId}` ? <CircularProgress size={14} color="inherit" /> : <BoltRoundedIcon />}
+                        onClick={async () => {
+                          setBusy(`test-${provider.providerId}`);
+                          try {
+                            const result = await testManagedProvider(provider.providerId, {});
+                            setAlert({ severity: "success", message: `${provider.provider}: ${result.message}` });
+                            await refresh();
+                          } catch (error) {
+                            setAlert({ severity: "error", message: `${provider.provider}: ${getApiErrorMessage(error)}` });
+                            await refresh();
+                          } finally {
+                            setBusy("");
+                          }
+                        }}
+                      >
+                        Test
+                      </Button>
+                      <Button size="small" color="error" variant="text" disabled={Boolean(busy)} startIcon={<DeleteOutlineRoundedIcon />} onClick={() => handleDelete(provider)}>
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* ─── Provider directory ──────────────────────────────────────── */}
+          <section className="settings-card" aria-labelledby="provider-directory-heading">
+            <div className="settings-presets">
+              <span className="settings-models-label" id="provider-directory-heading">PROVIDER DIRECTORY</span>
+            </div>
+            <div className="settings-filter-row">
+              <TextField
+                size="small"
+                label="Search providers"
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+                inputProps={{ "aria-label": "Search providers" }}
+              />
+              <div className="settings-cat-row" role="group" aria-label="Provider category filter">
+                <button type="button" className={`settings-cat-chip${category === "all" ? " is-active" : ""}`} aria-pressed={category === "all"} onClick={() => setCategory("all")}>All</button>
+                {PROVIDER_CATEGORIES.map(entry => (
                   <button
-                    key={preset.id}
+                    key={entry.id}
                     type="button"
-                    className={`settings-model-chip${form.baseUrl === preset.values.baseUrl ? " is-active" : ""}`}
-                    onClick={() => applyPreset(preset)}
-                    title={preset.note}
+                    className={`settings-cat-chip${category === entry.id ? " is-active" : ""}`}
+                    aria-pressed={category === entry.id}
+                    onClick={() => setCategory(entry.id)}
                   >
-                    {preset.label} · {preset.values.model}
+                    {entry.label}
                   </button>
                 ))}
               </div>
             </div>
-            <div className="settings-form-grid">
-              <TextField
-                label="Provider name"
-                value={form.provider}
-                onChange={update("provider")}
-                helperText='A label for you, e.g. "OpenAI-compatible" or "Groq"'
-                inputProps={{ maxLength: 80 }}
-                required
-              />
-              <TextField
-                label="API base URL"
-                value={form.baseUrl}
-                onChange={update("baseUrl")}
-                placeholder="https://api.example.com/v1"
-                helperText="The provider's OpenAI-compatible base URL (ends with /v1 for most providers)"
-                inputProps={{ maxLength: 500 }}
-                required
-              />
-              <TextField
-                label="API key"
-                type="password"
-                value={form.apiKey}
-                onChange={update("apiKey")}
-                placeholder={config?.hasApiKey ? "Leave blank to keep your saved key" : "sk-…"}
-                helperText={
-                  config?.hasApiKey
-                    ? `A key is saved (${config.apiKeyMasked}). Type a new one only to replace it.`
-                    : "Stored encrypted on the server. Never saved in your browser."
-                }
-                inputProps={{ maxLength: 4096, autoComplete: "off" }}
-                required={!config?.hasApiKey}
-              />
-              <TextField
-                label="Model ID"
-                value={form.model}
-                onChange={update("model")}
-                placeholder="Select below or type an exact model ID"
-                helperText="The exact model ID from your provider, e.g. gpt-4o-mini"
-                inputProps={{ maxLength: 200 }}
-              />
+            <div className="settings-provider-grid">
+              {visibleProviders.map(entry => {
+                const saved = providers.find(provider => provider.providerId === entry.id);
+                return (
+                  <article key={entry.id} className="settings-provider-card">
+                    <div className="settings-provider-name">
+                      {entry.name}
+                      {saved && <span className="settings-badge settings-badge--ok">SAVED</span>}
+                      <span className={`settings-badge settings-badge--${entry.status === "supported" ? "neutral" : "warn"}`}>
+                        {entry.status === "supported" ? (entry.deployment === "local" ? "LOCAL GATEWAY" : "OPENAI-COMPATIBLE") : "ADAPTER PENDING"}
+                      </span>
+                    </div>
+                    <p className="settings-provider-note">{entry.note}</p>
+                    <p className="settings-provider-cost">{entry.cost}</p>
+                    <GuideLinks entry={entry} />
+                    <div className="settings-provider-actions">
+                      <Button size="small" variant="outlined" onClick={() => startConfigure(entry, saved)}>
+                        {saved ? "Edit configuration" : "Configure"}
+                      </Button>
+                    </div>
+                  </article>
+                );
+              })}
+              {visibleProviders.length === 0 && <p className="settings-empty">No providers match this search.</p>}
             </div>
+          </section>
 
-            {models.length > 0 && (
-              <div className="settings-models">
-                <span className="settings-models-label">AVAILABLE MODELS — CLICK TO SELECT</span>
-                <div className="settings-models-list">
-                  {models.map(model => (
-                    <button
-                      key={model.id}
-                      type="button"
-                      className={`settings-model-chip${form.model === model.id ? " is-active" : ""}`}
-                      aria-pressed={form.model === model.id}
-                      onClick={() => setForm(current => ({ ...current, model: model.id }))}
-                    >
-                      {model.id}
-                    </button>
-                  ))}
-                </div>
+          {/* ─── Setup form ──────────────────────────────────────────────── */}
+          {form && (
+            <form className="settings-card" id="provider-form" onSubmit={handleSave} aria-labelledby="provider-form-heading">
+              <div className="settings-presets">
+                <span className="settings-models-label" id="provider-form-heading">
+                  {savedProvider ? `EDIT ${savedProvider.provider.toUpperCase()}` : "NEW PROVIDER"}
+                </span>
               </div>
-            )}
-
-            <div className="settings-actions">
-              <Button
-                type="submit"
-                variant="contained"
-                startIcon={busy === "save" ? <CircularProgress size={17} color="inherit" /> : <SaveRoundedIcon />}
-                disabled={Boolean(busy)}
-              >
-                {busy === "save" ? "Saving…" : "Save configuration"}
-              </Button>
-              <Button
-                type="button"
-                variant="outlined"
-                startIcon={busy === "test" ? <CircularProgress size={17} color="inherit" /> : <BoltRoundedIcon />}
-                onClick={handleTest}
-                disabled={Boolean(busy)}
-              >
-                {busy === "test" ? "Testing…" : "Test connection"}
-              </Button>
-              <Button
-                type="button"
-                variant="outlined"
-                startIcon={busy === "models" ? <CircularProgress size={17} color="inherit" /> : <AutoAwesomeRoundedIcon />}
-                onClick={() => loadModels()}
-                disabled={Boolean(busy) || !config?.configured}
-              >
-                {busy === "models" ? "Loading…" : "Load models"}
-              </Button>
-              {config?.configured && (
+              {form.compatibility !== "openai" && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  {form.provider} speaks a different API shape than the OpenAI chat format, so VupsRouter cannot use it for chat yet.
+                  This entry is documented here so you know why it cannot be saved — a dedicated adapter is future work.
+                </Alert>
+              )}
+              <div className="settings-form-grid">
+                <TextField
+                  label="Provider name"
+                  value={form.provider}
+                  onChange={event => setForm(current => ({ ...current, provider: event.target.value }))}
+                  helperText="A label for you, e.g. FlagshipRouter or DeepSeek"
+                  inputProps={{ maxLength: 80 }}
+                  required
+                />
+                <TextField
+                  label="API base URL"
+                  value={form.baseUrl}
+                  onChange={event => setForm(current => ({ ...current, baseUrl: event.target.value }))}
+                  placeholder="https://gateway.example.com/v1"
+                  helperText="OpenAI-compatible base URL. Extra /chat/completions suffixes are stripped automatically. Localhost only works when the backend runs on the same machine — the deployed backend rejects it with an explanation."
+                  inputProps={{ maxLength: 500 }}
+                  required
+                />
+                <TextField
+                  label="API key"
+                  type={showKey ? "text" : "password"}
+                  value={form.apiKey}
+                  onChange={event => setForm(current => ({ ...current, apiKey: event.target.value }))}
+                  placeholder={savedProvider?.hasApiKey ? "Leave blank to keep your saved key" : "sk-…"}
+                  helperText={savedProvider?.hasApiKey ? `A key is saved (${savedProvider.apiKeyMasked}). Type a new one only to replace it.` : "Stored encrypted on the server (AES-256-GCM). Never saved in your browser."}
+                  inputProps={{ maxLength: 4096, autoComplete: "off" }}
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton type="button" edge="end" aria-label={showKey ? "Hide API key" : "Show API key"} onClick={() => setShowKey(value => !value)}>
+                          {showKey ? <VisibilityOffRoundedIcon /> : <VisibilityRoundedIcon />}
+                        </IconButton>
+                      </InputAdornment>
+                    )
+                  }}
+                />
+                <TextField
+                  label="Model ID"
+                  value={form.model}
+                  onChange={event => setForm(current => ({ ...current, model: event.target.value }))}
+                  placeholder="e.g. deepseek-chat"
+                  helperText="The exact model ID from your provider. Save models below to pick one from a list."
+                  inputProps={{ maxLength: 200 }}
+                />
+              </div>
+              <div className="settings-actions">
+                <Button
+                  type="submit"
+                  variant="contained"
+                  startIcon={busy === "save" ? <CircularProgress size={17} color="inherit" /> : <SaveRoundedIcon />}
+                  disabled={Boolean(busy) || form.compatibility !== "openai"}
+                >
+                  {busy === "save" ? "Saving…" : "Save provider"}
+                </Button>
                 <Button
                   type="button"
-                  color="error"
-                  variant="text"
-                  startIcon={<DeleteOutlineRoundedIcon />}
-                  onClick={handleDelete}
+                  variant="outlined"
+                  startIcon={busy === "test" ? <CircularProgress size={17} color="inherit" /> : <BoltRoundedIcon />}
+                  onClick={handleTest}
                   disabled={Boolean(busy)}
                 >
-                  Delete configuration
+                  {busy === "test" ? "Testing…" : "Test connection"}
                 </Button>
-              )}
-            </div>
-          </form>
+                <Button type="button" variant="text" onClick={() => setForm(null)} disabled={Boolean(busy)}>
+                  Close
+                </Button>
+              </div>
+            </form>
+          )}
 
-          <div className="settings-help">
-            <h2>How testing works</h2>
+          {/* ─── Models management ───────────────────────────────────────── */}
+          {savedProvider && (
+            <section className="settings-card" aria-labelledby="models-heading">
+              <div className="settings-presets">
+                <span className="settings-models-label" id="models-heading">MODELS — {savedProvider.provider.toUpperCase()}</span>
+                <Button size="small" variant="outlined" onClick={handleLoadModels} disabled={Boolean(busy)}>
+                  {busy === "models" ? "Loading…" : "Load models"}
+                </Button>
+              </div>
+              {modelsWarning && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Live discovery failed ({modelsWarning}). Your saved model list is unchanged — fix the connection and press Load models to refresh.
+                </Alert>
+              )}
+              {models.length > 0 && (
+                <div className="settings-models">
+                  <span className="settings-models-label">DISCOVERED THIS SESSION — CLICK TO ADD OR REMOVE</span>
+                  <div className="settings-models-list">
+                    {models.map(model => (
+                      <button
+                        key={model.id}
+                        type="button"
+                        className={`settings-model-chip${selectedModels.includes(model.id) ? " is-active" : ""}`}
+                        aria-pressed={selectedModels.includes(model.id)}
+                        onClick={() => toggleModel(model.id)}
+                      >
+                        {model.id}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="settings-models">
+                <span className="settings-models-label">SAVED MODELS ({selectedModels.length}) — CLICK TO REMOVE</span>
+                <div className="settings-models-list">
+                  {selectedModels.map(id => (
+                    <button
+                      key={id}
+                      type="button"
+                      className="settings-model-chip is-active"
+                      aria-pressed="true"
+                      title="Click to remove"
+                      onClick={() => toggleModel(id)}
+                    >
+                      {id}
+                    </button>
+                  ))}
+                  {selectedModels.length === 0 && <span className="settings-empty">No saved models yet — discover or add one below.</span>}
+                </div>
+              </div>
+              <div className="settings-filter-row">
+                <TextField
+                  size="small"
+                  label="Add model ID manually"
+                  value={manualModel}
+                  onChange={event => setManualModel(event.target.value)}
+                  onKeyDown={event => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      addManualModel();
+                    }
+                  }}
+                />
+                <Button size="small" variant="outlined" startIcon={<AddRoundedIcon />} onClick={addManualModel}>
+                  Add model
+                </Button>
+                <TextField
+                  size="small"
+                  select
+                  label="Default model"
+                  value={defaultModel}
+                  onChange={event => setDefaultModel(event.target.value)}
+                  SelectProps={{ native: true }}
+                  sx={{ minWidth: 220 }}
+                >
+                  <option value="">No default</option>
+                  {selectedModels.map(id => (
+                    <option key={id} value={id}>{id}</option>
+                  ))}
+                </TextField>
+                <Button
+                  size="small"
+                  variant="contained"
+                  startIcon={busy === "models-save" ? <CircularProgress size={14} color="inherit" /> : <CheckCircleRoundedIcon />}
+                  onClick={handleSaveModels}
+                  disabled={Boolean(busy)}
+                >
+                  {busy === "models-save" ? "Saving…" : "Save models & default"}
+                </Button>
+              </div>
+            </section>
+          )}
+
+          {/* ─── Guides ──────────────────────────────────────────────────── */}
+          {(registryEntry || savedProvider) && (
+            <section className="settings-help">
+              <h2>How to configure {registryEntry?.name || savedProvider?.provider}</h2>
+              <ol className="settings-guide-steps">
+                <li>Create an API key on the provider's official page {registryEntry?.keysUrl ? "" : "(paste your key below)"} and keep it private — never share API keys.</li>
+                <li>Enter the provider's OpenAI-compatible base URL (use <code>Load models</code> or manual entry to confirm the model ID).</li>
+                <li>Save the provider, then press <b>Test connection</b> — it lists models and sends one tiny request when a model is set.</li>
+                <li>Local gateways (Ollama, FlagshipRouter, vLLM, LM Studio) only work when the backend can reach them. A deployed backend cannot reach <code>localhost</code> — use a public HTTPS tunnel or run VupsRouter locally.</li>
+                <li>Switch chat between providers any time with <b>Use for chat</b> — every provider keeps its own key and models.</li>
+              </ol>
+              {registryEntry && <GuideLinks entry={registryEntry} />}
+              <Link to="/chat" className="settings-chat-link">Go to chat →</Link>
+            </section>
+          )}
+
+          <section className="settings-help">
+            <h2>Security</h2>
             <ul>
-              <li><b>Test connection</b> calls your provider's model list and, when a model ID is set, sends one tiny request to confirm the model works. The status badge above shows Connected, Insufficient Balance, or the exact failure.</li>
-              <li><b>Chat</b> always uses the provider, base URL, and model you save here. If a model fails, VupsRouter reports the provider's error instead of switching models silently.</li>
-              <li>Use <b>Load models</b> to see what the provider currently offers — model IDs change over time, so pick one from the live list instead of trusting old documentation.</li>
-              <li>DeepSeek's base URL is <code>https://api.deepseek.com</code> (no <code>/v1</code> needed; <code>/v1</code> also works).</li>
+              <li>Keys are encrypted with AES-256-GCM using a server-side secret and are never returned to the browser — only a masked preview.</li>
+              <li>Localhost and private-network base URLs are rejected on production servers with an explanation, so a local gateway failure is never misreported as an invalid key.</li>
+              <li>Deleting a provider removes only that provider's configuration; all others stay untouched.</li>
             </ul>
-            <Link to="/chat" className="settings-chat-link">Go to chat →</Link>
-          </div>
+          </section>
         </div>
       </main>
     </>

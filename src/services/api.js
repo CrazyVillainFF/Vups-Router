@@ -91,10 +91,59 @@ export async function testProviderConnection(payload) {
   return data;
 }
 
+export async function listProviders() {
+  ensureApiBaseURL();
+  const { data } = await apiClient.get("/settings/providers");
+  return data;
+}
+
+export async function saveManagedProvider(providerId, payload) {
+  ensureApiBaseURL();
+  const id = encodeURIComponent(providerId);
+  const { data } = await apiClient.put(`/settings/providers/${id}`, payload);
+  return data;
+}
+
+export async function activateProvider(providerId) {
+  ensureApiBaseURL();
+  const id = encodeURIComponent(providerId);
+  const { data } = await apiClient.post(`/settings/providers/${id}/activate`);
+  return data;
+}
+
+export async function removeProvider(providerId) {
+  ensureApiBaseURL();
+  const id = encodeURIComponent(providerId);
+  const { data } = await apiClient.delete(`/settings/providers/${id}`);
+  return data;
+}
+
+export async function testManagedProvider(providerId, payload) {
+  ensureApiBaseURL();
+  const id = encodeURIComponent(providerId);
+  const { data } = await apiClient.post(`/settings/providers/${id}/test`, payload ?? {});
+  return data;
+}
+
+export async function saveProviderModels(providerId, payload) {
+  ensureApiBaseURL();
+  const id = encodeURIComponent(providerId);
+  const { data } = await apiClient.put(`/settings/providers/${id}/models`, payload);
+  return data;
+}
+
 export async function fetchProviderModels() {
   ensureApiBaseURL();
   const { data } = await apiClient.get("/settings/models");
   return data.models;
+}
+
+export async function fetchProviderModelsDetailed(providerId) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.get("/settings/models", {
+    params: providerId ? { providerId } : undefined
+  });
+  return data;
 }
 
 export async function fetchSharedModelStatus() {
