@@ -1,0 +1,157 @@
+/* Legal pages (privacy, terms, cookies) */
+
+.legal-page {
+  min-height: 100svh;
+}
+
+.legal-head {
+  max-width: 880px;
+  margin: 0 auto;
+  padding-top: 96px;
+  padding-bottom: 34px;
+}
+
+.legal-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  color: #b8c0b2;
+  font: 10px var(--mono);
+  letter-spacing: 1.9px;
+}
+
+.legal-title {
+  font-size: clamp(2.6rem, 5vw, 4.2rem);
+  font-weight: 600;
+  letter-spacing: -0.06em;
+  line-height: 1.02;
+  margin: 22px 0 16px;
+}
+
+.legal-title span {
+  color: var(--accent);
+}
+
+.legal-updated {
+  color: #8f978e;
+  font: 11px var(--mono);
+  letter-spacing: 0.4px;
+  margin: 0;
+}
+
+.legal-placeholder-note {
+  margin-top: 18px;
+  padding: 13px 16px;
+  border: 1px solid rgba(212, 255, 63, 0.28);
+  border-radius: 10px;
+  background: rgba(212, 255, 63, 0.05);
+  color: #c9d1c4;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.legal-body {
+  max-width: 880px;
+  margin: 0 auto;
+  padding-bottom: 120px;
+  color: #a7aea5;
+  font-size: 14px;
+  line-height: 1.9;
+}
+
+.legal-body section {
+  padding-top: 34px;
+}
+
+.legal-body h2 {
+  color: #f2f4ef;
+  font-size: 21px;
+  font-weight: 550;
+  letter-spacing: -0.4px;
+  margin: 0 0 12px;
+}
+
+.legal-body h3 {
+  color: #e2e6dd;
+  font-size: 15px;
+  font-weight: 550;
+  margin: 22px 0 8px;
+}
+
+.legal-body p {
+  margin: 0 0 14px;
+}
+
+.legal-body ul {
+  margin: 0 0 16px;
+  padding-left: 22px;
+}
+
+.legal-body li {
+  margin-bottom: 7px;
+}
+
+.legal-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.legal-body a:hover {
+  text-decoration-thickness: 2px;
+}
+
+.legal-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 16px 0;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.legal-toc a {
+  color: #c6ccc1;
+  text-decoration: none;
+}
+
+.legal-toc a:hover {
+  color: var(--accent);
+}
+
+.legal-meta-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 6px 0 18px;
+  font-size: 12.5px;
+}
+
+.legal-meta-table th,
+.legal-meta-table td {
+  border: 1px solid var(--line);
+  padding: 9px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.legal-meta-table th {
+  color: #e2e6dd;
+  font-weight: 550;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+@media (max-width: 650px) {
+  .legal-head {
+    padding-top: 64px;
+  }
+
+  .legal-body {
+    padding-bottom: 80px;
+  }
+
+  .legal-body section {
+    padding-top: 26px;
+  }
+}

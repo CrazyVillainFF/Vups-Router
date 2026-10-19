@@ -1,0 +1,99 @@
+/* CodeSlots — animated one-time-code input */
+
+.cs-root {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cs-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: text;
+  background: transparent;
+}
+
+.cs-root.is-locked .cs-input {
+  cursor: default;
+}
+
+.cs-slots {
+  display: inline-flex;
+  gap: var(--cs-gap, 10px);
+  perspective: 600px;
+}
+
+.cs-slot {
+  display: grid;
+  place-items: center;
+  width: var(--cs-slot-size, 48px);
+  height: var(--cs-slot-size, 48px);
+  border-radius: var(--cs-radius, 12px);
+  background: var(--cs-slot-bg, rgba(242, 244, 239, 0.06));
+  border: 1px solid rgba(242, 244, 239, 0.14);
+  color: var(--cs-digit, #f2f4ef);
+  font: 600 20px "Outfit", "DM Mono", monospace;
+  line-height: 1;
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cs-slot--filled {
+  border-color: rgba(242, 244, 239, 0.28);
+}
+
+.cs-root.is-focused .cs-slot--active {
+  border-color: var(--cs-accent, #d4ff3f);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cs-accent, #d4ff3f) 18%, transparent);
+}
+
+.cs-root--error .cs-slot {
+  border-color: color-mix(in srgb, var(--cs-danger, #ff5d5d) 65%, transparent);
+  color: var(--cs-danger, #ff5d5d);
+}
+
+.cs-root--success .cs-slot {
+  border-color: color-mix(in srgb, var(--cs-accent, #d4ff3f) 55%, transparent);
+}
+
+.cs-root--success .cs-input {
+  pointer-events: none;
+}
+
+.cs-digit {
+  display: inline-block;
+}
+
+.cs-caret {
+  width: 2px;
+  height: 42%;
+  border-radius: 2px;
+  background: var(--cs-accent, #d4ff3f);
+}
+
+.cs-success {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--cs-accent, #d4ff3f) 16%, transparent);
+  color: var(--cs-accent, #d4ff3f);
+  margin-left: 4px;
+}
+
+.cs-root.is-locked {
+  opacity: 0.9;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-slot {
+    transition: none;
+  }
+}

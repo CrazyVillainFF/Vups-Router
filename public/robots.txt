@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /settings
+Disallow: /signin
+Disallow: /signup
+
+Sitemap: https://vups-router-three.vercel.app/sitemap.xml

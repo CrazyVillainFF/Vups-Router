@@ -4,7 +4,11 @@ import { Button, Container, TextField, Typography, Alert, CircularProgress } fro
 import ChatPage from "./ChatPage.jsx";
 import SettingsPage from "./SettingsPage.jsx";
 import SiteHeader from "./components/SiteHeader.jsx";
+import SiteFooter from "./components/SiteFooter.jsx";
+import PageMeta from "./components/PageMeta.jsx";
 import RequireAuth from "./components/RequireAuth.jsx";
+import { PrivacyPolicy, TermsOfService, CookiePolicy } from "./legal/LegalPages.jsx";
+import { ForgotPasswordPage, ResetPasswordPage } from "./auth/PasswordRecovery.jsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
 import ArrowOutwardRoundedIcon from "@mui/icons-material/ArrowOutwardRounded";
 import NorthEastRoundedIcon from "@mui/icons-material/NorthEastRounded";
@@ -58,7 +62,7 @@ const features = [
 
 function Home() {
   useReveal();
-  return <><SiteHeader /><main className="page-shell">
+  return <><PageMeta title="VupsRouter — Free AI Models" description="Compare free AI models for chat, coding, and reasoning. Start with free tiers or run open-weight models locally." /><SiteHeader /><main className="page-shell">
     <section className="hero section-pad">
       <div className="hero-copy">
         <div className="eyebrow reveal"><span className="eyebrow-line"/> YOUR GUIDE TO FREE AI</div>
@@ -80,11 +84,7 @@ function Home() {
       <div className="manifesto-copy reveal delay-1"><div className="eyebrow"><span className="eyebrow-line"/> CHOOSING A MODEL</div><h2>Choose how to run<br/>your <span>AI model.</span></h2><p>Choose a hosted free tier for convenience, a model directory for variety, or a local model for more control. “Free” can still mean quotas, changing availability, hardware costs, or provider-specific data terms.</p><Button component={Link} to="/signup" variant="outlined" endIcon={<ArrowOutwardRoundedIcon />}>Create your account</Button></div>
     </section>
     <section className="closing-cta section-pad reveal"><div className="cta-glow"/><div className="eyebrow"><span className="eyebrow-line"/> YOUR NEXT MODEL STARTS HERE</div><h2>Ready to try<br/><span>AI for free?</span></h2><p>Start with a free tier or run an open model locally. Check each provider’s current terms before using it for sensitive work.</p><Button component={Link} to="/signup" variant="contained" endIcon={<ArrowOutwardRoundedIcon />}>Create your account</Button><div className="cta-stamp">FREE<br/>AI<br/>OPTIONS</div></section>
-  </main><Footer /></>;
-}
-
-function Footer() {
-  return <footer className="footer"><Container maxWidth="lg" className="footer-inner"><Link to="/" className="brand"><span className="brand-mark"><RouteRoundedIcon /></span><span>vups<span className="brand-light">router</span></span></Link><span className="footer-copy">A clearer route to free AI models.</span><div className="footer-links"><a href="/#features">Free models</a><Link to="/chat">Try AI</Link><Link to="/settings">API settings</Link><Link to="/signin">Sign in</Link><Link to="/signup">Get started</Link></div><span className="copyright">© {new Date().getFullYear()} VupsRouter</span></Container></footer>;
+  </main><SiteFooter /></>;
 }
 
 function AuthPage({ mode }) {
@@ -146,10 +146,11 @@ function AuthPage({ mode }) {
         {isSignup && <TextField label="Your name" value={form.name} onChange={update("name")} onBlur={markTouched("name")} error={Boolean(fieldError("name"))} helperText={fieldError("name")} autoComplete="name" autoFocus inputProps={{minLength:2,maxLength:80}} required />}
         <TextField label="Email address" type="email" value={form.email} onChange={update("email")} onBlur={markTouched("email")} error={Boolean(fieldError("email"))} helperText={fieldError("email")} autoComplete="email" autoFocus={!isSignup} required />
         <TextField label="Password" type="password" value={form.password} onChange={update("password")} onBlur={markTouched("password")} error={Boolean(fieldError("password"))} helperText={fieldError("password") || "At least 8 characters"} autoComplete={isSignup ? "new-password" : "current-password"} inputProps={{minLength:8}} required />
+        {!isSignup && <div className="auth-forgot"><Link to="/forgot-password">Forgot password?</Link></div>}
         <Button type="submit" variant="contained" fullWidth disabled={busy} endIcon={busy ? <CircularProgress size={17} color="inherit"/> : <ArrowOutwardRoundedIcon />}>{busy ? "Please wait…" : isSignup ? "Create account" : "Sign in"}</Button>
       </form>
       <div className="auth-switch">{isSignup ? "Already have an account?" : "New to VupsRouter?"} <Link to={isSignup ? "/signin" : "/signup"}>{isSignup ? "Sign in" : "Create an account"}</Link></div>
-      <p className="auth-terms">By continuing, you agree to use VupsRouter responsibly. This starter app does not include email verification or password recovery.</p>
+      <p className="auth-terms">By continuing, you agree to our <Link to="/terms">Terms of Service</Link> and <Link to="/privacy-policy">Privacy Policy</Link>.</p>
     </div><div className="auth-side-note">OPEN MODELS <span>•</span> CHECK THE LIMITS</div></div></div>;
 }
 
@@ -162,10 +163,15 @@ function ScrollToTop() {
 export default function App() {
   return <AuthProvider><ScrollToTop /><Routes>
     <Route path="/" element={<Home />} />
-    <Route path="/signup" element={<AuthPage mode="signup" />} />
-    <Route path="/signin" element={<AuthPage mode="signin" />} />
-    <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
-    <Route path="/chat" element={<RequireAuth><ChatPage /></RequireAuth>} />
-    <Route path="*" element={<div className="not-found"><SiteHeader/><h1>That route went nowhere.</h1><Link to="/">Return home</Link></div>} />
+    <Route path="/signup" element={<><PageMeta title="Create your account — VupsRouter" description="Create a free VupsRouter account to compare and chat with free AI models." noIndex /><AuthPage mode="signup" /></>} />
+    <Route path="/signin" element={<><PageMeta title="Sign in — VupsRouter" description="Sign in to your VupsRouter account." noIndex /><AuthPage mode="signin" /></>} />
+    <Route path="/forgot-password" element={<><PageMeta title="Forgot password — VupsRouter" noIndex /><ForgotPasswordPage /></>} />
+    <Route path="/reset-password" element={<><PageMeta title="Reset password — VupsRouter" noIndex /><ResetPasswordPage /></>} />
+    <Route path="/settings" element={<><PageMeta title="API Settings — VupsRouter" noIndex /><RequireAuth><SettingsPage /></RequireAuth></>} />
+    <Route path="/chat" element={<><PageMeta title="Chat — VupsRouter" description="Chat with free AI models through VupsRouter." /><RequireAuth><ChatPage /></RequireAuth></>} />
+    <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+    <Route path="/terms" element={<TermsOfService />} />
+    <Route path="/cookie-policy" element={<CookiePolicy />} />
+    <Route path="*" element={<><PageMeta title="Page not found — VupsRouter" noIndex /><div className="not-found"><SiteHeader/><h1>That route went nowhere.</h1><Link to="/">Return home</Link></div></>} />
   </Routes></AuthProvider>;
 }

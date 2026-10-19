@@ -47,6 +47,18 @@ export async function fetchCurrentUser() {
   return data.user;
 }
 
+export async function requestPasswordReset(email) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.post("/forgot-password", { email });
+  return data;
+}
+
+export async function resetPassword({ token, newPassword, confirmPassword }) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.post("/reset-password", { token, newPassword, confirmPassword });
+  return data;
+}
+
 // ─── Provider configuration ─────────────────────────────────────────────────
 
 export async function fetchProviderConfig() {

@@ -72,6 +72,13 @@ The legacy deployed bundle hardcoded `http://localhost:4000/api` as a fallback (
 
 Backend CORS: the backend allows `https://vups-router-three.vercel.app` (plus anything in its `CLIENT_ORIGIN`/`CLIENT_ORIGINS`) and sends `SameSite=None; Secure; Partitioned` session cookies, so both sites are served over HTTPS and cross-site sessions work in current Chrome, Edge, Firefox, and Safari 16.4+.
 
+## Launch readiness (legal, SEO, security)
+
+- **Legal pages:** `/privacy-policy`, `/terms`, `/cookie-policy` are real routes rendered from `src/legal/LegalPages.jsx`. They are generated from `src/legal/config.js`, which reads `VITE_LEGAL_*` environment variables (documented in `.env.example`). The defaults are explicit placeholders (`not yet configured` / `.example` contact) — set `VITE_LEGAL_ENTITY`, `VITE_LEGAL_JURISDICTION`, `VITE_LEGAL_CONTACT_EMAIL`, and `VITE_LEGAL_RETENTION_DESCRIPTION` in Vercel, then redeploy. The pages show an on-page configuration notice until real values are set.
+- **SEO:** `public/robots.txt` and `public/sitemap.xml` ship with the build; `index.html` carries canonical/Open Graph/Twitter metadata; `src/components/PageMeta.jsx` sets per-route titles and `noindex` on private routes (sign-in, sign-up, settings, 404).
+- **Security headers:** `vercel.json` sets a Content-Security-Policy (self + Google Fonts + the Render API origin), HSTS, `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, and `Permissions-Policy`. If you change `VITE_API_BASE_URL` to a different origin, add it to `connect-src` there.
+- **Verification:** `npm test` covers the legal config, routes, footer links, robots/sitemap, metadata, and headers; direct navigation to all three legal routes was smoke-tested against `vite preview` (HTTP 200).
+
 ## Checks
 
 ```sh

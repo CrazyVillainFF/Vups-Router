@@ -11,6 +11,8 @@ import {
   getConversation,
   listConversations,
   resolveApiBaseURL,
+  requestPasswordReset,
+  resetPassword,
   saveProviderConfig,
   signIn,
   signOut,
@@ -70,6 +72,26 @@ test("auth methods use cookie sessions on the existing backend paths", async () 
     { method: "post", url: "/auth/signin", baseURL: "https://api.example.test/api", data: { email: "alex@example.com", password: "correct-horse" } },
     { method: "post", url: "/auth/logout", baseURL: "https://api.example.test/api", data: undefined },
     { method: "get", url: "/auth/me", baseURL: "https://api.example.test/api", data: undefined }
+  ]);
+});
+
+test("password recovery methods use the backend reset endpoints", async () => {
+  const mock = mockAdapter();
+  try {
+    await requestPasswordReset("alex@example.com");
+    await resetPassword({ token: "raw-token", newPassword: "brand-new-password-1", confirmPassword: "brand-new-password-1" });
+  } finally {
+    mock.restore();
+  }
+
+  assert.deepEqual(mock.requests, [
+    { method: "post", url: "/forgot-password", baseURL: "https://api.example.test/api", data: { email: "alex@example.com" } },
+    {
+      method: "post",
+      url: "/reset-password",
+      baseURL: "https://api.example.test/api",
+      data: { token: "raw-token", newPassword: "brand-new-password-1", confirmPassword: "brand-new-password-1" }
+    }
   ]);
 });
 
