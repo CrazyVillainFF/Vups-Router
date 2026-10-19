@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from "react";
-import { Link, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { AppBar, Box, Button, Container, IconButton, TextField, Typography, Alert, CircularProgress } from "@mui/material";
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Button, Container, TextField, Typography, Alert, CircularProgress } from "@mui/material";
+import ChatPage from "./ChatPage.jsx";
+import SettingsPage from "./SettingsPage.jsx";
+import SiteHeader from "./components/SiteHeader.jsx";
+import RequireAuth from "./components/RequireAuth.jsx";
+import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
 import ArrowOutwardRoundedIcon from "@mui/icons-material/ArrowOutwardRounded";
-import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import NorthEastRoundedIcon from "@mui/icons-material/NorthEastRounded";
 import RouteRoundedIcon from "@mui/icons-material/RouteRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import ShieldRoundedIcon from "@mui/icons-material/ShieldRounded";
 import SpeedRoundedIcon from "@mui/icons-material/SpeedRounded";
-import axios from "axios";
-
-const API = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
+import { getApiErrorMessage } from "./services/api.js";
 
 function useReveal() {
   useEffect(() => {
@@ -30,22 +32,6 @@ function useReveal() {
     nodes.forEach(node => observer.observe(node));
     return () => observer.disconnect();
   });
-}
-
-function Header() {
-  const [menuOpen, setMenuOpen] = useState(false);
-  return <AppBar position="sticky" elevation={0} className="topbar">
-    <Container maxWidth="lg" className="nav-wrap">
-      <Link to="/" className="brand" aria-label="VupsRouter home"><span className="brand-mark"><RouteRoundedIcon /></span><span>vups<span className="brand-light">router</span></span></Link>
-      <nav className={menuOpen ? "nav-links nav-open" : "nav-links"} aria-label="Main navigation">
-        <a href="/#features" onClick={() => setMenuOpen(false)}>Free models</a>
-        <a href="/#how-it-works" onClick={() => setMenuOpen(false)}>How to choose</a>
-        <NavLink to="/signin" onClick={() => setMenuOpen(false)}>Sign in</NavLink>
-        <Button component={Link} to="/signup" variant="contained" endIcon={<ArrowOutwardRoundedIcon />} onClick={() => setMenuOpen(false)}>Get started</Button>
-      </nav>
-      <IconButton className="menu-toggle" aria-label="Toggle navigation" onClick={() => setMenuOpen(!menuOpen)}><MenuRoundedIcon /></IconButton>
-    </Container>
-  </AppBar>;
 }
 
 function HeroVisual() {
@@ -72,7 +58,7 @@ const features = [
 
 function Home() {
   useReveal();
-  return <><Header /><main className="page-shell">
+  return <><SiteHeader /><main className="page-shell">
     <section className="hero section-pad">
       <div className="hero-copy">
         <div className="eyebrow reveal"><span className="eyebrow-line"/> YOUR GUIDE TO FREE AI</div>
@@ -98,30 +84,44 @@ function Home() {
 }
 
 function Footer() {
-  return <footer className="footer"><Container maxWidth="lg" className="footer-inner"><Link to="/" className="brand"><span className="brand-mark"><RouteRoundedIcon /></span><span>vups<span className="brand-light">router</span></span></Link><span className="footer-copy">A clearer route to free AI models.</span><div className="footer-links"><a href="/#features">Free models</a><Link to="/signin">Sign in</Link><Link to="/signup">Get started</Link></div><span className="copyright">© {new Date().getFullYear()} VupsRouter</span></Container></footer>;
+  return <footer className="footer"><Container maxWidth="lg" className="footer-inner"><Link to="/" className="brand"><span className="brand-mark"><RouteRoundedIcon /></span><span>vups<span className="brand-light">router</span></span></Link><span className="footer-copy">A clearer route to free AI models.</span><div className="footer-links"><a href="/#features">Free models</a><Link to="/chat">Try AI</Link><Link to="/settings">API settings</Link><Link to="/signin">Sign in</Link><Link to="/signup">Get started</Link></div><span className="copyright">© {new Date().getFullYear()} VupsRouter</span></Container></footer>;
 }
 
 function AuthPage({ mode }) {
   const isSignup = mode === "signup";
   const navigate = useNavigate();
+  const location = useLocation();
+  const { signUp, signIn, status } = useAuth();
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  useEffect(() => { setMessage(""); setError(""); }, [mode]);
+  const redirectTo = location.state?.from || "/settings";
+
+  useEffect(() => { setMessage(""); setError(""); setForm({ name: "", email: "", password: "" }); }, [mode]);
+
+  if (status === "authenticated") return <Navigate to={redirectTo} replace />;
+
   const update = (key) => (event) => setForm(current => ({ ...current, [key]: event.target.value }));
+
   async function handleSubmit(event) {
     event.preventDefault();
     setError(""); setMessage("");
+    if (isSignup && form.name.trim().length < 2) { setError("Enter your name (at least 2 characters)."); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) { setError("Enter a valid email address."); return; }
     if (form.password.length < 8) { setError("Use a password with at least 8 characters."); return; }
     setBusy(true);
     try {
-      const response = await axios.post(`${API}/auth/${isSignup ? "signup" : "signin"}`, form);
-      if (response.data.token) localStorage.setItem("vupsrouter_token", response.data.token);
-      setMessage(isSignup ? "Account created. You're ready to get moving." : "Signed in successfully. Welcome back.");
-      window.setTimeout(() => navigate("/"), 900);
+      if (isSignup) {
+        await signUp({ name: form.name.trim(), email: form.email.trim(), password: form.password });
+        setMessage("Account created. You're ready to get moving.");
+      } else {
+        await signIn({ email: form.email.trim(), password: form.password });
+        setMessage("Signed in successfully. Welcome back.");
+      }
+      window.setTimeout(() => navigate(redirectTo, { replace: true }), 700);
     } catch (err) {
-      setError(err.response?.data?.message || "Couldn't connect to the server. Start the API and try again.");
+      setError(getApiErrorMessage(err));
     } finally { setBusy(false); }
   }
   return <div className="auth-layout"><div className="auth-art-panel"><Link to="/" className="brand auth-brand"><span className="brand-mark"><RouteRoundedIcon /></span><span>vups<span className="brand-light">router</span></span></Link><div className="auth-art-copy"><div className="eyebrow"><span className="eyebrow-line"/> FREE AI, MADE CLEAR</div><h1>Find your next<br/><span>AI model.</span></h1><p>Compare free access options and open models.</p><div className="auth-art-lines"><span/><span/><span/><span/><span/></div></div><div className="auth-art-foot"><span>FREE AI / CLEAR CHOICES</span><span>VUPSROUTER / 2026</span></div></div>
@@ -145,5 +145,12 @@ function ScrollToTop() {
 }
 
 export default function App() {
-  return <><ScrollToTop /><Routes><Route path="/" element={<Home />} /><Route path="/signup" element={<AuthPage mode="signup" />} /><Route path="/signin" element={<AuthPage mode="signin" />} /><Route path="*" element={<div className="not-found"><Header/><h1>That route went nowhere.</h1><Link to="/">Return home</Link></div>} /></Routes></>;
+  return <AuthProvider><ScrollToTop /><Routes>
+    <Route path="/" element={<Home />} />
+    <Route path="/signup" element={<AuthPage mode="signup" />} />
+    <Route path="/signin" element={<AuthPage mode="signin" />} />
+    <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
+    <Route path="/chat" element={<RequireAuth><ChatPage /></RequireAuth>} />
+    <Route path="*" element={<div className="not-found"><SiteHeader/><h1>That route went nowhere.</h1><Link to="/">Return home</Link></div>} />
+  </Routes></AuthProvider>;
 }

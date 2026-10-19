@@ -1,0 +1,971 @@
+/* ============================================================
+   VupsRouter Chat — chat.css
+   Extends existing design tokens from styles.css.
+   All custom properties match the root tokens already set.
+   ============================================================ */
+
+/* ── Highlight.js Theme (OLED dark, lime accent) ── */
+@import "highlight.js/styles/github-dark.css";
+
+/* ── Screen-reader only ─────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Layout ─────────────────────────────────────── */
+.vr-chat-layout {
+  display: flex;
+  height: 100svh;
+  background: var(--bg);
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Sidebar ─────────────────────────────────────── */
+.vr-sidebar {
+  width: 256px;
+  min-width: 256px;
+  height: 100svh;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    min-width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.vr-sidebar--collapsed {
+  width: 64px;
+  min-width: 64px;
+}
+
+.vr-sidebar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 14px 14px;
+  border-bottom: 1px solid var(--line);
+  min-height: 64px;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Brand inside sidebar */
+.vr-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  text-decoration: none;
+  color: var(--color-foreground, #f2f4ef);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.8px;
+  white-space: nowrap;
+  overflow: hidden;
+  min-width: 0;
+  transition: opacity 0.2s;
+}
+.vr-brand:hover { opacity: 0.8; }
+
+.vr-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  background: var(--accent);
+  color: #10120b;
+  border-radius: 9px;
+  flex-shrink: 0;
+}
+
+.vr-brand-name {
+  overflow: hidden;
+  white-space: nowrap;
+}
+.vr-brand-name span {
+  font-weight: 300;
+  color: var(--muted);
+}
+
+.vr-sidebar-toggle {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  transition: color 0.18s, background 0.18s;
+  flex-shrink: 0;
+}
+.vr-sidebar-toggle:hover {
+  color: var(--color-foreground, #f2f4ef);
+  background: rgba(255, 255, 255, 0.06);
+}
+.vr-sidebar-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* New Chat Button */
+.vr-new-chat-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 12px 10px 8px;
+  padding: 10px 12px;
+  background: rgba(212, 255, 63, 0.07);
+  border: 1px solid rgba(212, 255, 63, 0.18);
+  border-radius: 10px;
+  color: var(--accent);
+  font: 500 13px "Outfit", sans-serif;
+  cursor: pointer;
+  transition: background 0.18s, border-color 0.18s, transform 0.18s;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.vr-new-chat-btn:hover {
+  background: rgba(212, 255, 63, 0.12);
+  border-color: rgba(212, 255, 63, 0.32);
+}
+.vr-new-chat-btn:active { transform: scale(0.97); }
+.vr-new-chat-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.vr-sidebar--collapsed .vr-new-chat-btn {
+  margin: 12px 10px 8px;
+  padding: 10px;
+  justify-content: center;
+}
+
+/* Conversation list */
+.vr-sidebar-section {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px 8px 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.vr-sidebar-label {
+  display: block;
+  padding: 6px 8px 5px;
+  font: 10px "DM Mono", monospace;
+  letter-spacing: 1.2px;
+  color: var(--muted);
+}
+
+.vr-conv-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.vr-conv-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 10px;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: #b0b8ae;
+  font: 400 13px "Outfit", sans-serif;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s, background 0.15s;
+  overflow: hidden;
+}
+.vr-conv-item:hover {
+  color: #f2f4ef;
+  background: rgba(255, 255, 255, 0.05);
+}
+.vr-conv-item--active {
+  color: var(--accent);
+  background: rgba(212, 255, 63, 0.07);
+}
+.vr-conv-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.vr-conv-icon { flex-shrink: 0; }
+.vr-conv-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Bottom nav */
+.vr-sidebar-nav {
+  border-top: 1px solid var(--line);
+  padding: 10px 8px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.vr-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: #8f9890;
+  font: 400 13px "Outfit", sans-serif;
+  text-decoration: none;
+  transition: color 0.15s, background 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.vr-nav-item:hover {
+  color: #f2f4ef;
+  background: rgba(255, 255, 255, 0.05);
+}
+.vr-nav-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* Backdrop for mobile */
+.vr-sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 9;
+  animation: vr-fade-in 0.18s ease;
+}
+
+@keyframes vr-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Mobile menu button */
+.vr-mobile-menu-btn {
+  display: none;
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 20;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: #f2f4ef;
+  padding: 8px;
+  cursor: pointer;
+  transition: background 0.18s;
+}
+.vr-mobile-menu-btn:hover { background: rgba(255, 255, 255, 0.08); }
+.vr-mobile-menu-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Main Chat Area ───────────────────────────────── */
+.vr-chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100svh;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* ── Welcome Screen ───────────────────────────────── */
+.vr-welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  overflow-y: auto;
+  text-align: center;
+}
+
+.vr-welcome-art {
+  position: relative;
+  width: 90px;
+  height: 90px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 26px;
+}
+
+.vr-welcome-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(212, 255, 63, 0.2);
+  animation: vr-welcome-pulse 3s ease-out infinite;
+}
+
+.vr-welcome-ring.ring-outer {
+  inset: -18px;
+  animation-delay: 0.5s;
+}
+
+.vr-welcome-ring.ring-inner {
+  inset: -6px;
+  border-color: rgba(212, 255, 63, 0.3);
+}
+
+@keyframes vr-welcome-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+
+.vr-welcome-icon {
+  width: 60px;
+  height: 60px;
+  background: var(--accent);
+  color: #10120b;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 0 48px rgba(212, 255, 63, 0.15);
+  position: relative;
+  z-index: 1;
+}
+
+.vr-welcome-title {
+  font-size: clamp(2rem, 5vw, 3.2rem);
+  font-weight: 600;
+  letter-spacing: -0.065em;
+  line-height: 1.1;
+  margin: 0 0 14px;
+  color: #f2f4ef;
+}
+.vr-welcome-title span { color: var(--accent); }
+
+.vr-welcome-desc {
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--muted);
+  max-width: 430px;
+  margin: 0 0 40px;
+}
+
+/* Suggestion cards */
+.vr-suggestions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  width: 100%;
+  max-width: 600px;
+}
+
+.vr-suggestion-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.18s, background 0.18s, transform 0.18s;
+  width: 100%;
+}
+.vr-suggestion-card:hover {
+  border-color: rgba(212, 255, 63, 0.28);
+  background: rgba(212, 255, 63, 0.04);
+  transform: translateY(-2px);
+}
+.vr-suggestion-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.vr-suggestion-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f2f4ef;
+  letter-spacing: -0.3px;
+}
+
+.vr-suggestion-text {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* ── Message List ─────────────────────────────────── */
+.vr-message-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 32px 0 16px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+/* ── Message Bubbles ─────────────────────────────── */
+.vr-msg {
+  display: flex;
+  gap: 14px;
+  padding: 12px max(24px, calc((100% - 720px) / 2));
+  max-width: 100%;
+  transition: background 0.15s;
+}
+
+.vr-msg--user {
+  flex-direction: row-reverse;
+}
+
+.vr-msg--user .vr-msg-body {
+  align-items: flex-end;
+}
+
+.vr-msg-avatar {
+  width: 30px;
+  height: 30px;
+  background: var(--accent);
+  color: #10120b;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.vr-msg-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  max-width: min(640px, 85%);
+}
+
+.vr-msg-text {
+  background: rgba(212, 255, 63, 0.07);
+  border: 1px solid rgba(212, 255, 63, 0.12);
+  border-radius: 14px 14px 4px 14px;
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #f2f4ef;
+  margin: 0;
+  word-break: break-word;
+}
+
+/* Assistant markdown */
+.vr-msg-md {
+  font-size: 14px;
+  line-height: 1.75;
+  color: #d4d9d1;
+  word-break: break-word;
+}
+
+.vr-msg-md p { margin: 0 0 12px; }
+.vr-msg-md p:last-child { margin-bottom: 0; }
+.vr-msg-md h1, .vr-msg-md h2, .vr-msg-md h3 {
+  color: #f2f4ef;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  margin: 20px 0 8px;
+}
+.vr-msg-md h1 { font-size: 1.3em; }
+.vr-msg-md h2 { font-size: 1.15em; }
+.vr-msg-md h3 { font-size: 1em; }
+.vr-msg-md ul, .vr-msg-md ol {
+  padding-left: 20px;
+  margin: 0 0 12px;
+}
+.vr-msg-md li { margin-bottom: 4px; }
+.vr-msg-md a { color: var(--accent); text-decoration: underline; }
+.vr-msg-md a:hover { opacity: 0.8; }
+.vr-msg-md blockquote {
+  border-left: 3px solid rgba(212, 255, 63, 0.35);
+  margin: 12px 0;
+  padding: 4px 14px;
+  color: var(--muted);
+}
+.vr-msg-md table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+  font-size: 13px;
+}
+.vr-msg-md th, .vr-msg-md td {
+  border: 1px solid var(--line);
+  padding: 8px 12px;
+  text-align: left;
+}
+.vr-msg-md th {
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 600;
+  color: #f2f4ef;
+}
+.vr-msg-md hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 16px 0;
+}
+
+/* Streaming cursor */
+.vr-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  background: var(--accent);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  border-radius: 2px;
+  animation: vr-blink 0.85s step-end infinite;
+}
+
+@keyframes vr-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Inline code */
+.vr-inline-code {
+  font-family: "DM Mono", monospace;
+  font-size: 0.88em;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1px 5px;
+  border-radius: 5px;
+  color: #d4ff3f;
+}
+
+/* Code blocks */
+.vr-code-block {
+  background: #0d1117;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+.vr-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.vr-code-lang {
+  font: 10px "DM Mono", monospace;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.vr-code-copy {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: 11px "Outfit", sans-serif;
+  cursor: pointer;
+  padding: 3px 7px;
+  border-radius: 5px;
+  transition: color 0.18s, background 0.18s;
+}
+.vr-code-copy:hover {
+  color: #f2f4ef;
+  background: rgba(255, 255, 255, 0.07);
+}
+.vr-code-copy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.vr-code-block pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.vr-code-block code {
+  font-family: "DM Mono", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+/* Thinking dots */
+.vr-thinking {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 14px 4px;
+}
+
+.vr-thinking span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.35;
+  animation: vr-think 1.4s ease-in-out infinite;
+}
+.vr-thinking span:nth-child(2) { animation-delay: 0.22s; }
+.vr-thinking span:nth-child(3) { animation-delay: 0.44s; }
+
+@keyframes vr-think {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+/* Error message */
+.vr-msg--error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  margin: 8px max(24px, calc((100% - 720px) / 2));
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  border-radius: 10px;
+  color: #fca5a5;
+  font-size: 13px;
+  line-height: 1.5;
+  flex-wrap: wrap;
+}
+
+.vr-retry-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #f2f4ef;
+  font: 12px "Outfit", sans-serif;
+  cursor: pointer;
+  padding: 5px 10px;
+  margin-left: auto;
+  transition: background 0.18s;
+  white-space: nowrap;
+}
+.vr-retry-btn:hover { background: rgba(255, 255, 255, 0.1); }
+.vr-retry-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Composer & PromptBar ─────────────────────────── */
+.vr-composer {
+  padding: 12px max(24px, calc((100% - 760px) / 2)) 16px;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+
+.vr-prompt-bar-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.vr-prompt-bar.prompt-bar {
+  --pb-bg: #111416;
+  --pb-ink: #f2f4ef;
+  --pb-menu: #181c20;
+  --pb-spark: #d4ff3f;
+  --pb-w: 100%;
+  --pb-radius: 16px;
+  width: 100%;
+  font-family: "Outfit", sans-serif;
+}
+
+.vr-prompt-bar .prompt-bar__field {
+  border: 1px solid var(--line);
+  background: #111416;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.vr-prompt-bar .prompt-bar__field:focus-within {
+  border-color: rgba(212, 255, 63, 0.4);
+  box-shadow: 0 0 0 1px rgba(212, 255, 63, 0.2), 0 8px 30px rgba(0, 0, 0, 0.55);
+}
+
+.vr-prompt-bar .prompt-bar__input {
+  font-family: "Outfit", sans-serif;
+  font-size: 14px;
+  color: #f2f4ef;
+}
+
+.vr-prompt-bar .prompt-bar__input::placeholder {
+  color: var(--muted);
+}
+
+.vr-prompt-bar .prompt-bar__send[data-armed] {
+  background: var(--accent);
+  color: #090b0d;
+}
+
+.vr-prompt-bar .prompt-bar__send[data-armed]:hover {
+  background: #e2ff66;
+}
+
+.vr-prompt-bar .prompt-bar__send:focus-visible,
+.vr-prompt-bar .prompt-bar__tool:focus-visible,
+.vr-prompt-bar .prompt-bar__pick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.vr-prompt-bar .prompt-bar__menu {
+  border: 1px solid var(--line);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7);
+  background: #181c20;
+}
+
+.vr-prompt-bar .prompt-bar__row[aria-selected="true"],
+.vr-prompt-bar .prompt-bar__row:hover {
+  background: rgba(212, 255, 63, 0.08);
+}
+
+.vr-prompt-bar .prompt-bar__row-check[data-on] {
+  color: var(--accent);
+}
+
+/* ── ThoughtLine integration ─────────────────────── */
+.vr-thoughtline-container {
+  display: flex;
+  margin: 2px 0 10px 0;
+  max-width: 100%;
+}
+
+.vr-thought-line.thought-line {
+  --tl-color: #9ca39c;
+  --tl-glyph: #d4ff3f;
+  --tl-font: 13px;
+  background: rgba(242, 244, 239, 0.03);
+  border: 1px solid rgba(242, 244, 239, 0.08);
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-family: "Outfit", sans-serif;
+  transition: border-color 0.2s, background 0.2s;
+  max-width: 100%;
+}
+
+.vr-thought-line.thought-line[data-working] {
+  border-color: rgba(212, 255, 63, 0.25);
+  background: rgba(212, 255, 63, 0.04);
+}
+
+.vr-thought-line .thought-line__step {
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+}
+
+.vr-thought-line .thought-line__step[data-done] .thought-line__mark {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.vr-thought-line .thought-line__pulse {
+  background: var(--accent);
+}
+
+.vr-thought-line .thought-line__head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.vr-composer-hint {
+  text-align: center;
+  font: 11px "DM Mono", monospace;
+  color: #4d5650;
+  margin: 8px 0 0;
+  letter-spacing: 0.3px;
+}
+
+/* ── Reduced Motion ───────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .vr-welcome-ring,
+  .vr-cursor,
+  .vr-thinking span,
+  .vr-sidebar,
+  .vr-suggestion-card,
+  .vr-send-btn {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ── Responsive: Tablet ───────────────────────────── */
+@media (max-width: 900px) {
+  .vr-sidebar {
+    width: 220px;
+    min-width: 220px;
+  }
+  .vr-sidebar--collapsed {
+    width: 56px;
+    min-width: 56px;
+  }
+}
+
+/* ── Responsive: Mobile ───────────────────────────── */
+@media (max-width: 650px) {
+  .vr-mobile-menu-btn {
+    display: grid;
+  }
+
+  .vr-sidebar {
+    position: fixed;
+    left: -280px;
+    top: 0;
+    bottom: 0;
+    width: 260px !important;
+    min-width: 260px !important;
+    z-index: 100;
+    transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: none;
+  }
+
+  .vr-sidebar--mobile-open {
+    left: 0;
+    box-shadow: 20px 0 60px rgba(0, 0, 0, 0.4);
+  }
+
+  .vr-chat-main {
+    padding-top: 56px;
+  }
+
+  .vr-suggestions {
+    grid-template-columns: 1fr;
+  }
+
+  .vr-msg {
+    padding: 10px 16px;
+  }
+
+  .vr-msg--error {
+    margin: 8px 16px;
+  }
+
+  .vr-composer {
+    padding: 10px 16px 14px;
+  }
+
+  .vr-welcome {
+    padding: 30px 20px;
+  }
+
+  .vr-welcome-title {
+    font-size: 2rem;
+  }
+}
+
+/* Conversation row with delete action (server-backed history) */
+.vr-conv-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.vr-conv-row .vr-conv-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.vr-conv-delete {
+  flex-shrink: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-left: 2px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: #7d867c;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.vr-conv-row:hover .vr-conv-delete,
+.vr-conv-delete:focus-visible {
+  display: flex;
+}
+
+.vr-conv-delete:hover {
+  color: #ff9d9d;
+  background: rgba(255, 100, 100, 0.1);
+}
+
+/* Sidebar sign-out is a button now — match the link items */
+button.vr-nav-item {
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+/* Composer notice (missing provider / model) */
+.vr-notice {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: 860px;
+  margin: 0 auto 12px;
+  padding: 11px 14px;
+  border: 1px solid rgba(212, 255, 63, 0.28);
+  border-radius: 10px;
+  background: rgba(212, 255, 63, 0.05);
+  color: #d8dfd1;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.vr-notice svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.vr-notice a {
+  margin-left: auto;
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.vr-notice a:hover {
+  text-decoration: underline;
+}
