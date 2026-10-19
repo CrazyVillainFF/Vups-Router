@@ -6,6 +6,7 @@ import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import RouteRoundedIcon from "@mui/icons-material/RouteRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
+import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
 import { useAuth } from "../context/AuthContext.jsx";
 
 export default function SiteHeader() {
@@ -29,10 +30,16 @@ export default function SiteHeader() {
           <span className="brand-mark"><RouteRoundedIcon /></span>
           <span>vups<span className="brand-light">router</span></span>
         </Link>
-        <nav className={menuOpen ? "nav-links nav-open" : "nav-links"} aria-label="Main navigation">
+        <nav id="main-nav" className={menuOpen ? "nav-links nav-open" : "nav-links"} aria-label="Main navigation">
           <a href="/#features" onClick={() => setMenuOpen(false)}>Free models</a>
           <a href="/#how-it-works" onClick={() => setMenuOpen(false)}>How to choose</a>
-          <NavLink to="/chat" onClick={() => setMenuOpen(false)}>Try AI</NavLink>
+          <NavLink
+            to="/chat"
+            onClick={() => setMenuOpen(false)}
+            className={({ isActive }) => `nav-chat${isActive ? " nav-chat-active" : ""}`}
+          >
+            <ChatBubbleOutlineRoundedIcon fontSize="small" /> AI Chat
+          </NavLink>
           {status === "authenticated" && (
             <NavLink to="/settings" onClick={() => setMenuOpen(false)}>API settings</NavLink>
           )}
@@ -73,7 +80,7 @@ export default function SiteHeader() {
             </>
           )}
         </nav>
-        <IconButton className="menu-toggle" aria-label="Toggle navigation" onClick={() => setMenuOpen(!menuOpen)}>
+        <IconButton className="menu-toggle" aria-label="Toggle navigation" aria-expanded={menuOpen} aria-controls="main-nav" onClick={() => setMenuOpen(!menuOpen)}>
           <MenuRoundedIcon />
         </IconButton>
       </Container>

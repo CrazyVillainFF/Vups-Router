@@ -95,6 +95,21 @@ export const PROVIDERS = [
     note: "Router across providers. Enter the OpenAI-compatible base URL shown in your Requesty dashboard.",
     cost: "Free credits at signup; check official pricing."
   },
+  {
+    id: "agentrouter",
+    name: "AgentRouter",
+    category: "aggregator",
+    deployment: "hosted",
+    compatibility: "openai",
+    status: "supported",
+    baseUrl: "https://agentrouter.org/v1",
+    website: "https://agentrouter.org/",
+    keysUrl: "https://ps.air-outer.com/console/token",
+    docsUrl: "https://www.agentrouter.org/docs/",
+    pricingUrl: "https://ps.air-outer.com/pricing",
+    note: "OpenAI-compatible gateway. The official docs give https://agentrouter.org/v1 as the base URL and say the model catalog changes — copy current model IDs from the official console if discovery does not return them.",
+    cost: "API key required. No free tier is documented — check the official console/pricing for current models and any credits."
+  },
 
   // ─── Direct model providers ─────────────────────────────────────────────
   {

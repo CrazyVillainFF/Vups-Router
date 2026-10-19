@@ -81,6 +81,17 @@ test("FlagshipRouter is present with its documented localhost default", () => {
   assert.match(entry.note, /tunnel|localhost/i);
 });
 
+test("AgentRouter uses its documented OpenAI-compatible base URL and makes no unverified free-tier claim", () => {
+  const entry = providerById("agentrouter");
+  assert.ok(entry, "agentrouter entry missing");
+  assert.equal(entry.category, "aggregator");
+  assert.equal(entry.status, "supported");
+  assert.equal(entry.compatibility, "openai");
+  assert.equal(entry.baseUrl, "https://agentrouter.org/v1");
+  assert.match(entry.docsUrl, /^https:\/\/www\.agentrouter\.org\/docs\//);
+  assert.match(entry.cost, /no free tier is documented/i);
+});
+
 test("custom endpoints exist for both OpenAI and Anthropic shapes", () => {
   const openai = providerById("custom-openai");
   const anthropic = providerById("custom-anthropic");

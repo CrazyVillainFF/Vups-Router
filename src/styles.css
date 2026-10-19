@@ -18,3 +18,22 @@ html{scroll-behavior:smooth;scroll-padding-top:84px}body{margin:0;min-width:320p
 .recovery-actions{display:flex;flex-direction:column;gap:9px;margin-bottom:14px}
 .auth-text-btn{background:none;border:0;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 @media(max-width:400px){.recovery-code-area{transform:scale(.92);transform-origin:center top}}
+.nav-links .nav-chat{display:inline-flex;align-items:center;gap:7px;padding:6px 0;border-bottom:1px solid transparent;transition:color .2s,border-color .2s}
+.nav-chat svg{font-size:16px}
+.nav-links .nav-chat:hover,.nav-links .nav-chat.nav-chat-active{color:var(--accent)!important;border-bottom-color:var(--accent)}
+.nav-chat:focus-visible,.nav-links>a:not(.MuiButton-root):focus-visible{outline:2px solid var(--accent);outline-offset:6px;border-radius:4px}
+.chat-hub{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(30px,6vw,90px);align-items:center;max-width:1500px;margin:auto;padding-top:10px;padding-bottom:140px}
+.chat-hub h2{font-size:clamp(2.8rem,5.2vw,5.2rem);font-weight:550;letter-spacing:-.07em;line-height:1.02;margin:24px 0 18px}
+.chat-hub-copy>p{max-width:440px;color:#9ba398;line-height:1.8;font-size:14px;margin:0 0 28px}
+.chat-hub-actions{display:flex;flex-wrap:wrap;gap:14px}
+.chat-hub-actions .MuiButton-root{min-height:49px}
+.a2a-card{position:relative;border:1px solid var(--line);border-radius:16px;background:radial-gradient(ellipse at 85% 0%,rgba(212,255,63,.08),transparent 55%),#0e110f;padding:30px 30px 28px;display:flex;flex-direction:column;gap:14px;min-height:260px}
+.a2a-top{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.a2a-icon{display:grid;place-items:center;width:43px;height:43px;border:1px solid rgba(212,255,63,.28);border-radius:12px;color:var(--accent)}
+.a2a-icon svg{font-size:21px}
+.a2a-badge{font:9px var(--mono);letter-spacing:1.4px;text-transform:uppercase;color:var(--accent);border:1px solid rgba(212,255,63,.35);border-radius:100px;padding:7px 11px;background:#d4ff3f0c}
+.a2a-card h3{font-size:23px;font-weight:500;letter-spacing:-.6px;margin:8px 0 0}
+.a2a-card p{font-size:13px;line-height:1.8;color:#929a90;margin:0;max-width:380px}
+.a2a-card .text-link{margin-top:auto;padding-top:6px;width:fit-content}
+@media(max-width:900px){.chat-hub{grid-template-columns:1fr;gap:34px;align-items:start}}
+@media(max-width:650px){.nav-links .nav-chat{padding:2px 0}.chat-hub{padding-top:0;padding-bottom:95px}.chat-hub h2{font-size:clamp(2.9rem,12vw,4.5rem)}.a2a-card{padding:24px;min-height:0}.a2a-card h3{font-size:21px}}

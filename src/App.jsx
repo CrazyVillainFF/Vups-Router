@@ -16,6 +16,8 @@ import RouteRoundedIcon from "@mui/icons-material/RouteRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import ShieldRoundedIcon from "@mui/icons-material/ShieldRounded";
 import SpeedRoundedIcon from "@mui/icons-material/SpeedRounded";
+import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
+import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
 import { getApiErrorMessage } from "./services/api.js";
 
 function useReveal() {
@@ -78,6 +80,10 @@ function Home() {
     <section id="features" className="features-section section-pad">
       <div className="section-heading reveal"><div><div className="eyebrow"><span className="eyebrow-line"/> START WITHOUT THE SPEND</div><h2>Free to try.<br/><span>Built for different tasks.</span></h2></div><p>Find a free starting point for your next AI task.</p></div>
       <div className="feature-grid">{features.map((feature,i)=><article className={`feature-card reveal delay-${i+1}`} key={feature.number}><div className="feature-top"><span className="feature-icon">{feature.icon}</span><span className="feature-number">{feature.number}</span></div><h3>{feature.title}</h3><p>{feature.text}</p><a className="feature-arrow" href={feature.url} target="_blank" rel="noreferrer" aria-label={feature.ariaLabel}><NorthEastRoundedIcon /></a></article>)}</div>
+    </section>
+    <section id="ai-chat" className="chat-hub section-pad">
+      <div className="chat-hub-copy reveal"><div className="eyebrow"><span className="eyebrow-line"/> TALK TO AI</div><h2>AI Chat</h2><p>Chat with AI models, explore free options, and discover new ways to use AI.</p><div className="chat-hub-actions"><Button component={Link} to="/chat" variant="contained" startIcon={<ChatBubbleOutlineRoundedIcon />}>Go to Chat</Button></div></div>
+      <div className="a2a-card reveal delay-1"><div className="a2a-top"><span className="a2a-icon"><ForumRoundedIcon /></span><span className="a2a-badge">Coming soon</span></div><h3>Try AI-to-AI Chats</h3><p>Two models, one conversation. This experience isn’t live yet — meanwhile, open AI Chat and use the /compare command to compare free models side by side.</p><Link className="text-link" to="/chat">Open AI Chat <NorthEastRoundedIcon fontSize="small"/></Link></div>
     </section>
     <section id="how-it-works" className="manifesto section-pad">
       <div className="manifesto-art reveal"><div className="manifesto-ring ring-a"/><div className="manifesto-ring ring-b"/><div className="manifesto-core"><AutoAwesomeRoundedIcon /></div><span className="manifesto-tag tag-a">FREE TIERS</span><span className="manifesto-tag tag-b">OPEN WEIGHTS</span><span className="manifesto-tag tag-c">MODEL CHOICE</span></div>
