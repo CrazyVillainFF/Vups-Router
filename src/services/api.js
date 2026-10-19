@@ -79,6 +79,12 @@ export async function fetchProviderModels() {
   return data.models;
 }
 
+export async function fetchSharedModelStatus() {
+  ensureApiBaseURL();
+  const { data } = await apiClient.get("/settings/shared-model");
+  return data.shared;
+}
+
 // ─── Conversations ──────────────────────────────────────────────────────────
 
 export async function listConversations() {

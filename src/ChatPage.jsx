@@ -32,6 +32,7 @@ import {
   deleteConversation,
   fetchProviderConfig,
   fetchProviderModels,
+  fetchSharedModelStatus,
   getApiErrorMessage,
   getConversation,
   listConversations,
@@ -115,6 +116,25 @@ function errorMessageFor(error) {
   if (error instanceof ChatConfigError || error instanceof ChatNetworkError) return error.message;
   return getApiErrorMessage(error);
 }
+
+function sharedModelNotice(shared) {
+  if (!shared) return "Checking the shared model — try again in a moment.";
+  if (shared.status === "disabled") {
+    return "The shared AI model has been disabled. Connect your own AI provider in API settings to keep chatting.";
+  }
+  if (shared.status === "unreachable") {
+    return "The shared AI model server is unreachable right now. Try again shortly, or connect your own provider.";
+  }
+  if (shared.status === "missing_model") {
+    return `The shared model (${shared.model}) is not available on the shared server right now. Try again later or connect your own provider.`;
+  }
+  if (shared.status === "not_configured") {
+    return "No shared AI model is configured on this server. Connect your own AI provider to start chatting.";
+  }
+  return "The shared AI model is unavailable right now. Connect your own AI provider in API settings.";
+}
+
+const SHARED_TAG = "Shared · no key needed";
 
 // ─── Code Block with Copy ───────────────────────────────────────────────────
 
@@ -269,7 +289,7 @@ const SUGGESTIONS = [
   },
 ];
 
-function WelcomeScreen({ onSuggestion, configured, modelName }) {
+function WelcomeScreen({ onSuggestion, configured, modelName, sharedActive, sharedLoading }) {
   return (
     <div className="vr-welcome">
       <div className="vr-welcome-art" aria-hidden="true">
@@ -284,8 +304,12 @@ function WelcomeScreen({ onSuggestion, configured, modelName }) {
       </h1>
       <p className="vr-welcome-desc">
         {configured
-          ? `Chatting with ${modelName || "your configured model"} through your own provider.`
-          : "Connect your own AI provider in API settings, then ask anything about free AI models, hosted APIs, open-weight options, and local deployment."}
+          ? sharedActive
+            ? `Chatting with ${modelName || "the shared model"} — no API key needed.`
+            : `Chatting with ${modelName || "your configured model"} through your own provider.`
+          : sharedLoading
+            ? "Checking for an available AI model…"
+            : "Connect your own AI provider in API settings, then ask anything about free AI models, hosted APIs, open-weight options, and local deployment."}
       </p>
       <ul className="vr-suggestions" role="list" aria-label="Suggested prompts">
         {SUGGESTIONS.map((s) => (
@@ -499,6 +523,7 @@ export default function ChatPage() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [config, setConfig] = useState(null);
   const [providerModels, setProviderModels] = useState([]);
+  const [shared, setShared] = useState(null);
   const [notice, setNotice] = useState("");
   const [currentEffort, setCurrentEffort] = useState("Medium");
   const abortRef = useRef(null);
@@ -517,10 +542,14 @@ export default function ChatPage() {
     if (initializedRef.current) return;
     initializedRef.current = true;
     refreshConversations();
-    fetchProviderConfig()
-      .then((stored) => {
+    Promise.all([
+      fetchProviderConfig(),
+      fetchSharedModelStatus().catch(() => null),
+    ])
+      .then(([stored, sharedStatus]) => {
         setConfig(stored);
-        if (stored?.configured) {
+        setShared(sharedStatus);
+        if (stored?.configured || sharedStatus?.available) {
           fetchProviderModels()
             .then((models) => setProviderModels(models))
             .catch(() => setProviderModels([]));
@@ -530,11 +559,22 @@ export default function ChatPage() {
   }, [refreshConversations]);
 
   const modelChoices = providerModels.length > 0
-    ? providerModels.map((model) => ({ key: model.id, name: model.id, tag: model.ownedBy || "available" }))
+    ? providerModels.map((model) => ({
+        key: model.id,
+        name: model.id,
+        tag: model.shared ? SHARED_TAG : model.ownedBy || "available",
+      }))
     : config?.model
       ? [{ key: config.model, name: config.model, tag: "saved" }]
-      : [];
-  const activeModelKey = modelChoices[0]?.key || config?.model || "";
+      : shared?.available
+        ? [{ key: shared.model, name: shared.model, tag: SHARED_TAG }]
+        : [];
+  const activeModelKey = modelChoices[0]?.key || config?.model || shared?.model || "";
+  const canChat = Boolean(config?.configured || shared?.available);
+  const activeIsShared = Boolean(
+    providerModels.find((model) => model.id === activeModelKey)?.shared ||
+      (!config?.configured && shared?.available)
+  );
 
   function startNewConversation() {
     abortRef.current?.abort();
@@ -577,8 +617,8 @@ export default function ChatPage() {
   async function handleSend(text, retryHistory, meta) {
     if (loading || typeof text !== "string" || !text.trim()) return;
 
-    if (!config?.configured) {
-      setNotice("Connect your own AI provider first — open API settings and paste your key.");
+    if (!canChat) {
+      setNotice(sharedModelNotice(shared));
       return;
     }
 
@@ -705,8 +745,10 @@ export default function ChatPage() {
         {messages.length === 0 ? (
           <WelcomeScreen
             onSuggestion={(text) => handleSend(text)}
-            configured={Boolean(config?.configured)}
+            configured={canChat}
             modelName={activeModelKey}
+            sharedActive={activeIsShared}
+            sharedLoading={shared === null && !config?.configured}
           />
         ) : (
           <MessageList
@@ -726,19 +768,23 @@ export default function ChatPage() {
               <Link to="/settings">Open API settings</Link>
             </div>
           )}
-          {!config?.configured && !notice && (
+          {!canChat && !notice && (
             <div className="vr-notice" role="alert">
               <Warning size={15} weight="fill" aria-hidden="true" />
-              <span>Connect your own AI provider to start chatting.</span>
+              <span>{sharedModelNotice(shared)}</span>
               <Link to="/settings">Open API settings</Link>
             </div>
           )}
           <div className="vr-prompt-bar-wrap">
             <PromptBar
               placeholder={
-                config?.configured
-                  ? "Ask anything — your provider, your key, your model…"
-                  : "Configure an AI provider in API settings first…"
+                !canChat
+                  ? shared === null
+                    ? "Checking for an available AI model…"
+                    : "No AI model available — connect a provider in API settings…"
+                  : activeIsShared
+                    ? "Ask anything — using the shared model, no API key needed…"
+                    : "Ask anything — your provider, your key, your model…"
               }
               sources={VUPS_SOURCES}
               commands={VUPS_COMMANDS}
