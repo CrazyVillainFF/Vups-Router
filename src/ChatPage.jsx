@@ -194,7 +194,7 @@ const MARKDOWN_COMPONENTS = {
 
 // ─── Message Bubble ─────────────────────────────────────────────────────────
 
-function Message({ message, isStreaming, currentSteps, onRetry }) {
+function Message({ message, isStreaming, currentSteps, onRetry, onContinue }) {
   const isUser = message.role === "user";
   const isError = message.role === "error";
 
@@ -269,6 +269,22 @@ function Message({ message, isStreaming, currentSteps, onRetry }) {
                   {message.content}
                 </ReactMarkdown>
                 {isStreaming && <span className="vr-cursor" aria-hidden="true" />}
+              </div>
+            ) : null}
+            {!isStreaming && message.truncated && message.content ? (
+              <div className="vr-truncated" role="status">
+                <Warning size={14} weight="fill" aria-hidden="true" />
+                <span>
+                  {message.truncated === "length"
+                    ? "Response reached its length limit."
+                    : "The response ended unexpectedly."}
+                </span>
+                {onContinue ? (
+                  <button type="button" className="vr-continue-btn" onClick={onContinue}>
+                    <ArrowClockwise size={13} />
+                    Continue generating
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </>
@@ -477,7 +493,7 @@ function Sidebar({
 
 // ─── Message List ────────────────────────────────────────────────────────────
 
-function MessageList({ messages, streamingId, loading, onRetry, currentSteps }) {
+function MessageList({ messages, streamingId, loading, onRetry, onContinue, currentSteps }) {
   const bottomRef = useRef(null);
   const listRef = useRef(null);
   const isNearBottom = useRef(true);
@@ -514,6 +530,11 @@ function MessageList({ messages, streamingId, loading, onRetry, currentSteps }) 
           isStreaming={msg.id === streamingId}
           currentSteps={msg.id === streamingId ? currentSteps : msg.steps || []}
           onRetry={msg.role === "error" && i === messages.length - 1 ? onRetry : undefined}
+          onContinue={
+            msg.role === "assistant" && msg.truncated && i === messages.length - 1 && !loading
+              ? () => onContinue?.(msg.id)
+              : undefined
+          }
         />
       ))}
       <div ref={bottomRef} aria-hidden="true" />
@@ -667,7 +688,7 @@ export default function ChatPage() {
     abortRef.current = controller;
 
     try {
-      await streamChatResponse({
+      const result = await streamChatResponse({
         conversationId: activeConvId,
         messages: history,
         model: modelKey,
@@ -705,6 +726,13 @@ export default function ChatPage() {
           });
         },
       });
+      if (result?.finishReason === "length" || result?.finishReason === "error") {
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === assistantId ? { ...message, truncated: result.finishReason } : message
+          )
+        );
+      }
       await refreshConversations();
     } catch (error) {
       if (error.name !== "AbortError") {
@@ -724,6 +752,90 @@ export default function ChatPage() {
 
   function handleStop() {
     abortRef.current?.abort();
+  }
+
+  const CONTINUE_INSTRUCTION =
+    "Continue from exactly where you stopped. Do not repeat any previously generated text — output only the continuation.";
+
+  async function handleContinue(targetId) {
+    if (loading) return;
+    const targetIndex = messages.findIndex((message) => message.id === targetId);
+    if (targetIndex === -1) return;
+    const target = messages[targetIndex];
+    if (!target?.content?.trim()) return;
+    if (!canChat) {
+      setNotice(sharedModelNotice(shared));
+      return;
+    }
+    const modelKey = activeModelKey;
+    if (!modelKey) {
+      setNotice("Choose a model in API settings before chatting.");
+      return;
+    }
+
+    setNotice("");
+    const history = requestHistory(messages.slice(0, targetIndex + 1)).slice(-40);
+    if (history.length === 0 || history[history.length - 1].role !== "assistant") return;
+    const initialSteps = ["Continuing response"];
+
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === targetId ? { ...message, truncated: null, steps: initialSteps } : message
+      )
+    );
+    setLoading(true);
+    setStreamingId(targetId);
+    setCurrentSteps(initialSteps);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const result = await streamChatResponse({
+        conversationId: activeConvId,
+        messages: [...history, { role: "user", content: CONTINUE_INSTRUCTION }],
+        model: modelKey,
+        temperature: EFFORT_TEMPERATURE[currentEffort] ?? 0.7,
+        signal: controller.signal,
+        onChunk: (chunk) => {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === targetId ? { ...message, content: message.content + chunk } : message
+            )
+          );
+        },
+        onStep: (step) => {
+          setCurrentSteps((prev) => {
+            const next = prev.includes(step) ? prev : [...prev, step];
+            setMessages((all) =>
+              all.map((message) => (message.id === targetId ? { ...message, steps: next } : message))
+            );
+            return next;
+          });
+        },
+      });
+      if (result?.finishReason === "length" || result?.finishReason === "error") {
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === targetId ? { ...message, truncated: result.finishReason } : message
+          )
+        );
+      }
+      await refreshConversations();
+    } catch (error) {
+      if (error.name !== "AbortError") {
+        setMessages((prev) => [
+          ...prev.map((message) => (message.id === targetId ? { ...message, truncated: "error" } : message)),
+          { id: generateId(), role: "error", content: errorMessageFor(error) },
+        ]);
+      } else {
+        await refreshConversations();
+      }
+    } finally {
+      setLoading(false);
+      setStreamingId(null);
+      abortRef.current = null;
+    }
   }
 
   function handleRetry() {
@@ -778,6 +890,7 @@ export default function ChatPage() {
             streamingId={streamingId}
             loading={loading}
             onRetry={handleRetry}
+            onContinue={handleContinue}
             currentSteps={currentSteps}
           />
         )}

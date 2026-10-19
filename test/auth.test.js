@@ -167,6 +167,55 @@ test("streamChatResponse posts to the backend proxy and forwards SSE deltas", as
   assert.deepEqual(body.messages, [{ role: "user", content: "hi" }]);
 });
 
+test("streamChatResponse preserves finish_reason and does not end early on empty or usage-only chunks", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalBaseURL = apiClient.defaults.baseURL;
+  apiClient.defaults.baseURL = "https://api.example.test/api";
+  const chunks = [];
+  globalThis.fetch = async () => new Response(sse(
+    { type: "meta", conversationId: "conv-finish" },
+    { type: "delta", content: "part" },
+    { type: "delta" },
+    { type: "delta", content: "ial" },
+    { type: "usage", usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 } },
+    { type: "done", conversationId: "conv-finish", finishReason: "length", usage: { total_tokens: 5 } }
+  ), { status: 200 });
+
+  try {
+    const result = await streamChatResponse({
+      messages: [{ role: "user", content: "hi" }],
+      model: "model-x",
+      onChunk: chunk => chunks.push(chunk)
+    });
+    assert.equal(result.content, "partial", "empty deltas and usage-only chunks must not cut the stream short");
+    assert.equal(result.conversationId, "conv-finish");
+    assert.equal(result.finishReason, "length", "truncated answers must be distinguishable from complete ones");
+    assert.deepEqual(chunks, ["part", "ial"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    apiClient.defaults.baseURL = originalBaseURL;
+  }
+});
+
+test("streamChatResponse keeps content when the stream ends without a done event", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalBaseURL = apiClient.defaults.baseURL;
+  apiClient.defaults.baseURL = "https://api.example.test/api";
+  globalThis.fetch = async () => new Response(sse(
+    { type: "meta", conversationId: "conv-nodone" },
+    { type: "delta", content: "answer without done" }
+  ), { status: 200 });
+
+  try {
+    const result = await streamChatResponse({ messages: [{ role: "user", content: "hi" }], model: "m" });
+    assert.equal(result.content, "answer without done");
+    assert.equal(result.finishReason, null, "an unknown finish state must not be reported as complete");
+  } finally {
+    globalThis.fetch = originalFetch;
+    apiClient.defaults.baseURL = originalBaseURL;
+  }
+});
+
 test("streamChatResponse surfaces provider errors sent mid-stream", async () => {
   const originalFetch = globalThis.fetch;
   const originalBaseURL = apiClient.defaults.baseURL;

@@ -52,7 +52,7 @@ function toRequestMessages(messages) {
  * @param {(payload: {conversationId: string}) => void} [options.onMeta] Called once with the conversation id.
  * @param {(chunk: string) => void} [options.onChunk] Called with each streamed text chunk.
  * @param {(step: string) => void} [options.onStep] Called with progress steps.
- * @returns {Promise<{content: string, conversationId: string|null}>}
+ * @returns {Promise<{content: string, conversationId: string|null, finishReason: string|null}>}
  */
 export async function streamChatResponse({ conversationId, messages, model, temperature, signal, onMeta, onChunk, onStep } = {}) {
   const body = {
@@ -101,6 +101,7 @@ export async function streamChatResponse({ conversationId, messages, model, temp
   let fullText = "";
   let resolvedConversationId = conversationId || null;
   let streamError = null;
+  let finishReason = null;
 
   try {
     while (true) {
@@ -133,6 +134,9 @@ export async function streamChatResponse({ conversationId, messages, model, temp
           }
         } else if (event.type === "done") {
           if (event.conversationId) resolvedConversationId = event.conversationId;
+          if (typeof event.finishReason === "string" && event.finishReason) {
+            finishReason = event.finishReason;
+          }
           onStep?.("Response complete");
         } else if (event.type === "error") {
           streamError = event.message || "The provider reported an error.";
@@ -147,5 +151,5 @@ export async function streamChatResponse({ conversationId, messages, model, temp
   if (streamError) throw new ChatNetworkError(streamError, null);
   if (!fullText.trim()) throw new ChatNetworkError("The provider returned an empty response. Check the model ID in Settings.", null);
 
-  return { content: fullText, conversationId: resolvedConversationId };
+  return { content: fullText, conversationId: resolvedConversationId, finishReason };
 }
