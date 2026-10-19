@@ -107,7 +107,7 @@ export const PROVIDERS = [
     keysUrl: "https://ps.air-outer.com/console/token",
     docsUrl: "https://www.agentrouter.org/docs/",
     pricingUrl: "https://ps.air-outer.com/pricing",
-    note: "OpenAI-compatible gateway. The official docs give https://agentrouter.org/v1 as the base URL and say the model catalog changes — copy current model IDs from the official console if discovery does not return them.",
+    note: "OpenAI-compatible gateway at https://agentrouter.org/v1. Its GPT models use the OpenAI Responses API; VupsRouter routes gpt-* models there automatically and keeps other models on chat completions. The catalog changes — copy current model IDs from the official console if discovery does not return them.",
     cost: "API key required. No free tier is documented — check the official console/pricing for current models and any credits."
   },
 
