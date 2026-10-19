@@ -1,11 +1,17 @@
 export const MODEL_SELECTION_STORAGE_KEY = "vupsrouter.chat.modelSelection";
 export const PERSONAL_GROUP = "YOUR KEYS";
 export const SHARED_GROUP = "FREE MODELS";
+export const GATEWAY_GROUP = "OMNIROUTE GATEWAY";
+export const OMNIROUTE_SOURCE = "omniroute";
 
 function cleanEntries(entries) {
   return (Array.isArray(entries) ? entries : [])
     .filter((entry) => entry && typeof entry.id === "string" && entry.id.trim())
     .map((entry) => ({ ...entry, id: entry.id.trim() }));
+}
+
+function isGatewayEntry(entry) {
+  return entry?.gateway === true || entry?.source === OMNIROUTE_SOURCE;
 }
 
 function savedRow(entry) {
@@ -55,11 +61,80 @@ function sharedRow(entry) {
   };
 }
 
-export function buildCatalog({ models = [], shared = null } = {}) {
+export function gatewayStatusLabel(status) {
+  switch (status?.status) {
+    case "disabled":
+      return "Disabled on this server";
+    case "not_configured":
+    case "invalid_config":
+      return "Not configured on this server";
+    case "unauthorized":
+      return "Server API key rejected";
+    case "rate_limited":
+      return "Rate-limited right now";
+    case "timeout":
+      return "Connection timed out";
+    case "empty":
+      return "No models configured";
+    default:
+      return "Unreachable right now";
+  }
+}
+
+function gatewayStatusRow(status) {
+  return {
+    key: `gateway-status:${status.status}`,
+    kind: "gateway-status",
+    group: GATEWAY_GROUP,
+    name: "OmniRoute",
+    model: "",
+    configId: "",
+    providerId: "",
+    provider: "OmniRoute",
+    ownedBy: "",
+    apiKeyMasked: "",
+    saved: false,
+    shared: false,
+    gateway: true,
+    source: OMNIROUTE_SOURCE,
+    vision: null,
+    disabled: true,
+    tag: gatewayStatusLabel(status),
+    meta: "Managed by the server"
+  };
+}
+
+function gatewayRow(entry) {
+  const model = entry.id || entry.name;
+  const source = entry.source || OMNIROUTE_SOURCE;
+  const provider = entry.provider || entry.ownedBy || "OmniRoute";
+  const vision = entry.vision === true ? true : entry.vision === false ? false : null;
+  return {
+    key: `gateway:${source}:${model}`,
+    kind: "gateway",
+    group: entry.group || GATEWAY_GROUP,
+    name: entry.name || model,
+    model,
+    configId: "",
+    providerId: "",
+    provider,
+    ownedBy: entry.ownedBy || "",
+    apiKeyMasked: "",
+    saved: false,
+    shared: false,
+    gateway: true,
+    source,
+    vision,
+    tag: `${provider} gateway`,
+    meta: "Managed by the server"
+  };
+}
+
+export function buildCatalog({ models = [], shared = null, omniroute = null } = {}) {
   const entries = cleanEntries(models);
   const saved = new Map();
   for (const entry of entries) {
-    if (entry.shared === true) continue;
+    if (entry.shared === true || isGatewayEntry(entry)) continue;
     const row = savedRow(entry);
     if (!saved.has(row.key)) saved.set(row.key, row);
   }
@@ -68,25 +143,52 @@ export function buildCatalog({ models = [], shared = null } = {}) {
   // catalogue survives even when provider discovery fails, then from any
   // shared rows the models endpoint returned (which may add vision flags).
   const free = new Map();
+  const freeIds = new Set();
   const sharedStatusModels = shared?.available && Array.isArray(shared.models) ? shared.models : [];
   for (const entry of sharedStatusModels) {
     if (!entry || entry.available === false) continue;
     const id = typeof entry.id === "string" ? entry.id.trim() : typeof entry.name === "string" ? entry.name.trim() : "";
     if (!id) continue;
     const row = sharedRow({ ...entry, id, name: entry.name || id });
-    if (!free.has(row.key)) free.set(row.key, row);
+    if (!free.has(row.key)) {
+      free.set(row.key, row);
+      freeIds.add(row.model);
+    }
   }
   for (const entry of entries) {
     if (entry.shared !== true) continue;
     const row = sharedRow(entry);
-    if (!free.has(row.key)) free.set(row.key, row);
+    if (!free.has(row.key)) {
+      free.set(row.key, row);
+      freeIds.add(row.model);
+    }
   }
 
-  return [...saved.values(), ...free.values()];
+  // Gateway rows are additive: they never replace saved or free models, and a
+  // model already offered for free is not duplicated behind the gateway.
+  const gateways = new Map();
+  for (const entry of entries) {
+    if (!isGatewayEntry(entry)) continue;
+    const id = typeof entry.id === "string" ? entry.id.trim() : "";
+    if (!id || freeIds.has(id)) continue;
+    const row = gatewayRow({ ...entry, id, name: entry.name || id });
+    if (!gateways.has(row.key)) gateways.set(row.key, row);
+  }
+
+  // An intended-but-unavailable gateway gets one informational row so the
+  // picker can explain the state instead of silently showing nothing. The row
+  // is not selectable and never becomes the active model.
+  if (omniroute?.enabled && omniroute.configured && !omniroute.available && gateways.size === 0) {
+    const row = gatewayStatusRow(omniroute);
+    gateways.set(row.key, row);
+  }
+
+  return [...saved.values(), ...free.values(), ...gateways.values()];
 }
 
 export function selectionFromRow(row) {
   if (!row) return null;
+  if (row.gateway) return { kind: "gateway", source: row.source || OMNIROUTE_SOURCE, model: row.model };
   if (row.shared) return { kind: "shared", model: row.model };
   return { kind: "saved", configId: row.configId || "", model: row.model };
 }
@@ -99,6 +201,12 @@ export function resolveSelection(catalog, selection) {
   if (!wanted || typeof wanted !== "object" || typeof wanted.model !== "string") return null;
   const model = wanted.model.trim();
   if (!model) return null;
+  if (wanted.kind === "gateway") {
+    const source = typeof wanted.source === "string" ? wanted.source : "";
+    return (
+      rows.find((row) => row.gateway && row.model === model && (!source || row.source === source)) || null
+    );
+  }
   if (wanted.kind === "shared") return rows.find((row) => row.shared && row.model === model) || null;
   if (wanted.kind === "saved") {
     if (wanted.configId) {
@@ -115,11 +223,12 @@ export function resolveSelection(catalog, selection) {
 
 export function fallbackRow(catalog) {
   const rows = Array.isArray(catalog) ? catalog : [];
-  return rows.find((row) => row.shared) || rows[0] || null;
+  return rows.find((row) => row.shared) || rows.find((row) => !row.disabled) || null;
 }
 
 export function chatReference(row) {
-  if (!row) return {};
+  if (!row || row.disabled) return {};
+  if (row.gateway) return { model: row.model, source: row.source || OMNIROUTE_SOURCE };
   if (row.shared) return { model: row.model };
   return { model: row.model, configId: row.configId || undefined };
 }
@@ -138,6 +247,13 @@ export function loadStoredSelection(storage = defaultStorage()) {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return null;
+    if (parsed.kind === "gateway" && typeof parsed.model === "string" && parsed.model) {
+      return {
+        kind: "gateway",
+        source: typeof parsed.source === "string" && parsed.source ? parsed.source : OMNIROUTE_SOURCE,
+        model: parsed.model
+      };
+    }
     if (parsed.kind === "shared" && typeof parsed.model === "string" && parsed.model) {
       return { kind: "shared", model: parsed.model };
     }
@@ -158,9 +274,11 @@ export function saveStoredSelection(selection, storage = defaultStorage()) {
       return;
     }
     const payload =
-      selection.kind === "saved"
-        ? { kind: "saved", configId: selection.configId || "", model: selection.model }
-        : { kind: "shared", model: selection.model };
+      selection.kind === "gateway"
+        ? { kind: "gateway", source: selection.source || OMNIROUTE_SOURCE, model: selection.model }
+        : selection.kind === "saved"
+          ? { kind: "saved", configId: selection.configId || "", model: selection.model }
+          : { kind: "shared", model: selection.model };
     storage.setItem(MODEL_SELECTION_STORAGE_KEY, JSON.stringify(payload));
   } catch {
     /* storage is best-effort: private mode or quota errors must not break chat */

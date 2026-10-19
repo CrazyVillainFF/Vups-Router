@@ -51,6 +51,7 @@ import {
 import {
   deleteConversation,
   fetchProviderConfig,
+  fetchOmniRouteStatus,
   fetchProviderModels,
   fetchSharedModelStatus,
   getApiErrorMessage,
@@ -175,6 +176,39 @@ function sharedModelNotice(shared) {
     return "No shared AI model is configured on this server. Connect your own AI provider to start chatting.";
   }
   return "The shared AI model is unavailable right now. Connect your own AI provider in API settings.";
+}
+
+function gatewayNotice(omniroute) {
+  if (!omniroute) return "Checking the OmniRoute gateway — try again in a moment.";
+  if (!omniroute.enabled) {
+    return "The OmniRoute gateway is disabled on this server. Pick another model from the model menu.";
+  }
+  if (!omniroute.configured || ["not_configured", "invalid_config"].includes(omniroute.status)) {
+    return "The OmniRoute gateway is not configured correctly on this server. Pick another model or ask the administrator.";
+  }
+  if (omniroute.status === "unauthorized") {
+    return "The OmniRoute gateway rejected its server API key. Ask the administrator to verify OMNIROUTE_API_KEY.";
+  }
+  if (omniroute.status === "rate_limited") {
+    return "The OmniRoute gateway is rate-limiting requests right now. Try again shortly or pick another model.";
+  }
+  if (omniroute.status === "timeout") {
+    return "The OmniRoute gateway timed out. Try again shortly or pick another model.";
+  }
+  if (omniroute.status === "empty") {
+    return "The OmniRoute gateway has no models configured. Add providers inside OmniRoute or pick another model.";
+  }
+  if (!omniroute.available) {
+    return "The OmniRoute gateway is unreachable right now. Try again shortly or pick another model.";
+  }
+  return "";
+}
+
+function unavailableModelNotice(shared, omniroute) {
+  if (omniroute?.enabled && omniroute.configured) {
+    return `${gatewayNotice(omniroute)} Other providers keep working normally.`;
+  }
+  return sharedModelNotice(shared);
 }
 
 // ─── Code Block with Copy ───────────────────────────────────────────────────
@@ -379,7 +413,7 @@ const SUGGESTIONS = [
   },
 ];
 
-function WelcomeScreen({ onSuggestion, configured, modelName, sharedActive, sharedLoading }) {
+function WelcomeScreen({ onSuggestion, configured, modelName, sharedActive, gatewayActive, sharedLoading }) {
   return (
     <div className="vr-welcome">
       <div className="vr-welcome-art" aria-hidden="true">
@@ -396,7 +430,9 @@ function WelcomeScreen({ onSuggestion, configured, modelName, sharedActive, shar
         {configured
           ? sharedActive
             ? `Chatting with ${modelName || "the shared model"} — no API key needed.`
-            : `Chatting with ${modelName || "your configured model"} through your own provider.`
+            : gatewayActive
+              ? `Chatting with ${modelName || "this model"} through the OmniRoute gateway.`
+              : `Chatting with ${modelName || "your configured model"} through your own provider.`
           : sharedLoading
             ? "Checking for an available AI model…"
             : "Connect your own AI provider in API settings, then ask anything about free AI models, hosted APIs, open-weight options, and local deployment."}
@@ -619,6 +655,7 @@ export default function ChatPage() {
   const [config, setConfig] = useState(null);
   const [providerModels, setProviderModels] = useState([]);
   const [shared, setShared] = useState(null);
+  const [omniroute, setOmniroute] = useState(null);
   const [selection, setSelection] = useState(null);
   const [catalogReady, setCatalogReady] = useState(false);
   const [notice, setNotice] = useState("");
@@ -643,15 +680,17 @@ export default function ChatPage() {
     Promise.all([
       fetchProviderConfig(),
       fetchSharedModelStatus().catch(() => null),
+      fetchOmniRouteStatus().catch(() => null),
     ])
-      .then(([stored, sharedStatus]) => {
+      .then(([stored, sharedStatus, gatewayStatus]) => {
         setConfig(stored);
         setShared(sharedStatus);
+        setOmniroute(gatewayStatus);
         return fetchProviderModels()
           .then((models) => setProviderModels(models))
           .catch((error) => {
             setProviderModels([]);
-            if (!sharedStatus?.available) setNotice(getApiErrorMessage(error));
+            if (!sharedStatus?.available && !gatewayStatus?.available) setNotice(getApiErrorMessage(error));
           })
           .finally(() => setCatalogReady(true));
       })
@@ -662,8 +701,8 @@ export default function ChatPage() {
   }, [refreshConversations]);
 
   const catalog = useMemo(
-    () => buildCatalog({ models: providerModels, shared }),
-    [providerModels, shared]
+    () => buildCatalog({ models: providerModels, shared, omniroute }),
+    [providerModels, shared, omniroute]
   );
 
   useEffect(() => {
@@ -678,8 +717,9 @@ export default function ChatPage() {
 
   const activeRow = resolveSelection(catalog, selection) || fallbackRow(catalog);
   const activeModelKey = activeRow?.key || "";
-  const canChat = Boolean(activeRow);
+  const canChat = Boolean(activeRow && !activeRow.disabled);
   const activeIsShared = Boolean(activeRow?.shared);
+  const activeIsGateway = Boolean(activeRow?.gateway);
 
   function changeModel(row) {
     const next = selectionFromRow(row);
@@ -801,7 +841,7 @@ export default function ChatPage() {
     }
 
     if (!canChat) {
-      setNotice(sharedModelNotice(shared));
+      setNotice(unavailableModelNotice(shared, omniroute));
       return;
     }
 
@@ -852,6 +892,7 @@ export default function ChatPage() {
         messages: history,
         model: modelKey,
         configId: reference.configId,
+        source: reference.source,
         temperature: EFFORT_TEMPERATURE[chosenEffort] ?? 0.7,
         signal: controller.signal,
         onMeta: ({ conversationId }) => {
@@ -926,7 +967,7 @@ export default function ChatPage() {
     const target = messages[targetIndex];
     if (!target?.content?.trim()) return;
     if (!canChat) {
-      setNotice(sharedModelNotice(shared));
+      setNotice(unavailableModelNotice(shared, omniroute));
       return;
     }
     const reference = chatReference(activeRow);
@@ -959,6 +1000,7 @@ export default function ChatPage() {
         messages: [...history, { role: "user", content: CONTINUE_INSTRUCTION }],
         model: modelKey,
         configId: reference.configId,
+        source: reference.source,
         temperature: EFFORT_TEMPERATURE[currentEffort] ?? 0.7,
         signal: controller.signal,
         onChunk: (chunk) => {
@@ -1058,7 +1100,8 @@ export default function ChatPage() {
             configured={canChat}
             modelName={activeRow?.name || ""}
             sharedActive={activeIsShared}
-            sharedLoading={shared === null && !config?.configured}
+            gatewayActive={activeIsGateway}
+            sharedLoading={shared === null && omniroute === null && !config?.configured}
           />
         ) : (
           <MessageList
@@ -1082,7 +1125,7 @@ export default function ChatPage() {
           {!canChat && !notice && (
             <div className="vr-notice" role="alert">
               <Warning size={15} weight="fill" aria-hidden="true" />
-              <span>{sharedModelNotice(shared)}</span>
+              <span>{unavailableModelNotice(shared, omniroute)}</span>
               <Link to="/settings">Open API settings</Link>
             </div>
           )}
@@ -1090,12 +1133,14 @@ export default function ChatPage() {
             <PromptBar
               placeholder={
                 !canChat
-                  ? shared === null
+                  ? shared === null && omniroute === null
                     ? "Checking for an available AI model…"
                     : "No AI model available — connect a provider in API settings…"
                   : activeIsShared
                     ? "Ask anything — using the shared model, no API key needed…"
-                    : "Ask anything — your provider, your key, your model…"
+                    : activeIsGateway
+                      ? "Ask anything — using the OmniRoute gateway…"
+                      : "Ask anything — your provider, your key, your model…"
               }
               sources={VUPS_SOURCES}
               commands={VUPS_COMMANDS}

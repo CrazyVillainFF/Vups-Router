@@ -57,6 +57,7 @@ export function toRequestMessages(messages) {
  * @param {Array<{role: string, content: string}>} options.messages Full conversation history, ending with the new user message.
  * @param {string} [options.model] Model id to use. The backend falls back to the saved model only when omitted.
  * @param {string} [options.configId] Stable saved configuration id. Omit for the shared/free model.
+ * @param {string} [options.source] Server-configured gateway source (for example "omniroute"). Never a URL.
  * @param {number} [options.temperature]
  * @param {AbortSignal} [options.signal]
  * @param {(payload: {conversationId: string}) => void} [options.onMeta] Called once with the conversation id.
@@ -64,7 +65,7 @@ export function toRequestMessages(messages) {
  * @param {(step: string) => void} [options.onStep] Called with progress steps.
  * @returns {Promise<{content: string, conversationId: string|null, finishReason: string|null}>}
  */
-export async function streamChatResponse({ conversationId, messages, model, configId, temperature, signal, onMeta, onChunk, onStep } = {}) {
+export async function streamChatResponse({ conversationId, messages, model, configId, source, temperature, signal, onMeta, onChunk, onStep } = {}) {
   const body = {
     conversationId: conversationId || undefined,
     messages: toRequestMessages(messages),
@@ -72,6 +73,7 @@ export async function streamChatResponse({ conversationId, messages, model, conf
     stream: true
   };
   if (configId) body.configId = configId;
+  if (source) body.source = source;
   if (typeof temperature === "number") body.temperature = temperature;
 
   onStep?.("Sending request");

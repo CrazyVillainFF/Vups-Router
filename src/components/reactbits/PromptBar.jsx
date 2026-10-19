@@ -415,6 +415,7 @@ export default function PromptBar({
   const fillAt = i => (i === efforts.length - 1 ? '100%' : `calc(${stepAt(i)} + 7px)`);
 
   const pick = row => {
+    if (!row || row.disabled) return;
     if (open === 'model') {
       setModelKey(row.key);
       latest.current.onModelChange?.(row);
@@ -612,7 +613,9 @@ export default function PromptBar({
                           }}
                           role="option"
                           aria-selected={i === cursor}
+                          aria-disabled={row.disabled ? 'true' : undefined}
                           data-active={i === cursor ? '' : undefined}
+                          data-disabled={row.disabled ? '' : undefined}
                           className="prompt-bar__row prompt-bar__row--model prompt-bar__row--managed"
                           onMouseDown={e => e.preventDefault()}
                           onPointerEnter={() => setActive(i)}
@@ -643,7 +646,10 @@ export default function PromptBar({
                               <HugeiconsIcon icon={Delete02Icon} size={14} strokeWidth={2} />
                             </button>
                           ) : null}
-                          <span className="prompt-bar__row-check" data-on={row.key === model?.key ? '' : undefined}>
+                          <span
+                            className="prompt-bar__row-check"
+                            data-on={!row.disabled && row.key === model?.key ? '' : undefined}
+                          >
                             <HugeiconsIcon icon={Tick02Icon} size={13} strokeWidth={2.5} />
                           </span>
                         </div>

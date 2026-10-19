@@ -158,6 +158,12 @@ export async function fetchSharedModelStatus() {
   return data.shared;
 }
 
+export async function fetchOmniRouteStatus() {
+  ensureApiBaseURL();
+  const { data } = await apiClient.get("/settings/omniroute/status");
+  return data.omniroute;
+}
+
 // ─── Conversations ──────────────────────────────────────────────────────────
 
 export async function listConversations() {

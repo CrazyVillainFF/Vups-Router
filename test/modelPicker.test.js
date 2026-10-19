@@ -1,12 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  GATEWAY_GROUP,
   MODEL_SELECTION_STORAGE_KEY,
+  OMNIROUTE_SOURCE,
   PERSONAL_GROUP,
   SHARED_GROUP,
   buildCatalog,
   chatReference,
   fallbackRow,
+  gatewayStatusLabel,
   loadStoredSelection,
   resolveSelection,
   saveStoredSelection,
@@ -34,6 +37,32 @@ function sharedModel(id, { vision = false } = {}) {
 
 function sharedStatus(models) {
   return { enabled: true, available: true, model: models[0]?.id || "", models };
+}
+
+function gatewayModel(id, { provider = "OmniRoute", source = OMNIROUTE_SOURCE, vision = null } = {}) {
+  return {
+    id,
+    name: id,
+    ownedBy: "OmniRoute gateway",
+    provider,
+    source,
+    gateway: true,
+    shared: false,
+    saved: false,
+    vision
+  };
+}
+
+function omnirouteStatus(overrides = {}) {
+  return {
+    provider: "OmniRoute",
+    enabled: true,
+    configured: true,
+    available: true,
+    status: "available",
+    modelCount: 2,
+    ...overrides
+  };
 }
 
 function groups(catalog) {
@@ -220,4 +249,101 @@ test("chat requests carry configId only for saved rows", () => {
   const free = buildCatalog({ models: [], shared: sharedStatus([sharedModel("gemma3:4b")]) })[0];
   assert.deepEqual(chatReference(saved), { model: "deepseek-chat", configId: "cfg-a" });
   assert.deepEqual(chatReference(free), { model: "gemma3:4b" });
+});
+
+test("gateway models appear in their own group without replacing saved or free rows", () => {
+  const catalog = buildCatalog({
+    models: [
+      savedModel("cfg-a", "deepseek-chat"),
+      gatewayModel("openai/gpt-5.2"),
+      gatewayModel("anthropic/claude-sonnet-4-6")
+    ],
+    shared: sharedStatus([sharedModel("gemma3:4b")]),
+    omniroute: omnirouteStatus()
+  });
+  const gateway = catalog.filter((row) => row.gateway);
+  assert.equal(gateway.length, 2);
+  assert.deepEqual(gateway.map((row) => row.group), [GATEWAY_GROUP, GATEWAY_GROUP]);
+  assert.ok(gateway.every((row) => row.source === OMNIROUTE_SOURCE));
+  assert.ok(gateway.every((row) => row.configId === ""), "gateway rows never reference a saved configuration");
+  assert.ok(catalog.some((row) => row.saved), "saved rows survive");
+  assert.ok(catalog.some((row) => row.shared), "free rows survive");
+});
+
+test("a gateway model already offered for free is not repeated", () => {
+  const catalog = buildCatalog({
+    models: [gatewayModel("gemma3:4b"), gatewayModel("openai/gpt-5.2")],
+    shared: sharedStatus([sharedModel("gemma3:4b")]),
+    omniroute: omnirouteStatus()
+  });
+  assert.deepEqual(catalog.filter((row) => row.gateway).map((row) => row.model), ["openai/gpt-5.2"]);
+  assert.deepEqual(catalog.filter((row) => row.shared).map((row) => row.model), ["gemma3:4b"]);
+});
+
+test("a gateway selection resolves to a source-only chat reference", () => {
+  const catalog = buildCatalog({
+    models: [gatewayModel("openai/gpt-5.2"), gatewayModel("anthropic/claude-sonnet-4-6")],
+    shared: null,
+    omniroute: omnirouteStatus()
+  });
+  const row = resolveSelection(catalog, { kind: "gateway", source: OMNIROUTE_SOURCE, model: "openai/gpt-5.2" });
+  assert.ok(row);
+  assert.equal(row.gateway, true);
+  assert.deepEqual(chatReference(row), { model: "openai/gpt-5.2", source: "omniroute" });
+  assert.equal(resolveSelection(catalog, { kind: "gateway", source: OMNIROUTE_SOURCE, model: "unknown/model" }), null);
+
+  const storage = fakeStorage();
+  saveStoredSelection({ kind: "gateway", source: OMNIROUTE_SOURCE, model: "openai/gpt-5.2" }, storage);
+  assert.deepEqual(loadStoredSelection(storage), {
+    kind: "gateway",
+    source: "omniroute",
+    model: "openai/gpt-5.2"
+  });
+  assert.ok(!/sk-|apiKey|encrypted|https?:/i.test(storage.dump()), "gateway storage must not contain keys or URLs");
+});
+
+test("an intended but unavailable gateway adds exactly one disabled status row", () => {
+  const catalog = buildCatalog({
+    models: [],
+    shared: null,
+    omniroute: omnirouteStatus({ available: false, status: "unauthorized" })
+  });
+  assert.equal(catalog.length, 1);
+  const row = catalog[0];
+  assert.equal(row.group, GATEWAY_GROUP);
+  assert.equal(row.disabled, true);
+  assert.equal(row.gateway, true);
+  assert.equal(row.model, "");
+  assert.match(row.tag, /rejected/i);
+  assert.deepEqual(chatReference(row), {}, "a disabled status row must never produce a chat reference");
+  assert.equal(fallbackRow(catalog), null, "the fallback must skip the disabled status row");
+  assert.equal(resolveSelection(catalog, { kind: "gateway", source: OMNIROUTE_SOURCE, model: "any" }), null);
+
+  const withRows = buildCatalog({
+    models: [gatewayModel("openai/gpt-5.2")],
+    shared: null,
+    omniroute: omnirouteStatus({ available: false, status: "timeout" })
+  });
+  assert.equal(withRows.length, 1);
+  assert.equal(withRows[0].disabled, undefined, "real gateway rows are used instead of a status row");
+  assert.equal(withRows[0].gateway, true);
+});
+
+test("a disabled or unconfigured gateway adds no rows at all", () => {
+  const catalog = buildCatalog({
+    models: [savedModel("cfg-a", "deepseek-chat")],
+    shared: sharedStatus([sharedModel("gemma3:4b")]),
+    omniroute: omnirouteStatus({ enabled: false, configured: false, available: false, status: "disabled" })
+  });
+  assert.equal(catalog.filter((row) => row.gateway).length, 0);
+  assert.deepEqual(groups(catalog), [PERSONAL_GROUP, SHARED_GROUP]);
+});
+
+test("gateway status labels are human-readable for every upstream state", () => {
+  assert.match(gatewayStatusLabel({ status: "unauthorized" }), /rejected/i);
+  assert.match(gatewayStatusLabel({ status: "not_configured" }), /not configured/i);
+  assert.match(gatewayStatusLabel({ status: "disabled" }), /disabled/i);
+  assert.match(gatewayStatusLabel({ status: "timeout" }), /timed out/i);
+  assert.match(gatewayStatusLabel({ status: "empty" }), /no models/i);
+  assert.match(gatewayStatusLabel({ status: "unreachable" }), /unreachable/i);
 });
