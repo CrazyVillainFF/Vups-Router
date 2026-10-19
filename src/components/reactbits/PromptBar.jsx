@@ -177,6 +177,7 @@ export default function PromptBar({
   const [listening, setListening] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [modelMenuMaxHeight, setModelMenuMaxHeight] = useState(360);
 
   const model = models.find(m => m.key === modelKey) ?? models[0];
   const lastDefault = useRef(null);
@@ -189,6 +190,22 @@ export default function PromptBar({
   }, [defaultModel, models]);
   const token = dismissed ? null : parseToken(draft);
   const open = plusOpen ? 'at' : (token?.kind ?? (modelOpen ? 'model' : effortOpen ? 'effort' : null));
+
+  useLayoutEffect(() => {
+    if (open !== 'model' || !rootRef.current) return undefined;
+    const update = () => {
+      const top = rootRef.current?.getBoundingClientRect().top ?? 0;
+      setModelMenuMaxHeight(Math.max(120, Math.min(360, Math.floor(top - 20))));
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.visualViewport?.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.visualViewport?.removeEventListener('resize', update);
+    };
+  }, [open]);
+
   const query = plusOpen ? '' : (token?.query ?? '');
   const list = useMemo(() => {
     if (open === 'at') return sources.filter(s => s.name.toLowerCase().includes(query));
@@ -529,6 +546,7 @@ export default function PromptBar({
             open === 'at' ? 'Sources' : open === 'slash' ? 'Commands' : open === 'model' ? 'Models' : 'Effort'
           }
           data-kind={open}
+          style={open === 'model' ? { maxHeight: `${modelMenuMaxHeight}px` } : undefined}
         >
           {open === 'effort' ? (
             <>
@@ -575,81 +593,83 @@ export default function PromptBar({
             </>
           ) : (
             <>
-              <span ref={glowRef} className="prompt-bar__glow" aria-hidden="true" />
-              {list.map((row, i) => {
-                const groupHeader =
-                  open === 'model' && row.group && row.group !== list[i - 1]?.group ? row.group : null;
-                return (
-                  <Fragment key={row.key}>
-                    {groupHeader ? (
-                      <div className="prompt-bar__group" role="presentation">
-                        {groupHeader}
-                      </div>
-                    ) : null}
-                    {open === 'model' ? (
-                      <div
-                        ref={el => {
-                          rowRefs.current[i] = el;
-                        }}
-                        role="option"
-                        aria-selected={i === cursor}
-                        data-active={i === cursor ? '' : undefined}
-                        className="prompt-bar__row prompt-bar__row--model prompt-bar__row--managed"
-                        onMouseDown={e => e.preventDefault()}
-                        onPointerEnter={() => setActive(i)}
-                        onClick={() => pick(row)}
-                      >
-                        <span className="prompt-bar__model-main">
-                          <span
-                            className="prompt-bar__row-name"
-                            title={row.meta ? `${row.name} · ${row.meta}` : row.name}
-                          >
-                            {row.name}
+              <div className="prompt-bar__list">
+                <span ref={glowRef} className="prompt-bar__glow" aria-hidden="true" />
+                {list.map((row, i) => {
+                  const groupHeader =
+                    open === 'model' && row.group && row.group !== list[i - 1]?.group ? row.group : null;
+                  return (
+                    <Fragment key={row.key}>
+                      {groupHeader ? (
+                        <div className="prompt-bar__group" role="presentation">
+                          {groupHeader}
+                        </div>
+                      ) : null}
+                      {open === 'model' ? (
+                        <div
+                          ref={el => {
+                            rowRefs.current[i] = el;
+                          }}
+                          role="option"
+                          aria-selected={i === cursor}
+                          data-active={i === cursor ? '' : undefined}
+                          className="prompt-bar__row prompt-bar__row--model prompt-bar__row--managed"
+                          onMouseDown={e => e.preventDefault()}
+                          onPointerEnter={() => setActive(i)}
+                          onClick={() => pick(row)}
+                        >
+                          <span className="prompt-bar__model-main">
+                            <span
+                              className="prompt-bar__row-name"
+                              title={row.meta ? `${row.name} · ${row.meta}` : row.name}
+                            >
+                              {row.name}
+                            </span>
+                            {row.tag ? <span className="prompt-bar__model-sub">{row.tag}</span> : null}
+                            {row.meta ? <span className="prompt-bar__model-meta">{row.meta}</span> : null}
                           </span>
-                          {row.tag ? <span className="prompt-bar__model-sub">{row.tag}</span> : null}
-                          {row.meta ? <span className="prompt-bar__model-meta">{row.meta}</span> : null}
-                        </span>
-                        {row.saved && onDeleteModel ? (
-                          <button
-                            type="button"
-                            className="prompt-bar__model-delete"
-                            aria-label={`Delete saved model ${row.name} for ${row.provider || 'this provider'}`}
-                            title="Delete saved model"
-                            onMouseDown={e => e.preventDefault()}
-                            onClick={e => {
-                              e.stopPropagation();
-                              onDeleteModel(row);
-                            }}
-                          >
-                            <HugeiconsIcon icon={Delete02Icon} size={14} strokeWidth={2} />
-                          </button>
-                        ) : null}
-                        <span className="prompt-bar__row-check" data-on={row.key === model?.key ? '' : undefined}>
-                          <HugeiconsIcon icon={Tick02Icon} size={13} strokeWidth={2.5} />
-                        </span>
-                      </div>
-                    ) : (
-                      <button
-                        ref={el => {
-                          rowRefs.current[i] = el;
-                        }}
-                        type="button"
-                        role="option"
-                        aria-selected={i === cursor}
-                        className="prompt-bar__row"
-                        onMouseDown={e => e.preventDefault()}
-                        onPointerEnter={() => setActive(i)}
-                        onClick={() => pick(row)}
-                      >
-                        {open === 'at' ? <span className="prompt-bar__row-icon">{renderIcon(row.icon, 15)}</span> : null}
-                        <span className="prompt-bar__row-name">{row.name}</span>
-                        {row.description ? <span className="prompt-bar__row-desc">{row.description}</span> : null}
-                      </button>
-                    )}
-                  </Fragment>
-                );
-              })}
-              {list.length === 0 ? <div className="prompt-bar__empty">No matches for “{query}”</div> : null}
+                          {row.saved && onDeleteModel ? (
+                            <button
+                              type="button"
+                              className="prompt-bar__model-delete"
+                              aria-label={`Delete saved model ${row.name} for ${row.provider || 'this provider'}`}
+                              title="Delete saved model"
+                              onMouseDown={e => e.preventDefault()}
+                              onClick={e => {
+                                e.stopPropagation();
+                                onDeleteModel(row);
+                              }}
+                            >
+                              <HugeiconsIcon icon={Delete02Icon} size={14} strokeWidth={2} />
+                            </button>
+                          ) : null}
+                          <span className="prompt-bar__row-check" data-on={row.key === model?.key ? '' : undefined}>
+                            <HugeiconsIcon icon={Tick02Icon} size={13} strokeWidth={2.5} />
+                          </span>
+                        </div>
+                      ) : (
+                        <button
+                          ref={el => {
+                            rowRefs.current[i] = el;
+                          }}
+                          type="button"
+                          role="option"
+                          aria-selected={i === cursor}
+                          className="prompt-bar__row"
+                          onMouseDown={e => e.preventDefault()}
+                          onPointerEnter={() => setActive(i)}
+                          onClick={() => pick(row)}
+                        >
+                          {open === 'at' ? <span className="prompt-bar__row-icon">{renderIcon(row.icon, 15)}</span> : null}
+                          <span className="prompt-bar__row-name">{row.name}</span>
+                          {row.description ? <span className="prompt-bar__row-desc">{row.description}</span> : null}
+                        </button>
+                      )}
+                    </Fragment>
+                  );
+                })}
+                {list.length === 0 ? <div className="prompt-bar__empty">No matches for “{query}”</div> : null}
+              </div>
               {open === 'model' && onAddKey ? (
                 <button
                   type="button"
