@@ -22,6 +22,7 @@ import SiteHeader from "./components/SiteHeader.jsx";
 import { PROVIDERS, PROVIDER_CATEGORIES, providerById } from "./providers/registry.js";
 import {
   activateProvider,
+  createManagedProvider,
   fetchProviderModelsDetailed,
   getApiErrorMessage,
   listProviders,
@@ -34,6 +35,7 @@ import {
 import "./settings.css";
 
 const EMPTY_FORM = {
+  configId: "",
   providerId: "",
   provider: "",
   baseUrl: "",
@@ -69,6 +71,7 @@ function statusLabel(provider) {
 
 function formFromProvider(provider, registryEntry) {
   return {
+    configId: provider?.configId || "",
     providerId: provider?.providerId || registryEntry?.id || "",
     provider: provider?.provider || registryEntry?.name || "",
     baseUrl: provider?.baseUrl ?? registryEntry?.baseUrl ?? "",
@@ -102,7 +105,7 @@ function GuideLinks({ entry }) {
 
 export default function SettingsPage() {
   const [providers, setProviders] = useState([]);
-  const [activeProviderId, setActiveProviderId] = useState("");
+  const [activeConfigId, setActiveConfigId] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [alert, setAlert] = useState(null);
@@ -119,7 +122,7 @@ export default function SettingsPage() {
   const refresh = useCallback(async () => {
     const data = await listProviders();
     setProviders(data.providers || []);
-    setActiveProviderId(data.activeProviderId || "");
+    setActiveConfigId(data.activeConfigId ?? data.activeProviderId ?? "");
     return data.providers || [];
   }, []);
 
@@ -129,7 +132,7 @@ export default function SettingsPage() {
       .then(data => {
         if (cancelled) return;
         setProviders(data.providers || []);
-        setActiveProviderId(data.activeProviderId || "");
+        setActiveConfigId(data.activeConfigId ?? data.activeProviderId ?? "");
       })
       .catch(error => {
         if (!cancelled) setAlert({ severity: "error", message: getApiErrorMessage(error) });
@@ -142,7 +145,9 @@ export default function SettingsPage() {
     };
   }, []);
 
-  const savedProvider = form ? providers.find(provider => provider.providerId === form.providerId) || null : null;
+  const savedProvider = form && form.configId
+    ? providers.find(provider => provider.configId === form.configId) || null
+    : null;
 
   const registryEntry = useMemo(() => {
     if (!form) return null;
@@ -184,6 +189,24 @@ export default function SettingsPage() {
     setForm(current => ({ ...current, provider: "", baseUrl: "" }));
   }
 
+  function startAnotherKey(provider) {
+    setForm({ ...formFromProvider(provider, providerById(provider.providerId)), configId: "", apiKey: "" });
+    setShowKey(false);
+    setManualModel("");
+    setModelsWarning("");
+    setModels([]);
+    setSelectedModels([]);
+    setDefaultModel(provider.defaultModel || provider.model || "");
+    setAlert({
+      severity: "info",
+      message: `Adding another key for ${provider.provider}. It is saved as a separate configuration, so both keys stay available in chat.`
+    });
+    window.requestAnimationFrame(() => {
+      const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      document.getElementById("provider-form")?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+    });
+  }
+
   async function handleSave(event) {
     event?.preventDefault?.();
     if (!form) return;
@@ -211,15 +234,23 @@ export default function SettingsPage() {
     }
     setBusy("save");
     try {
-      const result = await saveManagedProvider(providerId, {
+      const payload = {
         provider: form.provider.trim(),
         baseUrl: form.baseUrl.trim(),
         apiKey: form.apiKey.trim(),
         model: form.model.trim(),
         providerType: form.providerType
-      });
+      };
+      const result = savedProvider
+        ? await saveManagedProvider(savedProvider.configId, payload)
+        : await createManagedProvider({ ...payload, providerId });
       await refresh();
-      setForm(current => ({ ...current, providerId, apiKey: "" }));
+      setForm(current => ({
+        ...current,
+        configId: result.config.configId || current.configId,
+        providerId: result.config.providerId || current.providerId,
+        apiKey: ""
+      }));
       setAlert({ severity: "success", message: `${result.message} Key: ${result.config.apiKeyMasked || "saved"}.` });
     } catch (error) {
       setAlert({ severity: "error", message: getApiErrorMessage(error) });
@@ -243,7 +274,7 @@ export default function SettingsPage() {
         model: form.model.trim() || undefined
       };
       const result = savedProvider
-        ? await testManagedProvider(savedProvider.providerId, payload)
+        ? await testManagedProvider(savedProvider.configId, payload)
         : await testProviderConnection({ provider: form.provider.trim() || "Custom", ...payload });
       if (Array.isArray(result.availableModels) && result.availableModels.length > 0) {
         setModels(result.availableModels);
@@ -263,7 +294,7 @@ export default function SettingsPage() {
     setBusy("models");
     setModelsWarning("");
     try {
-      const data = await fetchProviderModelsDetailed(savedProvider.providerId);
+      const data = await fetchProviderModelsDetailed(savedProvider.configId);
       const list = Array.isArray(data.models) ? data.models : [];
       setModels(list);
       setSelectedModels(current => (current.length > 0 ? current : list.map(model => model.id)));
@@ -299,7 +330,7 @@ export default function SettingsPage() {
     if (!savedProvider) return;
     setBusy("models-save");
     try {
-      const result = await saveProviderModels(savedProvider.providerId, { models: selectedModels, defaultModel });
+      const result = await saveProviderModels(savedProvider.configId, { models: selectedModels, defaultModel });
       await refresh();
       setAlert({ severity: "success", message: `${result.message} Default model: ${result.config.defaultModel || "none"}.` });
     } catch (error) {
@@ -309,12 +340,12 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleActivate(providerId) {
-    setBusy(`activate-${providerId}`);
+  async function handleActivate(configId) {
+    setBusy(`activate-${configId}`);
     try {
-      await activateProvider(providerId);
+      await activateProvider(configId);
       await refresh();
-      setAlert({ severity: "success", message: "Selected provider updated. Chat now uses it." });
+      setAlert({ severity: "success", message: "Selected configuration updated. Chat now uses it." });
     } catch (error) {
       setAlert({ severity: "error", message: getApiErrorMessage(error) });
     } finally {
@@ -323,15 +354,16 @@ export default function SettingsPage() {
   }
 
   async function handleDelete(provider) {
-    if (!window.confirm(`Remove the saved configuration for ${provider.provider}? Its key and model list will be deleted. Other providers are not affected.`)) {
+    const label = provider.apiKeyMasked ? `${provider.provider} (${provider.apiKeyMasked})` : provider.provider;
+    if (!window.confirm(`Remove the saved configuration for ${label}? Its key and model list will be deleted. Other saved keys are not affected.`)) {
       return;
     }
-    setBusy(`delete-${provider.providerId}`);
+    setBusy(`delete-${provider.configId}`);
     try {
-      await removeProvider(provider.providerId);
+      await removeProvider(provider.configId);
       await refresh();
-      if (form?.providerId === provider.providerId) setForm(null);
-      setAlert({ severity: "success", message: `${provider.provider} removed.` });
+      if (form?.configId === provider.configId) setForm(null);
+      setAlert({ severity: "success", message: `${label} removed.` });
     } catch (error) {
       setAlert({ severity: "error", message: getApiErrorMessage(error) });
     } finally {
@@ -384,9 +416,9 @@ export default function SettingsPage() {
             <div className="settings-saved-list">
               {providers.map(provider => {
                 const status = statusLabel(provider);
-                const isActive = provider.providerId === activeProviderId;
+                const isActive = provider.configId === activeConfigId;
                 return (
-                  <div key={provider.providerId} className={`settings-saved-card${isActive ? " is-active" : ""}`}>
+                  <div key={provider.configId || provider.providerId} className={`settings-saved-card${isActive ? " is-active" : ""}`}>
                     <div className="settings-saved-card-main">
                       <div className="settings-provider-name">
                         {provider.provider}
@@ -402,10 +434,13 @@ export default function SettingsPage() {
                     </div>
                     <div className="settings-saved-actions">
                       {!isActive && (
-                        <Button size="small" variant="contained" disabled={Boolean(busy)} onClick={() => handleActivate(provider.providerId)}>
-                          {busy === `activate-${provider.providerId}` ? "Switching…" : "Use for chat"}
+                        <Button size="small" variant="contained" disabled={Boolean(busy)} onClick={() => handleActivate(provider.configId)}>
+                          {busy === `activate-${provider.configId}` ? "Switching…" : "Use for chat"}
                         </Button>
                       )}
+                      <Button size="small" variant="outlined" startIcon={<AddRoundedIcon />} onClick={() => startAnotherKey(provider)}>
+                        Add another key
+                      </Button>
                       <Button size="small" variant="outlined" onClick={() => startConfigure(providerById(provider.providerId), provider)}>
                         Edit
                       </Button>
@@ -413,11 +448,11 @@ export default function SettingsPage() {
                         size="small"
                         variant="outlined"
                         disabled={Boolean(busy)}
-                        startIcon={busy === `test-${provider.providerId}` ? <CircularProgress size={14} color="inherit" /> : <BoltRoundedIcon />}
+                        startIcon={busy === `test-${provider.configId}` ? <CircularProgress size={14} color="inherit" /> : <BoltRoundedIcon />}
                         onClick={async () => {
-                          setBusy(`test-${provider.providerId}`);
+                          setBusy(`test-${provider.configId}`);
                           try {
-                            const result = await testManagedProvider(provider.providerId, {});
+                            const result = await testManagedProvider(provider.configId, {});
                             setAlert({ severity: "success", message: `${provider.provider}: ${result.message}` });
                             await refresh();
                           } catch (error) {
@@ -470,12 +505,17 @@ export default function SettingsPage() {
             </div>
             <div className="settings-provider-grid">
               {visibleProviders.map(entry => {
-                const saved = providers.find(provider => provider.providerId === entry.id);
+                const savedConfigs = providers.filter(provider => provider.providerId === entry.id);
+                const saved = savedConfigs[0];
                 return (
                   <article key={entry.id} className="settings-provider-card">
                     <div className="settings-provider-name">
                       {entry.name}
-                      {saved && <span className="settings-badge settings-badge--ok">SAVED</span>}
+                      {saved && (
+                        <span className="settings-badge settings-badge--ok">
+                          SAVED{savedConfigs.length > 1 ? ` ×${savedConfigs.length}` : ""}
+                        </span>
+                      )}
                       <span className={`settings-badge settings-badge--${entry.status === "supported" ? "neutral" : "warn"}`}>
                         {entry.status === "supported" ? (entry.deployment === "local" ? "LOCAL GATEWAY" : "OPENAI-COMPATIBLE") : "ADAPTER PENDING"}
                       </span>
@@ -701,3 +741,5 @@ export default function SettingsPage() {
     </>
   );
 }
+
+

@@ -30,8 +30,8 @@ The backend must be running and its `CLIENT_ORIGIN` must allow `http://localhost
 ## User flow
 
 1. **Sign up** at `/signup` or **sign in** at `/signin` — sessions use HTTP-only cookies managed by the backend; the client stores no tokens and login persists across reloads.
-2. Open **Provider settings** (`/settings`): pick a provider from the built-in directory (OpenRouter, DeepSeek, Groq, Google Gemini, Mistral, Cohere, Together, Fireworks, Cerebras, NVIDIA NIM, xAI, SambaNova, Novita, Ollama, vLLM, LocalAI, LM Studio, LiteLLM, FlagshipRouter, custom OpenAI-compatible endpoints, and more listed with their official links) or add any custom endpoint. Save as many providers as you like — each keeps its own encrypted key, base URL, and model list, and saving one never overwrites another. `Test connection` and `Load models` verify the key and fetch the real model list; `Use for chat` switches the active provider. Keys are stored server-side only (AES-256-GCM) and shown masked in the UI. Localhost/private URLs are rejected by the deployed backend with an explanation (use a tunnel or run the backend locally).
-3. Open **Chat** (`/chat`), pick a model if your provider exposes several, and send a message. Requests go through the backend proxy; replies stream in; conversations are saved per user and can be reopened or deleted from the sidebar.
+2. Open **Provider settings** (`/settings`): pick a provider from the built-in directory (OpenRouter, DeepSeek, Groq, Google Gemini, Mistral, Cohere, Together, Fireworks, Cerebras, NVIDIA NIM, xAI, SambaNova, Novita, Ollama, vLLM, LocalAI, LM Studio, LiteLLM, FlagshipRouter, custom OpenAI-compatible endpoints, and more listed with their official links) or add any custom endpoint. Save as many configurations as you like — including several keys for the same provider (`Add another key`). Each keeps its own server-generated `configId`, encrypted key, base URL, and model list, and saving one never overwrites another. `Test connection` and `Load models` verify the key and fetch the real model list; `Use for chat` switches the active configuration. Keys are stored server-side only (AES-256-GCM) and shown masked in the UI. Localhost/private URLs are rejected by the deployed backend with an explanation (use a tunnel or run the backend locally).
+3. Open **Chat** (`/chat`): the model picker always shows both sections — **YOUR KEYS** (every saved configuration, each with its provider, masked key, and a `Saved model` tag) and **FREE MODELS** (the shared catalogue, which stays visible even if a provider's discovery fails). Pick a row (or use `+ Add API key` to jump to settings), send a message, and the active model is shown in the header and the composer chip. The choice is remembered across reloads. Requests go through the backend proxy (with the selected `configId` when using a saved key); replies stream in; conversations are saved per user and can be reopened or deleted from the sidebar. A saved row can be deleted from the picker (with confirmation); deleting the active configuration falls back to a free model.
 
 `/settings` and `/chat` are protected routes; anonymous visitors are redirected to sign in and returned to the requested page afterwards.
 
@@ -43,12 +43,13 @@ The client calls the VupsRouter backend (`server/`):
 | --- | --- | --- |
 | `POST` | `/api/auth/signup`, `/api/auth/signin`, `/api/auth/logout` | Cookie sessions |
 | `GET` | `/api/auth/me` | Persistent login check |
-| `GET` | `/api/settings/providers` | All saved providers + active provider (keys masked) |
-| `PUT`/`DELETE` | `/api/settings/providers/:providerId` | Save/edit or delete one provider (isolated per provider) |
-| `POST` | `/api/settings/providers/:providerId/activate` | Switch the provider chat uses |
-| `POST` | `/api/settings/providers/:providerId/test` | Connection test |
-| `PUT` | `/api/settings/providers/:providerId/models` | Save model list + default model |
-| `GET` | `/api/settings/models?providerId=` | Model list (saved list returned with a warning if discovery fails) |
+| `GET` | `/api/settings/providers` | All saved configurations + `activeConfigId` (keys masked) |
+| `POST` | `/api/settings/providers` | Create another configuration (server-generated `configId`) |
+| `PUT`/`DELETE` | `/api/settings/providers/:configId` | Save/edit or delete one configuration (isolated per `configId`) |
+| `POST` | `/api/settings/providers/:configId/activate` | Switch the configuration chat uses |
+| `POST` | `/api/settings/providers/:configId/test` | Connection test |
+| `PUT` | `/api/settings/providers/:configId/models` | Save model list + default model |
+| `GET` | `/api/settings/models?configId=` | Focused model discovery for one configuration; without the parameter: free catalogue + saved rows for every configuration |
 | `GET`/`PUT`/`DELETE` | `/api/settings/provider` | Legacy single-provider endpoints (still supported) |
 | `POST` | `/api/chat` | Streaming chat proxy (SSE) |
 | `GET`/`DELETE` | `/api/conversations`, `/api/conversations/:id` | Conversation history |

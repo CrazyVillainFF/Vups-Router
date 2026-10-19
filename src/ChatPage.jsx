@@ -3,6 +3,7 @@ import React, {
   useRef,
   useEffect,
   useCallback,
+  useMemo,
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
@@ -39,6 +40,15 @@ import {
 import ThoughtLine from "./components/reactbits/ThoughtLine.jsx";
 import { streamChatResponse, ChatConfigError, ChatNetworkError } from "./services/chat.js";
 import {
+  buildCatalog,
+  chatReference,
+  fallbackRow,
+  loadStoredSelection,
+  resolveSelection,
+  saveStoredSelection,
+  selectionFromRow,
+} from "./chat/modelCatalog.js";
+import {
   deleteConversation,
   fetchProviderConfig,
   fetchProviderModels,
@@ -46,6 +56,7 @@ import {
   getApiErrorMessage,
   getConversation,
   listConversations,
+  removeProvider,
 } from "./services/api.js";
 import { useAuth } from "./context/AuthContext.jsx";
 import "./chat.css";
@@ -165,10 +176,6 @@ function sharedModelNotice(shared) {
   }
   return "The shared AI model is unavailable right now. Connect your own AI provider in API settings.";
 }
-
-const SHARED_TAG = "Shared · Free · No API key needed";
-const SHARED_GROUP = "Shared · Free";
-const PERSONAL_GROUP = "Your keys";
 
 // ─── Code Block with Copy ───────────────────────────────────────────────────
 
@@ -612,10 +619,13 @@ export default function ChatPage() {
   const [config, setConfig] = useState(null);
   const [providerModels, setProviderModels] = useState([]);
   const [shared, setShared] = useState(null);
+  const [selection, setSelection] = useState(null);
+  const [catalogReady, setCatalogReady] = useState(false);
   const [notice, setNotice] = useState("");
   const [currentEffort, setCurrentEffort] = useState("Medium");
   const abortRef = useRef(null);
   const initializedRef = useRef(false);
+  const restoredSelectionRef = useRef(false);
 
   const refreshConversations = useCallback(async () => {
     try {
@@ -637,40 +647,74 @@ export default function ChatPage() {
       .then(([stored, sharedStatus]) => {
         setConfig(stored);
         setShared(sharedStatus);
-        if (stored?.configured || sharedStatus?.available) {
-          fetchProviderModels()
-            .then((models) => setProviderModels(models))
-            .catch(() => setProviderModels([]));
-        }
+        return fetchProviderModels()
+          .then((models) => setProviderModels(models))
+          .catch((error) => {
+            setProviderModels([]);
+            if (!sharedStatus?.available) setNotice(getApiErrorMessage(error));
+          })
+          .finally(() => setCatalogReady(true));
       })
-      .catch((error) => setNotice(getApiErrorMessage(error)));
+      .catch((error) => {
+        setCatalogReady(true);
+        setNotice(getApiErrorMessage(error));
+      });
   }, [refreshConversations]);
 
-  const modelChoices = providerModels.length > 0
-    ? providerModels.map((model) => ({
-        key: model.id,
-        name: model.id,
-        tag: model.shared ? SHARED_TAG : model.ownedBy || "Your provider",
-        group: model.shared ? SHARED_GROUP : PERSONAL_GROUP,
-      }))
-    : config?.model
-      ? [{ key: config.model, name: config.model, tag: "Saved model", group: PERSONAL_GROUP }]
-      : shared?.available
-        ? [{
-            key: shared.model,
-            name: shared.model,
-            tag: SHARED_TAG,
-            group: SHARED_GROUP,
-          }]
-        : [];
-  const activeModelKey = config?.model && modelChoices.some((choice) => choice.key === config.model)
-    ? config.model
-    : modelChoices[0]?.key || config?.model || shared?.model || "";
-  const canChat = Boolean(config?.configured || shared?.available);
-  const activeIsShared = Boolean(
-    providerModels.find((model) => model.id === activeModelKey)?.shared ||
-      (!config?.configured && shared?.available)
+  const catalog = useMemo(
+    () => buildCatalog({ models: providerModels, shared }),
+    [providerModels, shared]
   );
+
+  useEffect(() => {
+    if (restoredSelectionRef.current || !catalogReady || catalog.length === 0) return;
+    restoredSelectionRef.current = true;
+    const restored = resolveSelection(catalog, loadStoredSelection()) || fallbackRow(catalog);
+    if (!restored) return;
+    const next = selectionFromRow(restored);
+    setSelection(next);
+    saveStoredSelection(next);
+  }, [catalog, catalogReady]);
+
+  const activeRow = resolveSelection(catalog, selection) || fallbackRow(catalog);
+  const activeModelKey = activeRow?.key || "";
+  const canChat = Boolean(activeRow);
+  const activeIsShared = Boolean(activeRow?.shared);
+
+  function changeModel(row) {
+    const next = selectionFromRow(row);
+    if (!next) return;
+    setSelection(next);
+    saveStoredSelection(next);
+  }
+
+  async function handleDeleteModel(row) {
+    if (!row?.configId) return;
+    const label = row.apiKeyMasked ? `${row.provider} (${row.apiKeyMasked})` : row.provider;
+    if (!window.confirm(`Delete the saved configuration for ${label}? Its key and saved models are removed. Your other saved keys are not affected.`)) {
+      return;
+    }
+    try {
+      await removeProvider(row.configId);
+      const remaining = providerModels.filter(
+        (model) => model.shared === true || model.configId !== row.configId
+      );
+      const wasActive = Boolean(activeRow && !activeRow.shared && activeRow.configId === row.configId);
+      setProviderModels(remaining);
+      if (wasActive) {
+        const fallback = fallbackRow(buildCatalog({ models: remaining, shared }));
+        const next = fallback ? selectionFromRow(fallback) : null;
+        setSelection(next);
+        saveStoredSelection(next);
+      }
+      setNotice(`Removed the saved configuration for ${row.provider}.`);
+      fetchProviderModels()
+        .then((models) => setProviderModels(models))
+        .catch(() => {});
+    } catch (error) {
+      setNotice(getApiErrorMessage(error));
+    }
+  }
 
   function startNewConversation() {
     abortRef.current?.abort();
@@ -761,25 +805,24 @@ export default function ChatPage() {
       return;
     }
 
-    const modelKey = meta?.model?.key || activeModelKey;
+    const selectedRow = catalog.find((row) => row.key === meta?.model?.key) || meta?.model || activeRow;
+    const reference = chatReference(selectedRow);
+    const modelKey = reference.model;
     if (!modelKey) {
       setNotice("Choose a model in API settings before chatting.");
       return;
     }
 
-    if (imagePayload.length > 0) {
-      const modelInfo = providerModels.find((entry) => entry.id === modelKey);
-      if (modelInfo && modelInfo.vision === false) {
-        const visionModels = providerModels
-          .filter((entry) => entry.vision === true)
-          .map((entry) => entry.id);
-        setNotice(
-          visionModels.length > 0
-            ? `The selected model (${modelKey}) does not accept image inputs. Try a vision-capable model instead: ${visionModels.join(", ")}.`
-            : `The selected model (${modelKey}) does not accept image inputs. Connect a vision-capable provider in API settings.`
-        );
-        return;
-      }
+    if (imagePayload.length > 0 && selectedRow?.vision === false) {
+      const visionModels = catalog
+        .filter((row) => row.vision === true)
+        .map((row) => row.name);
+      setNotice(
+        visionModels.length > 0
+          ? `The selected model (${modelKey}) does not accept image inputs. Try a vision-capable model instead: ${visionModels.join(", ")}.`
+          : `The selected model (${modelKey}) does not accept image inputs. Connect a vision-capable provider in API settings.`
+      );
+      return;
     }
 
     setNotice("");
@@ -808,6 +851,7 @@ export default function ChatPage() {
         conversationId: activeConvId,
         messages: history,
         model: modelKey,
+        configId: reference.configId,
         temperature: EFFORT_TEMPERATURE[chosenEffort] ?? 0.7,
         signal: controller.signal,
         onMeta: ({ conversationId }) => {
@@ -885,7 +929,8 @@ export default function ChatPage() {
       setNotice(sharedModelNotice(shared));
       return;
     }
-    const modelKey = activeModelKey;
+    const reference = chatReference(activeRow);
+    const modelKey = reference.model;
     if (!modelKey) {
       setNotice("Choose a model in API settings before chatting.");
       return;
@@ -913,6 +958,7 @@ export default function ChatPage() {
         conversationId: activeConvId,
         messages: [...history, { role: "user", content: CONTINUE_INSTRUCTION }],
         model: modelKey,
+        configId: reference.configId,
         temperature: EFFORT_TEMPERATURE[currentEffort] ?? 0.7,
         signal: controller.signal,
         onChunk: (chunk) => {
@@ -998,11 +1044,19 @@ export default function ChatPage() {
       />
 
       <main className="vr-chat-main" id="main-content">
+        <header className="vr-chat-header" aria-live="polite">
+          <span className="vr-chat-header__dot" aria-hidden="true" />
+          <span className="vr-chat-header__label">Chatting with</span>
+          <strong className="vr-chat-header__model">{activeRow?.name || "No model selected"}</strong>
+          {activeRow && !activeRow.shared ? (
+            <span className="vr-chat-header__provider">{activeRow.provider}</span>
+          ) : null}
+        </header>
         {messages.length === 0 ? (
           <WelcomeScreen
             onSuggestion={(text) => handleSend(text)}
             configured={canChat}
-            modelName={activeModelKey}
+            modelName={activeRow?.name || ""}
             sharedActive={activeIsShared}
             sharedLoading={shared === null && !config?.configured}
           />
@@ -1045,8 +1099,11 @@ export default function ChatPage() {
               }
               sources={VUPS_SOURCES}
               commands={VUPS_COMMANDS}
-              models={modelChoices}
+              models={catalog}
               defaultModel={activeModelKey}
+              onModelChange={changeModel}
+              onDeleteModel={handleDeleteModel}
+              onAddKey={() => navigate("/settings")}
               efforts={VUPS_EFFORTS}
               defaultEffort={currentEffort}
               onEffortChange={(effort) => setCurrentEffort(effort)}

@@ -9,6 +9,7 @@ import {
 import {
   activateProvider,
   apiClient,
+  createManagedProvider,
   fetchProviderModelsDetailed,
   listProviders,
   removeProvider,
@@ -126,6 +127,7 @@ test("multi-provider API calls use the managed provider endpoints", async () => 
   try {
     await listProviders();
     await saveManagedProvider("deepseek", { provider: "DeepSeek", baseUrl: "https://api.deepseek.com", apiKey: "k", model: "deepseek-chat" });
+    await createManagedProvider({ providerId: "deepseek", provider: "DeepSeek", baseUrl: "https://api.deepseek.com", apiKey: "sk-second", model: "deepseek-chat" });
     await activateProvider("deepseek");
     await testManagedProvider("deepseek", { baseUrl: "https://api.deepseek.com" });
     await saveProviderModels("deepseek", { models: ["deepseek-chat"], defaultModel: "deepseek-chat" });
@@ -137,6 +139,7 @@ test("multi-provider API calls use the managed provider endpoints", async () => 
       [
         "get /settings/providers",
         "put /settings/providers/deepseek",
+        "post /settings/providers",
         "post /settings/providers/deepseek/activate",
         "post /settings/providers/deepseek/test",
         "put /settings/providers/deepseek/models",
@@ -145,8 +148,10 @@ test("multi-provider API calls use the managed provider endpoints", async () => 
       ]
     );
     assert.equal(mock.requests[1].data.baseUrl, "https://api.deepseek.com");
-    assert.deepEqual(mock.requests[4].data, { models: ["deepseek-chat"], defaultModel: "deepseek-chat" });
-    assert.deepEqual(mock.requests[5].params, { providerId: "deepseek" });
+    assert.equal(mock.requests[2].data.providerId, "deepseek");
+    assert.equal(mock.requests[2].data.apiKey, "sk-second");
+    assert.deepEqual(mock.requests[5].data, { models: ["deepseek-chat"], defaultModel: "deepseek-chat" });
+    assert.deepEqual(mock.requests[6].params, { configId: "deepseek" });
   } finally {
     mock.restore();
   }

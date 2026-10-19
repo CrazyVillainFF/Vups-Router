@@ -104,6 +104,12 @@ export async function saveManagedProvider(providerId, payload) {
   return data;
 }
 
+export async function createManagedProvider(payload) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.post("/settings/providers", payload);
+  return data;
+}
+
 export async function activateProvider(providerId) {
   ensureApiBaseURL();
   const id = encodeURIComponent(providerId);
@@ -138,10 +144,10 @@ export async function fetchProviderModels() {
   return data.models;
 }
 
-export async function fetchProviderModelsDetailed(providerId) {
+export async function fetchProviderModelsDetailed(configId) {
   ensureApiBaseURL();
   const { data } = await apiClient.get("/settings/models", {
-    params: providerId ? { providerId } : undefined
+    params: configId ? { configId } : undefined
   });
   return data;
 }

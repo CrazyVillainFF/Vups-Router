@@ -7,9 +7,11 @@ import {
   Calendar03Icon,
   Cancel01Icon,
   ChartLineData01Icon,
+  Delete02Icon,
   File02Icon,
   Globe02Icon,
   HelpCircleIcon,
+  Key01Icon,
   Mail01Icon,
   Mic01Icon,
   PlusSignIcon,
@@ -120,6 +122,9 @@ export default function PromptBar({
   commands = DEFAULT_COMMANDS,
   models = DEFAULT_MODELS,
   defaultModel = '',
+  onModelChange,
+  onDeleteModel,
+  onAddKey,
   efforts = DEFAULT_EFFORTS,
   defaultEffort = '',
   onEffortChange,
@@ -155,7 +160,7 @@ export default function PromptBar({
   const lastOpen = useRef(null);
   const dictation = useRef(0);
   const latest = useRef({});
-  latest.current = { onSend, onStop, onAttach, onDictate, onEffortChange };
+  latest.current = { onSend, onStop, onAttach, onDictate, onEffortChange, onModelChange, onDeleteModel, onAddKey };
 
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState([]);
@@ -395,6 +400,7 @@ export default function PromptBar({
   const pick = row => {
     if (open === 'model') {
       setModelKey(row.key);
+      latest.current.onModelChange?.(row);
       setModelOpen(false);
       focusInput();
       return;
@@ -454,6 +460,11 @@ export default function PromptBar({
       if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
         e.preventDefault();
         pick(list[cursor]);
+        return;
+      }
+      if (open === 'model' && e.key === 'Delete' && list[cursor]?.saved && latest.current.onDeleteModel) {
+        e.preventDefault();
+        latest.current.onDeleteModel(list[cursor]);
         return;
       }
     }
@@ -575,42 +586,84 @@ export default function PromptBar({
                         {groupHeader}
                       </div>
                     ) : null}
-                    <button
-                      ref={el => {
-                        rowRefs.current[i] = el;
-                      }}
-                      type="button"
-                      role="option"
-                      aria-selected={i === cursor}
-                      className={open === 'model' ? 'prompt-bar__row prompt-bar__row--model' : 'prompt-bar__row'}
-                      onMouseDown={e => e.preventDefault()}
-                      onPointerEnter={() => setActive(i)}
-                      onClick={() => pick(row)}
-                    >
-                      {open === 'at' ? <span className="prompt-bar__row-icon">{renderIcon(row.icon, 15)}</span> : null}
-                      {open === 'model' ? (
+                    {open === 'model' ? (
+                      <div
+                        ref={el => {
+                          rowRefs.current[i] = el;
+                        }}
+                        role="option"
+                        aria-selected={i === cursor}
+                        data-active={i === cursor ? '' : undefined}
+                        className="prompt-bar__row prompt-bar__row--model prompt-bar__row--managed"
+                        onMouseDown={e => e.preventDefault()}
+                        onPointerEnter={() => setActive(i)}
+                        onClick={() => pick(row)}
+                      >
                         <span className="prompt-bar__model-main">
-                          <span className="prompt-bar__row-name" title={row.name}>
+                          <span
+                            className="prompt-bar__row-name"
+                            title={row.meta ? `${row.name} · ${row.meta}` : row.name}
+                          >
                             {row.name}
                           </span>
                           {row.tag ? <span className="prompt-bar__model-sub">{row.tag}</span> : null}
+                          {row.meta ? <span className="prompt-bar__model-meta">{row.meta}</span> : null}
                         </span>
-                      ) : (
-                        <>
-                          <span className="prompt-bar__row-name">{row.name}</span>
-                          {row.description ? <span className="prompt-bar__row-desc">{row.description}</span> : null}
-                        </>
-                      )}
-                      {open === 'model' ? (
+                        {row.saved && onDeleteModel ? (
+                          <button
+                            type="button"
+                            className="prompt-bar__model-delete"
+                            aria-label={`Delete saved model ${row.name} for ${row.provider || 'this provider'}`}
+                            title="Delete saved model"
+                            onMouseDown={e => e.preventDefault()}
+                            onClick={e => {
+                              e.stopPropagation();
+                              onDeleteModel(row);
+                            }}
+                          >
+                            <HugeiconsIcon icon={Delete02Icon} size={14} strokeWidth={2} />
+                          </button>
+                        ) : null}
                         <span className="prompt-bar__row-check" data-on={row.key === model?.key ? '' : undefined}>
                           <HugeiconsIcon icon={Tick02Icon} size={13} strokeWidth={2.5} />
                         </span>
-                      ) : null}
-                    </button>
+                      </div>
+                    ) : (
+                      <button
+                        ref={el => {
+                          rowRefs.current[i] = el;
+                        }}
+                        type="button"
+                        role="option"
+                        aria-selected={i === cursor}
+                        className="prompt-bar__row"
+                        onMouseDown={e => e.preventDefault()}
+                        onPointerEnter={() => setActive(i)}
+                        onClick={() => pick(row)}
+                      >
+                        {open === 'at' ? <span className="prompt-bar__row-icon">{renderIcon(row.icon, 15)}</span> : null}
+                        <span className="prompt-bar__row-name">{row.name}</span>
+                        {row.description ? <span className="prompt-bar__row-desc">{row.description}</span> : null}
+                      </button>
+                    )}
                   </Fragment>
                 );
               })}
               {list.length === 0 ? <div className="prompt-bar__empty">No matches for “{query}”</div> : null}
+              {open === 'model' && onAddKey ? (
+                <button
+                  type="button"
+                  className="prompt-bar__menu-add"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => {
+                    closeMenus();
+                    onAddKey();
+                  }}
+                >
+                  <HugeiconsIcon icon={Key01Icon} size={14} strokeWidth={2} />
+                  <span>+ Add API key</span>
+                </button>
+              ) : null}
             </>
           )}
         </div>

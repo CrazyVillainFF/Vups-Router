@@ -292,6 +292,61 @@
   min-width: 0;
 }
 
+/* ── Active model header ──────────────────────────── */
+.vr-chat-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 22px;
+  border-bottom: 1px solid rgba(212, 255, 63, 0.1);
+  background: rgba(17, 20, 22, 0.72);
+  color: var(--muted, #9aa39c);
+  font-size: 12.5px;
+  min-width: 0;
+}
+
+.vr-chat-header__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent, #d4ff3f);
+  box-shadow: 0 0 10px rgba(212, 255, 63, 0.6);
+}
+
+.vr-chat-header__label {
+  flex: none;
+  letter-spacing: 0.02em;
+}
+
+.vr-chat-header__model {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink, #f2f4ef);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.vr-chat-header__provider {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid rgba(242, 244, 239, 0.14);
+  border-radius: 999px;
+  color: var(--muted, #9aa39c);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+@media (max-width: 640px) {
+  .vr-chat-header {
+    padding: 0 16px 0 58px;
+  }
+}
+
 /* ── Welcome Screen ───────────────────────────────── */
 .vr-welcome {
   flex: 1;
