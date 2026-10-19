@@ -145,6 +145,7 @@ export default function PromptBar({
   const reduce = useReducedMotion();
   const rootRef = useRef(null);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
   const glowRef = useRef(null);
   const sparkRef = useRef(null);
   const typing = useRef({ energy: 0, strokes: 0 });
@@ -170,6 +171,7 @@ export default function PromptBar({
   const [active, setActive] = useState(0);
   const [listening, setListening] = useState(false);
   const [pressed, setPressed] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   const model = models.find(m => m.key === modelKey) ?? models[0];
   const lastDefault = useRef(null);
@@ -196,6 +198,18 @@ export default function PromptBar({
   const maxed = efforts.length > 1 && effortIndex === efforts.length - 1;
 
   const focusInput = () => inputRef.current?.focus({ preventScroll: true });
+
+  const collectFiles = useCallback(fileList => {
+    const files = [...(fileList || [])].filter(
+      file => file && typeof file.type === 'string' && file.type.startsWith('image/')
+    );
+    if (files.length === 0) return;
+    Promise.resolve(latest.current.onAttach?.(files)).then(items => {
+      if (!items) return;
+      setAttachments(current => [...current, ...(Array.isArray(items) ? items : [items])]);
+    }).catch(() => {});
+  }, []);
+
   const closeMenus = useCallback(() => {
     setPlusOpen(false);
     setModelOpen(false);
@@ -388,10 +402,7 @@ export default function PromptBar({
     const head = token ? draft.slice(0, token.start) : draft;
     if (row.attach) {
       setDraft(head);
-      Promise.resolve(latest.current.onAttach?.()).then(files => {
-        if (!files) return;
-        setAttachments(a => [...a, ...(Array.isArray(files) ? files : [files])]);
-      });
+      fileInputRef.current?.click();
     } else if (open === 'at') {
       setDraft(`${head}@${row.name} `);
     } else {
@@ -472,6 +483,23 @@ export default function PromptBar({
       className={`prompt-bar${className ? ` ${className}` : ''}`}
       data-busy={busy ? '' : undefined}
       data-max={maxed ? '' : undefined}
+      data-drag={dragging ? '' : undefined}
+      onDragOver={e => {
+        if (!e.dataTransfer?.types?.includes('Files')) return;
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={e => {
+        if (e.currentTarget.contains(e.relatedTarget)) return;
+        setDragging(false);
+      }}
+      onDrop={e => {
+        if (!e.dataTransfer?.types?.includes('Files')) return;
+        e.preventDefault();
+        setDragging(false);
+        collectFiles(e.dataTransfer.files);
+        focusInput();
+      }}
       style={{
         '--pb-bg': background,
         '--pb-ink': color,
@@ -600,20 +628,37 @@ export default function PromptBar({
         <canvas ref={sparkRef} className="prompt-bar__sparks" aria-hidden="true" />
         {attachments.length > 0 ? (
           <div className="prompt-bar__chips">
-            {attachments.map((file, i) => (
-              <span key={`${file}-${i}`} className="prompt-bar__chip">
-                <HugeiconsIcon icon={File02Icon} size={12} strokeWidth={2} />
-                <span className="prompt-bar__chip-name">{file}</span>
-                <button
-                  type="button"
-                  className="prompt-bar__chip-x"
-                  aria-label={`Remove ${file}`}
-                  onClick={() => setAttachments(a => a.filter((_, j) => j !== i))}
+            {attachments.map((item, i) => {
+              const isItem = item && typeof item === 'object';
+              const label = isItem ? item.name || 'image' : String(item);
+              const thumb = isItem ? item.dataUrl || item.previewUrl : null;
+              const failed = isItem && item.status === 'error';
+              return (
+                <span
+                  key={isItem ? item.id ?? i : `${item}-${i}`}
+                  className={`prompt-bar__chip${thumb ? ' prompt-bar__chip--image' : ''}`}
+                  data-error={failed ? '' : undefined}
+                  title={failed ? item.error || label : label}
                 >
-                  <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2.5} />
-                </button>
-              </span>
-            ))}
+                  {thumb ? (
+                    <span className="prompt-bar__chip-thumb" aria-hidden="true">
+                      <img src={thumb} alt="" />
+                    </span>
+                  ) : (
+                    <HugeiconsIcon icon={File02Icon} size={12} strokeWidth={2} />
+                  )}
+                  <span className="prompt-bar__chip-name">{label}</span>
+                  <button
+                    type="button"
+                    className="prompt-bar__chip-x"
+                    aria-label={`Remove ${label}`}
+                    onClick={() => setAttachments(a => a.filter((_, j) => j !== i))}
+                  >
+                    <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2.5} />
+                  </button>
+                </span>
+              );
+            })}
           </div>
         ) : null}
 
@@ -634,6 +679,14 @@ export default function PromptBar({
           }}
           onFocus={closeMenus}
           onKeyDown={onKeyDown}
+          onPaste={e => {
+            const files = [...(e.clipboardData?.files || [])].filter(
+              file => file && typeof file.type === 'string' && file.type.startsWith('image/')
+            );
+            if (files.length === 0) return;
+            e.preventDefault();
+            collectFiles(files);
+          }}
         />
 
         <div className="prompt-bar__bar">
@@ -695,6 +748,20 @@ export default function PromptBar({
             </button>
           ) : null}
           <span className="prompt-bar__spacer" />
+          <button
+            type="button"
+            className="prompt-bar__tool"
+            aria-label="Attach images"
+            title="Attach images (PNG, JPEG, WebP, GIF)"
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => {
+              focusInput();
+              closeMenus();
+              fileInputRef.current?.click();
+            }}
+          >
+            <HugeiconsIcon icon={Attachment01Icon} size={15} strokeWidth={2} />
+          </button>
           {onDictate ? (
             <button
               type="button"
@@ -737,6 +804,18 @@ export default function PromptBar({
           </button>
         </div>
       </div>
+      <input
+        ref={fileInputRef}
+        className="prompt-bar__file"
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        multiple
+        hidden
+        onChange={e => {
+          collectFiles(e.target.files);
+          e.target.value = '';
+        }}
+      />
     </div>
   );
 }

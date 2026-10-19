@@ -10,6 +10,7 @@
  */
 
 import { apiClient } from "./api.js";
+import { toPayloadImages } from "../chat/attachments.js";
 
 export class ChatConfigError extends Error {
   constructor(message) {
@@ -34,10 +35,18 @@ function chatEndpoint() {
   return `${base}/chat`;
 }
 
-function toRequestMessages(messages) {
-  return messages
-    .filter(message => message.role === "user" || message.role === "assistant")
-    .map(message => ({ role: message.role, content: String(message.content ?? "") }));
+// Exported for tests. Images are only ever attached to the final message —
+// the backend rejects attachments on earlier messages by design.
+export function toRequestMessages(messages) {
+  const filtered = messages.filter(message => message.role === "user" || message.role === "assistant");
+  return filtered.map((message, index) => {
+    const entry = { role: message.role, content: String(message.content ?? "") };
+    if (index === filtered.length - 1 && Array.isArray(message.images) && message.images.length > 0) {
+      const images = toPayloadImages(message.images);
+      if (images.length > 0) entry.images = images;
+    }
+    return entry;
+  });
 }
 
 /**

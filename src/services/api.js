@@ -53,9 +53,21 @@ export async function requestPasswordReset(email) {
   return data;
 }
 
-export async function resetPassword({ token, newPassword, confirmPassword }) {
+export async function verifyResetCode({ email, code }) {
   ensureApiBaseURL();
-  const { data } = await apiClient.post("/reset-password", { token, newPassword, confirmPassword });
+  const { data } = await apiClient.post("/verify-code", { email, code });
+  return data;
+}
+
+export async function resetPassword({ email, code, resetAuthorization, newPassword, confirmPassword }) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.post("/reset-password", {
+    email,
+    code,
+    resetAuthorization,
+    newPassword,
+    confirmPassword
+  });
   return data;
 }
 

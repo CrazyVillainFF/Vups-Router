@@ -23,9 +23,19 @@ import {
   Trash,
   Gear,
   SignOut,
+  Image as ImageIcon,
 } from "@phosphor-icons/react";
 import { SparklesIcon, Globe02Icon, File02Icon } from "@hugeicons/core-free-icons";
 import PromptBar from "./components/reactbits/PromptBar.jsx";
+import {
+  IMAGE_LIMITS,
+  formatBytes,
+  generateAttachmentId,
+  isImageFile,
+  readImageAttachment,
+  toPayloadImages,
+  validateImageFile,
+} from "./chat/attachments.js";
 import ThoughtLine from "./components/reactbits/ThoughtLine.jsx";
 import { streamChatResponse, ChatConfigError, ChatNetworkError } from "./services/chat.js";
 import {
@@ -103,13 +113,35 @@ function generateId() {
 }
 
 function toLocalMessage(message) {
-  return { id: generateId(), role: message.role, content: message.content };
+  const images = Array.isArray(message.attachments)
+    ? message.attachments.map((attachment) => ({
+        id: generateAttachmentId(),
+        name: attachment.name || "image",
+        mimeType: attachment.mimeType,
+        bytes: attachment.bytes,
+      }))
+    : [];
+  return {
+    id: generateId(),
+    role: message.role,
+    content: message.content,
+    ...(images.length > 0 ? { images } : {}),
+  };
 }
 
+// Only the final message may carry images — the backend rejects attachments
+// on earlier messages, so trimmed history stays text-only.
 function requestHistory(messages) {
-  return messages
-    .filter((message) => message.role === "user" || message.role === "assistant")
-    .map((message) => ({ role: message.role, content: message.content }));
+  const filtered = messages.filter(
+    (message) => message.role === "user" || message.role === "assistant"
+  );
+  return filtered.map((message, index) => {
+    const entry = { role: message.role, content: message.content };
+    if (index === filtered.length - 1 && Array.isArray(message.images) && message.images.length > 0) {
+      entry.images = message.images;
+    }
+    return entry;
+  });
 }
 
 function errorMessageFor(error) {
@@ -225,7 +257,28 @@ function Message({ message, isStreaming, currentSteps, onRetry, onContinue }) {
       )}
       <div className="vr-msg-body">
         {isUser ? (
-          <p className="vr-msg-text">{message.content}</p>
+          <>
+            {message.images?.length > 0 && (
+              <div className="vr-msg-images">
+                {message.images.map((image, index) => {
+                  const src = image.dataUrl || image.previewUrl;
+                  const label = image.name || "image";
+                  return src ? (
+                    <span key={image.id ?? index} className="vr-msg-image">
+                      <img src={src} alt={label} loading="lazy" />
+                    </span>
+                  ) : (
+                    <span key={image.id ?? index} className="vr-msg-image vr-msg-image--file" title={label}>
+                      <ImageIcon size={14} aria-hidden="true" />
+                      <span>{label}</span>
+                      <em>{formatBytes(image.bytes || image.size)}</em>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            {message.content ? <p className="vr-msg-text">{message.content}</p> : null}
+          </>
         ) : (
           <>
             {showThoughtLine && (
@@ -657,8 +710,51 @@ export default function ChatPage() {
     }
   }
 
+  // Called by the composer with real image Files (picker, drop, or paste).
+  // Validation problems become error chips instead of blocking the whole pick.
+  async function pickAttachments(files) {
+    const list = [...files].filter(isImageFile).slice(0, IMAGE_LIMITS.count);
+    return Promise.all(
+      list.map(async (file) => {
+        const check = validateImageFile(file);
+        if (!check.ok) {
+          return {
+            id: generateAttachmentId(),
+            name: file.name || "image",
+            status: "error",
+            error: check.error,
+          };
+        }
+        try {
+          return await readImageAttachment(file);
+        } catch {
+          return {
+            id: generateAttachmentId(),
+            name: file.name || "image",
+            status: "error",
+            error: "That image could not be read.",
+          };
+        }
+      })
+    );
+  }
+
   async function handleSend(text, retryHistory, meta) {
-    if (loading || typeof text !== "string" || !text.trim()) return;
+    const rawAttachments = Array.isArray(meta?.attachments) ? meta.attachments : [];
+    const failedAttachments = rawAttachments.filter(
+      (item) => item && typeof item === "object" && item.status === "error"
+    );
+    const attachmentItems = rawAttachments.filter(
+      (item) => item && typeof item === "object" && item.status !== "error" && item.dataUrl
+    );
+    const imagePayload = toPayloadImages(attachmentItems);
+
+    if (loading || typeof text !== "string" || (!text.trim() && imagePayload.length === 0)) return;
+
+    if (failedAttachments.length > 0) {
+      setNotice("Remove the failed attachments (marked in red) before sending.");
+      return;
+    }
 
     if (!canChat) {
       setNotice(sharedModelNotice(shared));
@@ -671,9 +767,29 @@ export default function ChatPage() {
       return;
     }
 
+    if (imagePayload.length > 0) {
+      const modelInfo = providerModels.find((entry) => entry.id === modelKey);
+      if (modelInfo && modelInfo.vision === false) {
+        const visionModels = providerModels
+          .filter((entry) => entry.vision === true)
+          .map((entry) => entry.id);
+        setNotice(
+          visionModels.length > 0
+            ? `The selected model (${modelKey}) does not accept image inputs. Try a vision-capable model instead: ${visionModels.join(", ")}.`
+            : `The selected model (${modelKey}) does not accept image inputs. Connect a vision-capable provider in API settings.`
+        );
+        return;
+      }
+    }
+
     setNotice("");
     const chosenEffort = meta?.effort || currentEffort;
-    const userMsg = { id: generateId(), role: "user", content: text };
+    const userMsg = {
+      id: generateId(),
+      role: "user",
+      content: text,
+      ...(attachmentItems.length > 0 ? { images: attachmentItems } : {}),
+    };
     const baseMessages = retryHistory ?? [...messages, userMsg];
     const history = requestHistory(baseMessages).slice(-40);
     const assistantId = generateId();
@@ -702,7 +818,9 @@ export default function ChatPage() {
               : [
                   {
                     id: conversationId,
-                    title: text.replace(/\s+/g, " ").trim().slice(0, 60) || "New chat",
+                    title:
+                      text.replace(/\s+/g, " ").trim().slice(0, 60) ||
+                      (attachmentItems.length > 0 ? "Image attachment" : "New chat"),
                     updatedAt: new Date().toISOString(),
                   },
                   ...prev,
@@ -841,8 +959,12 @@ export default function ChatPage() {
   function handleRetry() {
     const lastUserIdx = messages.map((message) => message.role).lastIndexOf("user");
     if (lastUserIdx === -1) return;
+    const lastUser = messages[lastUserIdx];
     const history = messages.slice(0, lastUserIdx + 1);
-    handleSend(messages[lastUserIdx].content, history, undefined);
+    // Live attachments still carry their data URLs, so a retry resends the
+    // image; attachments restored from history (metadata only) fall back to
+    // a text-only retry rather than failing.
+    handleSend(lastUser.content, history, { attachments: lastUser.images });
   }
 
   async function handleSignOut() {
@@ -931,6 +1053,7 @@ export default function ChatPage() {
               busy={loading}
               onSend={(text, meta) => handleSend(text, null, meta)}
               onStop={handleStop}
+              onAttach={pickAttachments}
               onDictate={handleDictate}
               background="#111416"
               color="#f2f4ef"

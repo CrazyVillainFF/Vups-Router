@@ -8,7 +8,7 @@ import SiteFooter from "./components/SiteFooter.jsx";
 import PageMeta from "./components/PageMeta.jsx";
 import RequireAuth from "./components/RequireAuth.jsx";
 import { PrivacyPolicy, TermsOfService, CookiePolicy } from "./legal/LegalPages.jsx";
-import { ForgotPasswordPage, ResetPasswordPage } from "./auth/PasswordRecovery.jsx";
+import { ForgotPasswordPage } from "./auth/PasswordRecovery.jsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
 import ArrowOutwardRoundedIcon from "@mui/icons-material/ArrowOutwardRounded";
 import NorthEastRoundedIcon from "@mui/icons-material/NorthEastRounded";
@@ -166,7 +166,7 @@ export default function App() {
     <Route path="/signup" element={<><PageMeta title="Create your account — VupsRouter" description="Create a free VupsRouter account to compare and chat with free AI models." noIndex /><AuthPage mode="signup" /></>} />
     <Route path="/signin" element={<><PageMeta title="Sign in — VupsRouter" description="Sign in to your VupsRouter account." noIndex /><AuthPage mode="signin" /></>} />
     <Route path="/forgot-password" element={<><PageMeta title="Forgot password — VupsRouter" noIndex /><ForgotPasswordPage /></>} />
-    <Route path="/reset-password" element={<><PageMeta title="Reset password — VupsRouter" noIndex /><ResetPasswordPage /></>} />
+    <Route path="/reset-password" element={<Navigate to="/forgot-password" replace />} />
     <Route path="/settings" element={<><PageMeta title="API Settings — VupsRouter" noIndex /><RequireAuth><SettingsPage /></RequireAuth></>} />
     <Route path="/chat" element={<><PageMeta title="Chat — VupsRouter" description="Chat with free AI models through VupsRouter." /><RequireAuth><ChatPage /></RequireAuth></>} />
     <Route path="/privacy-policy" element={<PrivacyPolicy />} />

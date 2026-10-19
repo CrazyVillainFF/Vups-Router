@@ -13,6 +13,7 @@ import {
   resolveApiBaseURL,
   requestPasswordReset,
   resetPassword,
+  verifyResetCode,
   saveProviderConfig,
   signIn,
   signOut,
@@ -75,11 +76,18 @@ test("auth methods use cookie sessions on the existing backend paths", async () 
   ]);
 });
 
-test("password recovery methods use the backend reset endpoints", async () => {
+test("password recovery methods use the six-digit code endpoints", async () => {
   const mock = mockAdapter();
   try {
     await requestPasswordReset("alex@example.com");
-    await resetPassword({ token: "raw-token", newPassword: "brand-new-password-1", confirmPassword: "brand-new-password-1" });
+    await verifyResetCode({ email: "alex@example.com", code: "012345" });
+    await resetPassword({
+      email: "alex@example.com",
+      code: "012345",
+      resetAuthorization: "raw-reset-authorization",
+      newPassword: "brand-new-password-1",
+      confirmPassword: "brand-new-password-1"
+    });
   } finally {
     mock.restore();
   }
@@ -88,9 +96,21 @@ test("password recovery methods use the backend reset endpoints", async () => {
     { method: "post", url: "/forgot-password", baseURL: "https://api.example.test/api", data: { email: "alex@example.com" } },
     {
       method: "post",
+      url: "/verify-code",
+      baseURL: "https://api.example.test/api",
+      data: { email: "alex@example.com", code: "012345" }
+    },
+    {
+      method: "post",
       url: "/reset-password",
       baseURL: "https://api.example.test/api",
-      data: { token: "raw-token", newPassword: "brand-new-password-1", confirmPassword: "brand-new-password-1" }
+      data: {
+        email: "alex@example.com",
+        code: "012345",
+        resetAuthorization: "raw-reset-authorization",
+        newPassword: "brand-new-password-1",
+        confirmPassword: "brand-new-password-1"
+      }
     }
   ]);
 });
