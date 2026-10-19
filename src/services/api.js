@@ -59,15 +59,9 @@ export async function verifyResetCode({ email, code }) {
   return data;
 }
 
-export async function resetPassword({ email, code, resetAuthorization, newPassword, confirmPassword }) {
+export async function resetPassword({ email, code, newPassword }) {
   ensureApiBaseURL();
-  const { data } = await apiClient.post("/reset-password", {
-    email,
-    code,
-    resetAuthorization,
-    newPassword,
-    confirmPassword
-  });
+  const { data } = await apiClient.post("/reset-password", { email, code, newPassword });
   return data;
 }
 

@@ -84,9 +84,7 @@ test("password recovery methods use the six-digit code endpoints", async () => {
     await resetPassword({
       email: "alex@example.com",
       code: "012345",
-      resetAuthorization: "raw-reset-authorization",
-      newPassword: "brand-new-password-1",
-      confirmPassword: "brand-new-password-1"
+      newPassword: "brand-new-password-1"
     });
   } finally {
     mock.restore();
@@ -107,9 +105,7 @@ test("password recovery methods use the six-digit code endpoints", async () => {
       data: {
         email: "alex@example.com",
         code: "012345",
-        resetAuthorization: "raw-reset-authorization",
-        newPassword: "brand-new-password-1",
-        confirmPassword: "brand-new-password-1"
+        newPassword: "brand-new-password-1"
       }
     }
   ]);

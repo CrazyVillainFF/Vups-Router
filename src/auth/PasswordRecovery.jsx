@@ -1,16 +1,34 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Alert, Button, CircularProgress, TextField } from "@mui/material";
+import { Alert, Button, CircularProgress, IconButton, InputAdornment, TextField } from "@mui/material";
 import ArrowOutwardRoundedIcon from "@mui/icons-material/ArrowOutwardRounded";
 import RouteRoundedIcon from "@mui/icons-material/RouteRounded";
 import CodeSlots from "../components/reactbits/CodeSlots.jsx";
 import { getApiErrorMessage, requestPasswordReset, resetPassword, verifyResetCode } from "../services/api.js";
+import {
+  RECOVERY_CODE_TTL_MS,
+  clearRecoveryContext,
+  confirmPasswordHint,
+  loadRecoveryContext,
+  newPasswordHint,
+  saveRecoveryContext,
+  toggleVisibility,
+  updatePasswordDisabled
+} from "./recoveryForm.js";
 
 function RecoveryLayout({ kicker, heading, intro, children }) {
   return <div className="auth-layout"><div className="auth-art-panel"><Link to="/" className="brand auth-brand"><span className="brand-mark"><RouteRoundedIcon /></span><span>vups<span className="brand-light">router</span></span></Link><div className="auth-art-copy"><div className="eyebrow"><span className="eyebrow-line" /> FREE AI, MADE CLEAR</div><h1>Find your next<br /><span>AI model.</span></h1><p>Compare free access options and open models.</p><div className="auth-art-lines"><span /><span /><span /><span /><span /></div></div><div className="auth-art-foot"><span>FREE AI / CLEAR CHOICES</span><span>VUPSROUTER / 2026</span></div></div>
     <div className="auth-form-panel"><Link to="/" className="back-home">← Back to home</Link><div className="auth-form-wrap"><div className="auth-form-heading"><span className="auth-kicker">{kicker}</span><h2>{heading}</h2><p>{intro}</p></div>
       {children}
     </div><div className="auth-side-note">OPEN MODELS <span>•</span> CHECK THE LIMITS</div></div></div>;
+}
+
+function EyeIcon() {
+  return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" /><circle cx="12" cy="12" r="3" /></svg>;
+}
+
+function EyeOffIcon() {
+  return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>;
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -35,23 +53,61 @@ const STEP_COPY = {
 
 export function ForgotPasswordPage() {
   const navigate = useNavigate();
+  const storage = typeof window !== "undefined" ? window.sessionStorage : null;
   const [step, setStep] = useState("email");
   const [emailInput, setEmailInput] = useState("");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [slotStatus, setSlotStatus] = useState("idle");
-  const [resetAuthorization, setResetAuthorization] = useState("");
   const [form, setForm] = useState({ newPassword: "", confirmPassword: "" });
+  const [visibility, setVisibility] = useState({ new: false, confirm: false });
+  const [sendInfo, setSendInfo] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const verifyTimer = useRef(null);
   const redirectTimer = useRef(null);
+  const sentAtRef = useRef(0);
+
+  useEffect(() => {
+    const stored = loadRecoveryContext(storage);
+    if (!stored) return;
+    sentAtRef.current = stored.sentAt;
+    setEmail(stored.email);
+    setEmailInput(stored.email);
+    setCode(stored.code);
+    setStep(stored.step);
+  }, [storage]);
 
   useEffect(() => () => {
     clearTimeout(verifyTimer.current);
     clearTimeout(redirectTimer.current);
   }, []);
+
+  function rememberRecovery(targetEmail, nextStep, nextCode) {
+    saveRecoveryContext(storage, {
+      email: targetEmail,
+      code: nextCode,
+      step: nextStep,
+      sentAt: sentAtRef.current,
+      expiresAt: sentAtRef.current + RECOVERY_CODE_TTL_MS
+    });
+  }
+
+  function eyeAdornment(field) {
+    const visible = visibility[field];
+    return <InputAdornment position="end">
+      <IconButton
+        type="button"
+        edge="end"
+        aria-label={visible ? "Hide password" : "Show password"}
+        onClick={() => setVisibility(current => toggleVisibility(current, field))}
+        sx={{ color: "#9aa39a", "&:hover": { color: "#d4ff3f" } }}
+      >
+        {visible ? <EyeOffIcon /> : <EyeIcon />}
+      </IconButton>
+    </InputAdornment>;
+  }
 
   async function handleSendCode(event) {
     event?.preventDefault?.();
@@ -66,12 +122,14 @@ export function ForgotPasswordPage() {
     setBusy(true);
     try {
       const data = await requestPasswordReset(normalized);
+      sentAtRef.current = Date.now();
       setEmail(normalized);
       setCode("");
       setSlotStatus("idle");
-      setResetAuthorization("");
       setStep("code");
       setMessage(data?.message || SENT_MESSAGE);
+      setSendInfo({ remaining: data?.remaining, limit: data?.limit });
+      rememberRecovery(normalized, "code", "");
     } catch (err) {
       setError(getApiErrorMessage(err));
     } finally {
@@ -87,14 +145,12 @@ export function ForgotPasswordPage() {
     setMessage("");
     try {
       const data = await verifyResetCode({ email, code: value });
-      if (typeof data?.resetAuthorization !== "string" || !data.resetAuthorization) {
-        throw new Error("The server did not return a reset authorization. Please request a new code.");
-      }
-      setResetAuthorization(data.resetAuthorization);
       setSlotStatus("success");
       setMessage(data?.message || "Code verified successfully.");
+      rememberRecovery(email, "password", value);
       verifyTimer.current = setTimeout(() => {
         setSlotStatus("idle");
+        setMessage("");
         setStep("password");
       }, 650);
     } catch (err) {
@@ -112,10 +168,12 @@ export function ForgotPasswordPage() {
     setError("");
     try {
       const data = await requestPasswordReset(email);
+      sentAtRef.current = Date.now();
       setCode("");
       setSlotStatus("idle");
-      setResetAuthorization("");
       setMessage(data?.message || SENT_MESSAGE);
+      setSendInfo({ remaining: data?.remaining, limit: data?.limit });
+      rememberRecovery(email, "code", "");
     } catch (err) {
       setError(getApiErrorMessage(err));
     } finally {
@@ -138,19 +196,15 @@ export function ForgotPasswordPage() {
     }
     setBusy(true);
     try {
-      const data = await resetPassword({
-        email,
-        code,
-        resetAuthorization,
-        newPassword: form.newPassword,
-        confirmPassword: form.confirmPassword
-      });
+      const data = await resetPassword({ email, code, newPassword: form.newPassword });
       setForm({ newPassword: "", confirmPassword: "" });
+      setVisibility({ new: false, confirm: false });
       setCode("");
-      setResetAuthorization("");
       setSlotStatus("idle");
-      setMessage(data?.message || "Password updated successfully.");
-      redirectTimer.current = setTimeout(() => navigate("/signin"), 1500);
+      setSendInfo(null);
+      clearRecoveryContext(storage);
+      setMessage(data?.message || "Password updated. Redirecting to sign in…");
+      redirectTimer.current = setTimeout(() => navigate("/signin", { replace: true }), 1500);
     } catch (err) {
       setError(getApiErrorMessage(err));
     } finally {
@@ -183,6 +237,7 @@ export function ForgotPasswordPage() {
 
     {step === "code" && <>
       <p className="recovery-target">Enter the 6-digit code sent to <b>{email}</b></p>
+      {typeof sendInfo?.remaining === "number" && <p className="recovery-limit">You can request {sendInfo.remaining} more code{sendInfo.remaining === 1 ? "" : "s"} for this email in the next 24 hours.</p>}
       <div className="recovery-code-area">
         <CodeSlots
           length={6}
@@ -221,31 +276,36 @@ export function ForgotPasswordPage() {
           Resend code
         </Button>
       </div>
-      <div className="auth-switch">Wrong email? <button type="button" className="auth-text-btn" onClick={() => { setStep("email"); setError(""); setMessage(""); setCode(""); setSlotStatus("idle"); }}>Use a different one</button></div>
+      <div className="auth-switch">Wrong email? <button type="button" className="auth-text-btn" onClick={() => { setStep("email"); setError(""); setMessage(""); setCode(""); setSlotStatus("idle"); setSendInfo(null); clearRecoveryContext(storage); }}>Use a different one</button></div>
     </>}
 
     {step === "password" && <form className="auth-form" onSubmit={handleReset}>
       <TextField
         label="New password"
-        type="password"
+        type={visibility.new ? "text" : "password"}
         value={form.newPassword}
         onChange={event => setForm(current => ({ ...current, newPassword: event.target.value }))}
         autoComplete="new-password"
         autoFocus
-        helperText="At least 8 characters"
+        helperText={newPasswordHint(form.newPassword) || "At least 8 characters"}
         inputProps={{ minLength: 8 }}
+        InputProps={{ endAdornment: eyeAdornment("new") }}
+        sx={{ "& .MuiOutlinedInput-input": { pr: 0.5 } }}
         required
       />
       <TextField
         label="Confirm new password"
-        type="password"
+        type={visibility.confirm ? "text" : "password"}
         value={form.confirmPassword}
         onChange={event => setForm(current => ({ ...current, confirmPassword: event.target.value }))}
         autoComplete="new-password"
+        helperText={confirmPasswordHint(form.newPassword, form.confirmPassword)}
         inputProps={{ minLength: 8 }}
+        InputProps={{ endAdornment: eyeAdornment("confirm") }}
+        sx={{ "& .MuiOutlinedInput-input": { pr: 0.5 } }}
         required
       />
-      <Button type="submit" variant="contained" fullWidth disabled={busy || Boolean(message)} endIcon={busy ? <CircularProgress size={17} color="inherit" /> : <ArrowOutwardRoundedIcon />}>
+      <Button type="submit" variant="contained" fullWidth disabled={updatePasswordDisabled({ busy, newPassword: form.newPassword, confirmPassword: form.confirmPassword })} endIcon={busy ? <CircularProgress size={17} color="inherit" /> : <ArrowOutwardRoundedIcon />}>
         {busy ? "Updating…" : "Update password"}
       </Button>
     </form>}
