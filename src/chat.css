@@ -764,6 +764,8 @@
 /* ── ThoughtLine integration ─────────────────────── */
 .vr-thoughtline-container {
   display: flex;
+  width: 100%;
+  min-width: 0;
   margin: 2px 0 10px 0;
   max-width: 100%;
 }
@@ -772,13 +774,30 @@
   --tl-color: #9ca39c;
   --tl-glyph: #d4ff3f;
   --tl-font: 13px;
+  box-sizing: border-box;
+  width: fit-content;
+  min-width: min(260px, 100%);
+  max-width: min(100%, 520px);
   background: rgba(242, 244, 239, 0.03);
   border: 1px solid rgba(242, 244, 239, 0.08);
   border-radius: 10px;
-  padding: 6px 12px;
+  padding: 12px 14px;
   font-family: "Outfit", sans-serif;
   transition: border-color 0.2s, background 0.2s;
-  max-width: 100%;
+}
+
+.vr-thinking--inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 7px;
+  padding: 0;
+  vertical-align: middle;
+}
+
+.vr-thinking--inline span {
+  width: 5px;
+  height: 5px;
 }
 
 .vr-thought-line.thought-line[data-working] {

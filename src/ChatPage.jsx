@@ -134,7 +134,9 @@ function sharedModelNotice(shared) {
   return "The shared AI model is unavailable right now. Connect your own AI provider in API settings.";
 }
 
-const SHARED_TAG = "Shared · no key needed";
+const SHARED_TAG = "Shared · Free · No API key needed";
+const SHARED_GROUP = "Shared · Free";
+const PERSONAL_GROUP = "Your keys";
 
 // ─── Code Block with Copy ───────────────────────────────────────────────────
 
@@ -242,6 +244,18 @@ function Message({ message, isStreaming, currentSteps, onRetry }) {
                   collapseOnSettle
                   showTimer
                   className="vr-thought-line"
+                  renderLabel={(text, working) =>
+                    working ? (
+                      <>
+                        {text}
+                        <span className="vr-thinking vr-thinking--inline" aria-hidden="true">
+                          <span /><span /><span />
+                        </span>
+                      </>
+                    ) : (
+                      text
+                    )
+                  }
                 />
               </div>
             )}
@@ -562,14 +576,22 @@ export default function ChatPage() {
     ? providerModels.map((model) => ({
         key: model.id,
         name: model.id,
-        tag: model.shared ? SHARED_TAG : model.ownedBy || "available",
+        tag: model.shared ? SHARED_TAG : model.ownedBy || "Your provider",
+        group: model.shared ? SHARED_GROUP : PERSONAL_GROUP,
       }))
     : config?.model
-      ? [{ key: config.model, name: config.model, tag: "saved" }]
+      ? [{ key: config.model, name: config.model, tag: "Saved model", group: PERSONAL_GROUP }]
       : shared?.available
-        ? [{ key: shared.model, name: shared.model, tag: SHARED_TAG }]
+        ? [{
+            key: shared.model,
+            name: shared.model,
+            tag: SHARED_TAG,
+            group: SHARED_GROUP,
+          }]
         : [];
-  const activeModelKey = modelChoices[0]?.key || config?.model || shared?.model || "";
+  const activeModelKey = config?.model && modelChoices.some((choice) => choice.key === config.model)
+    ? config.model
+    : modelChoices[0]?.key || config?.model || shared?.model || "";
   const canChat = Boolean(config?.configured || shared?.available);
   const activeIsShared = Boolean(
     providerModels.find((model) => model.id === activeModelKey)?.shared ||

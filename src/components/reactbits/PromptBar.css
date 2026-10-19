@@ -36,7 +36,16 @@
 
 .prompt-bar__menu[data-kind='model'] {
   right: auto;
-  width: 200px;
+  left: 0;
+  z-index: 50;
+  width: auto;
+  min-width: 280px;
+  max-width: min(92vw, 420px);
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border-radius: 14px;
   transform-origin: bottom left;
 }
 
@@ -105,13 +114,6 @@
   text-overflow: ellipsis;
 }
 
-.prompt-bar__row-tag {
-  flex: none;
-  margin-left: auto;
-  color: var(--pb-muted);
-  font-size: 11px;
-}
-
 .prompt-bar__row-check {
   display: inline-flex;
   flex: none;
@@ -122,6 +124,56 @@
 
 .prompt-bar__row-check[data-on] {
   opacity: 1;
+}
+
+.prompt-bar__row--model {
+  height: auto;
+  min-height: 42px;
+  padding: 7px 8px;
+}
+
+.prompt-bar__model-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.prompt-bar__model-main .prompt-bar__row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.prompt-bar__model-sub {
+  overflow: hidden;
+  color: var(--pb-muted);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.prompt-bar__row--model .prompt-bar__row-check {
+  margin-left: 12px;
+}
+
+.prompt-bar__group {
+  padding: 8px 8px 4px;
+  color: var(--pb-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 14px;
+  text-transform: uppercase;
+}
+
+.prompt-bar__group:first-child {
+  padding-top: 4px;
 }
 
 .prompt-bar__empty {
@@ -295,6 +347,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
   height: 28px;
   padding: 0 8px;
   border-radius: 8px;
@@ -305,6 +358,13 @@
   transition:
     background-color 150ms ease,
     color 150ms ease;
+}
+
+.prompt-bar__pick span {
+  max-width: 180px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .prompt-bar__tool[data-on],
@@ -492,6 +552,16 @@
   width: 16px;
   height: 16px;
   transform-origin: 50% 50%;
+}
+
+@media (max-width: 480px) {
+  .prompt-bar__menu[data-kind='model'] {
+    left: 0;
+    right: 0;
+    width: calc(100vw - 32px);
+    min-width: 0;
+    max-width: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

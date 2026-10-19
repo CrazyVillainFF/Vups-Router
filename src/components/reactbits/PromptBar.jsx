@@ -1,4 +1,4 @@
-import { isValidElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, isValidElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { animate, useMotionValue, useMotionValueEvent, useReducedMotion } from 'motion/react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
@@ -172,6 +172,14 @@ export default function PromptBar({
   const [pressed, setPressed] = useState(false);
 
   const model = models.find(m => m.key === modelKey) ?? models[0];
+  const lastDefault = useRef(null);
+  useEffect(() => {
+    if (defaultModel === lastDefault.current) return;
+    if (models.some(m => m.key === defaultModel)) {
+      setModelKey(defaultModel);
+      lastDefault.current = defaultModel;
+    }
+  }, [defaultModel, models]);
   const token = dismissed ? null : parseToken(draft);
   const open = plusOpen ? 'at' : (token?.kind ?? (modelOpen ? 'model' : effortOpen ? 'effort' : null));
   const query = plusOpen ? '' : (token?.query ?? '');
@@ -529,33 +537,51 @@ export default function PromptBar({
           ) : (
             <>
               <span ref={glowRef} className="prompt-bar__glow" aria-hidden="true" />
-              {list.map((row, i) => (
-                <button
-                  key={row.key}
-                  ref={el => {
-                    rowRefs.current[i] = el;
-                  }}
-                  type="button"
-                  role="option"
-                  aria-selected={i === cursor}
-                  className="prompt-bar__row"
-                  onMouseDown={e => e.preventDefault()}
-                  onPointerEnter={() => setActive(i)}
-                  onClick={() => pick(row)}
-                >
-                  {open === 'at' ? <span className="prompt-bar__row-icon">{renderIcon(row.icon, 15)}</span> : null}
-                  <span className="prompt-bar__row-name">{row.name}</span>
-                  {row.description ? <span className="prompt-bar__row-desc">{row.description}</span> : null}
-                  {open === 'model' ? (
-                    <>
-                      <span className="prompt-bar__row-tag">{row.tag}</span>
-                      <span className="prompt-bar__row-check" data-on={row.key === model?.key ? '' : undefined}>
-                        <HugeiconsIcon icon={Tick02Icon} size={13} strokeWidth={2.5} />
-                      </span>
-                    </>
-                  ) : null}
-                </button>
-              ))}
+              {list.map((row, i) => {
+                const groupHeader =
+                  open === 'model' && row.group && row.group !== list[i - 1]?.group ? row.group : null;
+                return (
+                  <Fragment key={row.key}>
+                    {groupHeader ? (
+                      <div className="prompt-bar__group" role="presentation">
+                        {groupHeader}
+                      </div>
+                    ) : null}
+                    <button
+                      ref={el => {
+                        rowRefs.current[i] = el;
+                      }}
+                      type="button"
+                      role="option"
+                      aria-selected={i === cursor}
+                      className={open === 'model' ? 'prompt-bar__row prompt-bar__row--model' : 'prompt-bar__row'}
+                      onMouseDown={e => e.preventDefault()}
+                      onPointerEnter={() => setActive(i)}
+                      onClick={() => pick(row)}
+                    >
+                      {open === 'at' ? <span className="prompt-bar__row-icon">{renderIcon(row.icon, 15)}</span> : null}
+                      {open === 'model' ? (
+                        <span className="prompt-bar__model-main">
+                          <span className="prompt-bar__row-name" title={row.name}>
+                            {row.name}
+                          </span>
+                          {row.tag ? <span className="prompt-bar__model-sub">{row.tag}</span> : null}
+                        </span>
+                      ) : (
+                        <>
+                          <span className="prompt-bar__row-name">{row.name}</span>
+                          {row.description ? <span className="prompt-bar__row-desc">{row.description}</span> : null}
+                        </>
+                      )}
+                      {open === 'model' ? (
+                        <span className="prompt-bar__row-check" data-on={row.key === model?.key ? '' : undefined}>
+                          <HugeiconsIcon icon={Tick02Icon} size={13} strokeWidth={2.5} />
+                        </span>
+                      ) : null}
+                    </button>
+                  </Fragment>
+                );
+              })}
               {list.length === 0 ? <div className="prompt-bar__empty">No matches for “{query}”</div> : null}
             </>
           )}
@@ -644,7 +670,7 @@ export default function PromptBar({
                 setModelOpen(v => !v);
               }}
             >
-              <span>{model.name}</span>
+              <span title={model.name}>{model.name}</span>
               <HugeiconsIcon icon={ArrowDown01Icon} size={12} strokeWidth={2.4} />
             </button>
           ) : null}
