@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { Button, Container, TextField, Typography, Alert, CircularProgress } from "@mui/material";
+import { Button, Container, TextField, Typography, Alert, CircularProgress, IconButton, InputAdornment } from "@mui/material";
 import ChatPage from "./ChatPage.jsx";
 import SettingsPage from "./SettingsPage.jsx";
 import SiteHeader from "./components/SiteHeader.jsx";
@@ -18,7 +18,17 @@ import ShieldRoundedIcon from "@mui/icons-material/ShieldRounded";
 import SpeedRoundedIcon from "@mui/icons-material/SpeedRounded";
 import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
 import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
+import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import { getApiErrorMessage } from "./services/api.js";
+import {
+  authFormError,
+  buildAuthPayload,
+  confirmPasswordError,
+  initialPasswordVisibility,
+  togglePasswordVisibility,
+  validateAuthField
+} from "./auth/authForm.js";
 
 function useReveal() {
   useEffect(() => {
@@ -93,30 +103,55 @@ function Home() {
   </main><SiteFooter /></>;
 }
 
+function PasswordToggle({ visible, fieldLabel, onToggle }) {
+  return <InputAdornment position="end">
+    <IconButton
+      type="button"
+      edge="end"
+      aria-label={visible ? `Hide ${fieldLabel}` : `Show ${fieldLabel}`}
+      aria-pressed={visible}
+      onClick={onToggle}
+      sx={{
+        color: "#9aa39a",
+        "&:hover": { color: "#d4ff3f" },
+        "&.Mui-focusVisible": { outline: "2px solid #d4ff3f", outlineOffset: "2px" }
+      }}
+    >
+      {visible ? <VisibilityOffRoundedIcon /> : <VisibilityRoundedIcon />}
+    </IconButton>
+  </InputAdornment>;
+}
+
 function AuthPage({ mode }) {
   const isSignup = mode === "signup";
   const navigate = useNavigate();
   const location = useLocation();
   const { signUp, signIn, status } = useAuth();
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "" });
+  const [visibility, setVisibility] = useState(initialPasswordVisibility);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [touched, setTouched] = useState({});
   const redirectTo = location.state?.from || "/settings";
 
-  useEffect(() => { setMessage(""); setError(""); setTouched({}); setForm({ name: "", email: "", password: "" }); }, [mode]);
+  useEffect(() => {
+    setMessage("");
+    setError("");
+    setTouched({});
+    setForm({ name: "", email: "", password: "", confirmPassword: "" });
+    setVisibility(initialPasswordVisibility());
+  }, [mode]);
 
   if (status === "authenticated") return <Navigate to={redirectTo} replace />;
 
-  function validateField(key, value) {
-    if (key === "name") return value.trim().length < 2 ? "Enter your name (at least 2 characters)." : "";
-    if (key === "email") return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()) ? "" : "Enter a valid email address.";
-    if (key === "password") return value.length < 8 ? "Use a password with at least 8 characters." : "";
-    return "";
+  function fieldError(key) {
+    if (key === "confirmPassword") {
+      if (!touched.confirmPassword && form.confirmPassword.length === 0) return "";
+      return confirmPasswordError(form.password, form.confirmPassword);
+    }
+    return touched[key] ? validateAuthField(key, form[key]) : "";
   }
-
-  const fieldError = (key) => (touched[key] ? validateField(key, form[key]) : "");
   const markTouched = (key) => () => setTouched((current) => ({ ...current, [key]: true }));
 
   const update = (key) => (event) => setForm(current => ({ ...current, [key]: event.target.value }));
@@ -125,19 +160,17 @@ function AuthPage({ mode }) {
     event.preventDefault();
     if (busy) return;
     setError(""); setMessage("");
-    setTouched({ name: true, email: true, password: true });
-    const firstError =
-      (isSignup ? validateField("name", form.name) : "") ||
-      validateField("email", form.email) ||
-      validateField("password", form.password);
+    setTouched({ name: true, email: true, password: true, confirmPassword: true });
+    const firstError = authFormError(mode, form);
     if (firstError) { setError(firstError); return; }
+    const payload = buildAuthPayload(mode, form);
     setBusy(true);
     try {
       if (isSignup) {
-        await signUp({ name: form.name.trim(), email: form.email.trim(), password: form.password });
+        await signUp(payload);
         setMessage("Account created. You're ready to get moving.");
       } else {
-        await signIn({ email: form.email.trim(), password: form.password });
+        await signIn(payload);
         setMessage("Signed in successfully. Welcome back.");
       }
       navigate(redirectTo, { replace: true });
@@ -151,7 +184,48 @@ function AuthPage({ mode }) {
       <form className="auth-form" onSubmit={handleSubmit}>
         {isSignup && <TextField label="Your name" value={form.name} onChange={update("name")} onBlur={markTouched("name")} error={Boolean(fieldError("name"))} helperText={fieldError("name")} autoComplete="name" autoFocus inputProps={{minLength:2,maxLength:80}} required />}
         <TextField label="Email address" type="email" value={form.email} onChange={update("email")} onBlur={markTouched("email")} error={Boolean(fieldError("email"))} helperText={fieldError("email")} autoComplete="email" autoFocus={!isSignup} required />
-        <TextField label="Password" type="password" value={form.password} onChange={update("password")} onBlur={markTouched("password")} error={Boolean(fieldError("password"))} helperText={fieldError("password") || "At least 8 characters"} autoComplete={isSignup ? "new-password" : "current-password"} inputProps={{minLength:8}} required />
+        <TextField
+          label="Password"
+          name="password"
+          type={visibility.password ? "text" : "password"}
+          value={form.password}
+          onChange={update("password")}
+          onBlur={markTouched("password")}
+          error={Boolean(fieldError("password"))}
+          helperText={fieldError("password") || "At least 8 characters"}
+          autoComplete={isSignup ? "new-password" : "current-password"}
+          inputProps={{ minLength: 8 }}
+          InputProps={{
+            endAdornment: <PasswordToggle
+              visible={visibility.password}
+              fieldLabel="password"
+              onToggle={() => setVisibility(current => togglePasswordVisibility(current, "password"))}
+            />
+          }}
+          sx={{ "& .MuiOutlinedInput-input": { pr: 0.5 } }}
+          required
+        />
+        {isSignup && <TextField
+          label="Confirm password"
+          name="confirmPassword"
+          type={visibility.confirmPassword ? "text" : "password"}
+          value={form.confirmPassword}
+          onChange={update("confirmPassword")}
+          onBlur={markTouched("confirmPassword")}
+          error={Boolean(fieldError("confirmPassword"))}
+          helperText={fieldError("confirmPassword") || "Re-enter your password"}
+          autoComplete="new-password"
+          inputProps={{ minLength: 8 }}
+          InputProps={{
+            endAdornment: <PasswordToggle
+              visible={visibility.confirmPassword}
+              fieldLabel="confirm password"
+              onToggle={() => setVisibility(current => togglePasswordVisibility(current, "confirmPassword"))}
+            />
+          }}
+          sx={{ "& .MuiOutlinedInput-input": { pr: 0.5 } }}
+          required
+        />}
         {!isSignup && <div className="auth-forgot"><Link to="/forgot-password">Forgot password?</Link></div>}
         <Button type="submit" variant="contained" fullWidth disabled={busy} endIcon={busy ? <CircularProgress size={17} color="inherit"/> : <ArrowOutwardRoundedIcon />}>{busy ? "Please wait…" : isSignup ? "Create account" : "Sign in"}</Button>
       </form>
