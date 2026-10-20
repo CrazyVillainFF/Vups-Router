@@ -61,6 +61,8 @@ test("privacy and terms pages cover the real data flows and third parties", () =
     "Render",
     "MongoDB Atlas",
     "Google Fonts",
+    "Google AI Studio",
+    "unpaid quota",
     "legitimate interests",
     "children"
   ]) {

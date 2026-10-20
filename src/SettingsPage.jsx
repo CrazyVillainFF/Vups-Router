@@ -97,6 +97,8 @@ function statusLabel(provider) {
     if (last.status === "restricted") return { label: "Last test: restricted to official client", tone: "warn" };
     if (last.status === "unsupported") return { label: "Last test: protocol not supported", tone: "warn" };
     if (last.status === "model_unavailable") return { label: "Last test: model unavailable", tone: "warn" };
+    if (last.status === "quota_exhausted") return { label: "Last test: free quota exhausted — wait for reset", tone: "warn" };
+    if (last.status === "region_restricted") return { label: "Last test: region not eligible for free tier", tone: "warn" };
     if (last.status === "unreachable") return { label: "Last test: unreachable", tone: "error" };
     if (last.status === "timeout") return { label: "Last test: timed out", tone: "error" };
     return { label: "Last test failed", tone: "error" };

@@ -202,8 +202,8 @@ export const PROVIDERS = [
     keysUrl: "https://aistudio.google.com/apikey",
     docsUrl: "https://ai.google.dev/gemini-api/docs",
     pricingUrl: "https://ai.google.dev/gemini-api/docs/pricing",
-    note: "Google's OpenAI-compatibility endpoint. Get a key in AI Studio.",
-    cost: "Free tier for eligible models; check official pricing."
+    note: "Google's OpenAI-compatible endpoint with model discovery. Free-tier prompts may be used to improve Google products, so avoid sensitive data; the free tier is for professional use, 18+, and is not offered in the EEA, Switzerland, or the UK. Enable the Gemini API in AI Studio first.",
+    cost: "Free tier for eligible models with per-project RPM/TPM/RPD limits; paid tier available. Check AI Studio for current limits."
   },
   {
     id: "anthropic",

@@ -133,6 +133,14 @@ export function PrivacyPolicy() {
         agreement with them. We may also disclose data when legally required or to protect the rights and safety
         of the service, our users, or the public.
       </p>
+      <p>
+        <strong>Google Gemini free-tier notice.</strong> If you connect a Google AI Studio key and use a model
+        covered by Google&apos;s unpaid quota, Google may use your prompts and responses to improve its products,
+        and human reviewers may access that content. Do not submit sensitive or confidential data on the free
+        tier. Google intends the free tier for professional or business use by users aged 18 or older; it is not
+        available in the EEA, Switzerland, or the UK, where a paid Google Cloud project is required. Paid-tier
+        data handling is governed by Google&apos;s own terms.
+      </p>
     </section>
 
     <section id="retention">

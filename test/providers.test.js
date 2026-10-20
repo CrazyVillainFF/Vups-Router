@@ -115,6 +115,20 @@ test("AgentRouter uses its documented OpenAI-compatible base URL and makes no un
   assert.match(entry.cost, /no free tier is documented/i);
 });
 
+test("Google Gemini uses its documented OpenAI-compatible endpoint and discloses free-tier limits", () => {
+  const entry = providerById("google-gemini");
+  assert.ok(entry, "google-gemini entry missing");
+  assert.equal(entry.status, "supported");
+  assert.equal(entry.compatibility, "openai");
+  assert.equal(entry.baseUrl, "https://generativelanguage.googleapis.com/v1beta/openai");
+  assert.equal(entry.keysUrl, "https://aistudio.google.com/apikey");
+  assert.match(entry.note, /improve Google products/i);
+  assert.match(entry.note, /EEA, Switzerland, or the UK/i);
+  assert.match(entry.note, /18\+/);
+  assert.match(entry.cost, /RPM\/TPM\/RPD/);
+  assert.doesNotMatch(entry.cost, /unlimited/i);
+});
+
 test("custom endpoints exist for both OpenAI and Anthropic shapes", () => {
   const openai = providerById("custom-openai");
   const anthropic = providerById("custom-anthropic");
