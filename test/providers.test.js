@@ -144,6 +144,22 @@ test("OmniRoute is a supported aggregator with no guessed public URL", () => {
   assert.ok(Array.isArray(entry.aliases) && entry.aliases.length > 0);
 });
 
+test("OpenCode Zen is a supported aggregator with its documented endpoints", () => {
+  const entry = providerById("opencode-zen");
+  assert.ok(entry, "opencode-zen entry missing");
+  assert.equal(entry.name, "OpenCode Zen");
+  assert.equal(entry.category, "aggregator");
+  assert.equal(entry.status, "supported");
+  assert.equal(entry.compatibility, "openai");
+  assert.equal(entry.baseUrl, "https://opencode.ai/inference/openai/v1");
+  assert.equal(entry.docsUrl, "https://opencode.ai/docs/zen/");
+  assert.ok(entry.aliases.includes("opencode"));
+  assert.ok(matchesProvider(entry, "opencode console"));
+  assert.ok(filterProviders({ search: "zen", category: "aggregator" }).some(item => item.id === "opencode-zen"));
+  assert.match(entry.note, /OpenAI Responses|Anthropic Messages/);
+  assert.match(entry.note, /Gemini and Jev/i);
+});
+
 test("provider search matches aliases, case, and normalized whitespace", () => {
   const omniroute = providerById("omniroute");
   for (const query of ["OmniRoute", "omniroute", "OMNIROUTE", "omni route", "omni-route", "  omni   route  "]) {

@@ -127,6 +127,22 @@ export const PROVIDERS = [
     note: "OpenAI-compatible gateway at https://agentrouter.org/v1. Its GPT models use the OpenAI Responses API; VupsRouter routes gpt-* models there automatically and keeps other models on chat completions. The catalog changes — copy current model IDs from the official console if discovery does not return them.",
     cost: "API key required. No free tier is documented — check the official console/pricing for current models and any credits."
   },
+  {
+    id: "opencode-zen",
+    name: "OpenCode Zen",
+    aliases: ["opencode", "open code", "opencode console", "opencode zen", "zen", "console"],
+    category: "aggregator",
+    deployment: "hosted",
+    compatibility: "openai",
+    status: "supported",
+    baseUrl: "https://opencode.ai/inference/openai/v1",
+    website: "https://opencode.ai/",
+    keysUrl: "https://opencode.ai/console",
+    docsUrl: "https://opencode.ai/docs/zen/",
+    pricingUrl: "https://opencode.ai/docs/zen/#pricing",
+    note: "OpenCode's pay-as-you-go gateway, also called OpenCode Console. Create a key in the Console, then use Load models or paste any model ID. VupsRouter routes each model to its documented OpenAI Chat Completions, OpenAI Responses, or Anthropic Messages endpoint automatically. Gemini and Jev models use native APIs that are not supported yet.",
+    cost: "Pay-as-you-go; check official pricing. Free-tier API access may be limited to the OpenCode client."
+  },
 
   // ─── Direct model providers ─────────────────────────────────────────────
   {
