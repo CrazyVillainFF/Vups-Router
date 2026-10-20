@@ -19,7 +19,7 @@ import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import SiteHeader from "./components/SiteHeader.jsx";
-import { PROVIDERS, PROVIDER_CATEGORIES, providerById } from "./providers/registry.js";
+import { PROVIDER_CATEGORIES, filterProviders, providerById } from "./providers/registry.js";
 import {
   activateProvider,
   createManagedProvider,
@@ -186,14 +186,10 @@ export default function SettingsPage() {
     return providerById(form.registryId) || null;
   }, [form]);
 
-  const visibleProviders = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return PROVIDERS.filter(entry => {
-      if (category !== "all" && entry.category !== category) return false;
-      if (!query) return true;
-      return `${entry.name} ${entry.note} ${entry.category}`.toLowerCase().includes(query);
-    });
-  }, [search, category]);
+  const visibleProviders = useMemo(
+    () => filterProviders({ search, category }),
+    [search, category]
+  );
 
   function startConfigure(entry, existingProvider) {
     const nextForm = formFromProvider(existingProvider, entry);
@@ -526,7 +522,7 @@ export default function SettingsPage() {
                         <span className={`settings-badge settings-badge--${status.tone}`}>{status.label}</span>
                       </div>
                       <div className="settings-provider-meta">
-                        <span>{provider.baseUrl}</span>
+                        <span className="settings-provider-url">{provider.baseUrl}</span>
                         <span>{provider.providerType || "openai_compatible"}</span>
                         <span><KeyRoundedIcon fontSize="inherit" /> {provider.apiKeyMasked || "saved"}</span>
                         <span>{provider.models?.length || 0} saved model{provider.models?.length === 1 ? "" : "s"}</span>

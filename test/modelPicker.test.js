@@ -178,6 +178,21 @@ test("saved rows expose provider, masked key, and a saved marker", () => {
   assert.equal(row.saved, true);
 });
 
+test("a personal OmniRoute provider stays saved and never becomes the shared gateway", () => {
+  const catalog = buildCatalog({
+    models: [savedModel("cfg-omni", "gpt-4o-mini", { provider: "OmniRoute", providerId: "omniroute" })],
+    shared: null,
+    omniroute: omnirouteStatus()
+  });
+  const saved = catalog.find((row) => row.configId === "cfg-omni");
+  assert.ok(saved, "personal OmniRoute model is missing");
+  assert.equal(saved.group, PERSONAL_GROUP);
+  assert.notEqual(saved.gateway, true);
+  assert.equal(saved.source, undefined);
+  assert.deepEqual(chatReference(saved), { model: "gpt-4o-mini", configId: "cfg-omni" });
+  assert.equal(catalog.some((row) => row.gateway === true), false);
+});
+
 test("a saved selection resolves to the exact configuration", () => {
   const catalog = buildCatalog({
     models: [

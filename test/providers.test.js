@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   PROVIDERS,
   PROVIDER_CATEGORIES,
+  filterProviders,
+  matchesProvider,
   providerById,
   providersByCategory
 } from "../src/providers/registry.js";
@@ -129,6 +131,29 @@ test("registry helpers return consistent subsets", () => {
   assert.ok(local.length >= 5);
   assert.ok(local.every(entry => entry.category === "local"));
   assert.equal(providersByCategory("nope").length, 0);
+});
+
+test("OmniRoute is a supported aggregator with no guessed public URL", () => {
+  const entry = providerById("omniroute");
+  assert.ok(entry, "omniroute entry missing");
+  assert.equal(entry.name, "OmniRoute");
+  assert.equal(entry.category, "aggregator");
+  assert.equal(entry.status, "supported");
+  assert.equal(entry.compatibility, "openai");
+  assert.equal(entry.baseUrl, "");
+  assert.ok(Array.isArray(entry.aliases) && entry.aliases.length > 0);
+});
+
+test("provider search matches aliases, case, and normalized whitespace", () => {
+  const omniroute = providerById("omniroute");
+  for (const query of ["OmniRoute", "omniroute", "OMNIROUTE", "omni route", "omni-route", "  omni   route  "]) {
+    assert.ok(matchesProvider(omniroute, query), `expected match for ${JSON.stringify(query)}`);
+  }
+  assert.equal(matchesProvider(omniroute, "portkey"), false);
+  assert.ok(filterProviders({ search: "openrouter", category: "aggregator" }).some(entry => entry.id === "openrouter"));
+  assert.ok(filterProviders({ search: "omni route", category: "aggregator" }).some(entry => entry.id === "omniroute"));
+  assert.equal(filterProviders({ search: "omni route", category: "direct" }).some(entry => entry.id === "omniroute"), false);
+  assert.equal(filterProviders({ search: "no-such-provider-xyz" }).length, 0);
 });
 
 function mockAdapter() {

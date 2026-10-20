@@ -52,6 +52,22 @@ export const PROVIDERS = [
     cost: "Open source; you pay the upstream providers."
   },
   {
+    id: "omniroute",
+    name: "OmniRoute",
+    aliases: ["omni route", "omni-route", "omnirouter"],
+    category: "aggregator",
+    deployment: "gateway",
+    compatibility: "openai",
+    status: "supported",
+    baseUrl: "",
+    website: "https://github.com/zorojean/omniroute",
+    keysUrl: "",
+    docsUrl: "",
+    pricingUrl: "",
+    note: "Self-hosted OpenAI-compatible router. Enter your own OmniRoute base URL (ending in /v1) and its API key — the key is encrypted per user, and this personal entry never uses the server's shared OmniRoute gateway credentials. The deployed backend must be able to reach the URL; localhost only works on the same machine or through a tunnel.",
+    cost: "Open source; you pay the upstream providers configured in OmniRoute."
+  },
+  {
     id: "portkey",
     name: "Portkey",
     category: "aggregator",
@@ -530,4 +546,28 @@ export function providerById(id) {
 
 export function providersByCategory(category) {
   return PROVIDERS.filter(entry => entry.category === category);
+}
+
+function normalizeProviderText(value) {
+  return String(value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+export function matchesProvider(entry, query) {
+  const needle = normalizeProviderText(query);
+  if (!needle) return true;
+  const fields = [
+    entry.name,
+    entry.id,
+    entry.category,
+    entry.note,
+    ...(Array.isArray(entry.aliases) ? entry.aliases : [])
+  ];
+  return fields.some(value => normalizeProviderText(value).includes(needle));
+}
+
+export function filterProviders({ search = "", category = "all", entries = PROVIDERS } = {}) {
+  return entries.filter(entry => {
+    if (category !== "all" && entry.category !== category) return false;
+    return matchesProvider(entry, search);
+  });
 }
