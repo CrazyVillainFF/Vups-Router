@@ -30,7 +30,9 @@ import {
   saveManagedProvider,
   saveProviderModels,
   testManagedProvider,
-  testProviderConnection
+  testManagedProviderModel,
+  testProviderConnection,
+  testProviderModel
 } from "./services/api.js";
 import "./settings.css";
 
@@ -47,6 +49,35 @@ const EMPTY_FORM = {
   registryId: ""
 };
 
+const PROTOCOL_OPTIONS = [
+  { value: "openai_compatible", label: "OpenAI-compatible — Chat Completions" },
+  { value: "openai_responses", label: "OpenAI — Responses API" },
+  { value: "anthropic_compatible", label: "Anthropic — Messages API" },
+  { value: "azure_openai", label: "Azure OpenAI — api-key header" },
+  { value: "watsonx", label: "IBM watsonx — IAM token exchange" },
+  { value: "local_gateway", label: "Local gateway — OpenAI-compatible" },
+  { value: "native", label: "Other native API (unsupported)" }
+];
+
+const SAVEABLE_COMPATIBILITY = new Set(["openai", "anthropic", "azure", "watsonx"]);
+
+const COMPATIBILITY_PROTOCOL = {
+  openai: "openai_compatible",
+  anthropic: "anthropic_compatible",
+  azure: "azure_openai",
+  watsonx: "watsonx"
+};
+
+function protocolHelp(type) {
+  if (type === "anthropic_compatible") return "Anthropic Messages API. Use https://api.anthropic.com or a compatible proxy; /v1 is added when needed.";
+  if (type === "openai_responses") return "OpenAI Responses API. Use the base URL before /responses, e.g. https://api.openai.com/v1.";
+  if (type === "azure_openai") return "Azure OpenAI v1 endpoint, e.g. https://{resource}.openai.azure.com/openai/v1. The key is sent in the api-key header and the model ID is your deployment name.";
+  if (type === "watsonx") return "IBM watsonx: use your regional cluster URL plus ?project_id=YOUR_PROJECT_ID. The IBM Cloud API key is exchanged for an IAM token automatically.";
+  if (type === "local_gateway") return "Ollama, LM Studio, vLLM, or another local OpenAI-compatible gateway. The deployed backend cannot reach localhost.";
+  if (type === "native") return "A provider-specific API that is not one of the implemented adapters. Saving and chat are disabled for this option.";
+  return "OpenAI Chat Completions API. Use the base URL before /chat/completions, e.g. https://api.example.com/v1.";
+}
+
 function slugify(name) {
   return String(name || "")
     .trim()
@@ -59,7 +90,8 @@ function slugify(name) {
 function statusLabel(provider) {
   const last = provider.lastTest;
   if (last) {
-    if (last.status === "connected") return { label: "Connected", tone: "ok" };
+    if (last.status === "connected") return { label: "Connection verified", tone: "ok" };
+    if (last.status === "reachable") return { label: "Endpoint reachable — test a model", tone: "warn" };
     if (last.status === "invalid_key") return { label: "Last test: invalid key", tone: "error" };
     if (last.status === "insufficient_balance") return { label: "Last test: insufficient balance", tone: "warn" };
     if (last.status === "unreachable") return { label: "Last test: unreachable", tone: "error" };
@@ -77,7 +109,7 @@ function formFromProvider(provider, registryEntry) {
     baseUrl: provider?.baseUrl ?? registryEntry?.baseUrl ?? "",
     apiKey: "",
     model: provider?.model || provider?.defaultModel || "",
-    providerType: provider?.providerType || (registryEntry?.compatibility === "anthropic" ? "anthropic_compatible" : "openai_compatible"),
+    providerType: provider?.providerType || COMPATIBILITY_PROTOCOL[registryEntry?.compatibility] || "openai_compatible",
     compatibility: registryEntry?.compatibility || "openai",
     status: registryEntry?.status || (provider ? "supported" : "listed"),
     registryId: registryEntry?.id || ""
@@ -211,8 +243,8 @@ export default function SettingsPage() {
     event?.preventDefault?.();
     if (!form) return;
     setAlert(null);
-    if (form.compatibility !== "openai") {
-      setAlert({ severity: "warning", message: "This endpoint speaks a different API shape and cannot chat through VupsRouter yet, so it cannot be saved as a working provider." });
+    if (!SAVEABLE_COMPATIBILITY.has(form.compatibility) || form.providerType === "native") {
+      setAlert({ severity: "warning", message: "This endpoint needs a dedicated adapter before VupsRouter can use it. OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages are implemented." });
       return;
     }
     const providerId = savedProvider ? form.providerId : slugify(form.providerId || form.provider);
@@ -266,12 +298,16 @@ export default function SettingsPage() {
       setAlert({ severity: "error", message: "Enter an API base URL first." });
       return;
     }
+    if (!savedProvider && form.apiKey.trim().length < 4) {
+      setAlert({ severity: "error", message: "Paste the API key before checking this new provider." });
+      return;
+    }
     setBusy("test");
     try {
       const payload = {
         baseUrl: form.baseUrl.trim(),
         apiKey: form.apiKey.trim() || undefined,
-        model: form.model.trim() || undefined
+        providerType: form.providerType
       };
       const result = savedProvider
         ? await testManagedProvider(savedProvider.configId, payload)
@@ -280,10 +316,74 @@ export default function SettingsPage() {
         setModels(result.availableModels);
         setSelectedModels(current => (current.length > 0 ? current : result.availableModels.map(model => model.id)));
       }
+      setAlert({ severity: result.warning ? "warning" : "success", message: result.message });
+      await refresh();
+    } catch (error) {
+      setAlert({ severity: "error", message: getApiErrorMessage(error) });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function handleTestModel() {
+    if (!form) return;
+    setAlert(null);
+    const model = form.model.trim();
+    if (!form.baseUrl.trim()) {
+      setAlert({ severity: "error", message: "Enter an API base URL first." });
+      return;
+    }
+    if (!savedProvider && form.apiKey.trim().length < 4) {
+      setAlert({ severity: "error", message: "Paste the API key before testing this new provider." });
+      return;
+    }
+    if (!model) {
+      setAlert({ severity: "error", message: "Enter the exact model ID before testing a model." });
+      return;
+    }
+    const confirmed = window.confirm(
+      `Send a small test prompt to ${model}? This may consume provider tokens or credits. Connection checks never send inference.`
+    );
+    if (!confirmed) return;
+    setBusy("test-model");
+    try {
+      const payload = {
+        baseUrl: form.baseUrl.trim(),
+        apiKey: form.apiKey.trim() || undefined,
+        providerType: form.providerType,
+        model
+      };
+      const result = savedProvider
+        ? await testManagedProviderModel(savedProvider.configId, payload)
+        : await testProviderModel({ provider: form.provider.trim() || "Custom", ...payload });
       setAlert({ severity: "success", message: result.message });
       await refresh();
     } catch (error) {
       setAlert({ severity: "error", message: getApiErrorMessage(error) });
+      await refresh();
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function handleSavedModelTest(provider) {
+    const model = provider.defaultModel || provider.model || "";
+    if (!model) {
+      setAlert({ severity: "error", message: `${provider.provider}: save a default model before testing a model.` });
+      return;
+    }
+    const confirmed = window.confirm(
+      `Send a small test prompt to ${model} through ${provider.provider}? This may consume provider tokens or credits.`
+    );
+    if (!confirmed) return;
+    setBusy(`test-model-${provider.configId}`);
+    try {
+      const result = await testManagedProviderModel(provider.configId, { model });
+      setAlert({ severity: "success", message: `${provider.provider}: ${result.message}` });
+      await refresh();
+    } catch (error) {
+      setAlert({ severity: "error", message: `${provider.provider}: ${getApiErrorMessage(error)}` });
+      await refresh();
     } finally {
       setBusy("");
     }
@@ -427,6 +527,7 @@ export default function SettingsPage() {
                       </div>
                       <div className="settings-provider-meta">
                         <span>{provider.baseUrl}</span>
+                        <span>{provider.providerType || "openai_compatible"}</span>
                         <span><KeyRoundedIcon fontSize="inherit" /> {provider.apiKeyMasked || "saved"}</span>
                         <span>{provider.models?.length || 0} saved model{provider.models?.length === 1 ? "" : "s"}</span>
                         <span>Default: {provider.defaultModel || provider.model || "none"}</span>
@@ -463,7 +564,16 @@ export default function SettingsPage() {
                           }
                         }}
                       >
-                        Test
+                        Check
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        disabled={Boolean(busy)}
+                        startIcon={busy === `test-model-${provider.configId}` ? <CircularProgress size={14} color="inherit" /> : <CheckCircleRoundedIcon />}
+                        onClick={() => handleSavedModelTest(provider)}
+                      >
+                        Test model
                       </Button>
                       <Button size="small" color="error" variant="text" disabled={Boolean(busy)} startIcon={<DeleteOutlineRoundedIcon />} onClick={() => handleDelete(provider)}>
                         Remove
@@ -517,7 +627,15 @@ export default function SettingsPage() {
                         </span>
                       )}
                       <span className={`settings-badge settings-badge--${entry.status === "supported" ? "neutral" : "warn"}`}>
-                        {entry.status === "supported" ? (entry.deployment === "local" ? "LOCAL GATEWAY" : "OPENAI-COMPATIBLE") : "ADAPTER PENDING"}
+                        {entry.status !== "supported"
+                          ? "ADAPTER PENDING"
+                          : entry.compatibility === "anthropic"
+                            ? "ANTHROPIC MESSAGES"
+                            : entry.compatibility === "azure"
+                              ? "AZURE OPENAI"
+                              : entry.compatibility === "watsonx"
+                                ? "IBM WATSONX"
+                                : entry.deployment === "local" ? "LOCAL GATEWAY" : "OPENAI-COMPATIBLE"}
                       </span>
                     </div>
                     <p className="settings-provider-note">{entry.note}</p>
@@ -543,10 +661,10 @@ export default function SettingsPage() {
                   {savedProvider ? `EDIT ${savedProvider.provider.toUpperCase()}` : "NEW PROVIDER"}
                 </span>
               </div>
-              {form.compatibility !== "openai" && (
+              {(!SAVEABLE_COMPATIBILITY.has(form.compatibility) || form.providerType === "native") && (
                 <Alert severity="warning" sx={{ mb: 2 }}>
-                  {form.provider} speaks a different API shape than the OpenAI chat format, so VupsRouter cannot use it for chat yet.
-                  This entry is documented here so you know why it cannot be saved — a dedicated adapter is future work.
+                  {form.provider} uses an API shape that does not have a dedicated adapter yet. Choose OpenAI-compatible,
+                  OpenAI Responses, Anthropic Messages, Azure OpenAI, or IBM watsonx, or add an adapter before saving.
                 </Alert>
               )}
               <div className="settings-form-grid">
@@ -563,10 +681,28 @@ export default function SettingsPage() {
                   value={form.baseUrl}
                   onChange={event => setForm(current => ({ ...current, baseUrl: event.target.value }))}
                   placeholder="https://gateway.example.com/v1"
-                  helperText="OpenAI-compatible base URL. Extra /chat/completions suffixes are stripped automatically. Localhost only works when the backend runs on the same machine — the deployed backend rejects it with an explanation."
+                  helperText={
+                    form.providerType === "watsonx"
+                      ? "Regional watsonx cluster URL plus ?project_id=YOUR_PROJECT_ID, e.g. https://us-south.ml.cloud.ibm.com?project_id=…"
+                      : form.providerType === "azure_openai"
+                        ? "Azure OpenAI v1 endpoint, e.g. https://{resource}.openai.azure.com/openai/v1. Enter it manually."
+                        : "OpenAI-compatible base URL. Extra /chat/completions suffixes are stripped automatically. Localhost only works when the backend runs on the same machine — the deployed backend rejects it with an explanation."
+                  }
                   inputProps={{ maxLength: 500 }}
                   required
                 />
+                <TextField
+                  select
+                  label="API protocol"
+                  value={form.providerType}
+                  onChange={event => setForm(current => ({ ...current, providerType: event.target.value }))}
+                  helperText={protocolHelp(form.providerType)}
+                  SelectProps={{ native: true }}
+                >
+                  {PROTOCOL_OPTIONS.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </TextField>
                 <TextField
                   label="API key"
                   type={showKey ? "text" : "password"}
@@ -599,7 +735,7 @@ export default function SettingsPage() {
                   type="submit"
                   variant="contained"
                   startIcon={busy === "save" ? <CircularProgress size={17} color="inherit" /> : <SaveRoundedIcon />}
-                  disabled={Boolean(busy) || form.compatibility !== "openai"}
+                  disabled={Boolean(busy) || !SAVEABLE_COMPATIBILITY.has(form.compatibility) || form.providerType === "native"}
                 >
                   {busy === "save" ? "Saving…" : "Save provider"}
                 </Button>
@@ -610,7 +746,17 @@ export default function SettingsPage() {
                   onClick={handleTest}
                   disabled={Boolean(busy)}
                 >
-                  {busy === "test" ? "Testing…" : "Test connection"}
+                  {busy === "test" ? "Checking…" : "Check connection (no tokens)"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outlined"
+                  color="warning"
+                  startIcon={busy === "test-model" ? <CircularProgress size={17} color="inherit" /> : <CheckCircleRoundedIcon />}
+                  onClick={handleTestModel}
+                  disabled={Boolean(busy)}
+                >
+                  {busy === "test-model" ? "Testing model…" : "Test model (uses tokens)"}
                 </Button>
                 <Button type="button" variant="text" onClick={() => setForm(null)} disabled={Boolean(busy)}>
                   Close
@@ -718,8 +864,8 @@ export default function SettingsPage() {
               <h2>How to configure {registryEntry?.name || savedProvider?.provider}</h2>
               <ol className="settings-guide-steps">
                 <li>Create an API key on the provider's official page {registryEntry?.keysUrl ? "" : "(paste your key below)"} and keep it private — never share API keys.</li>
-                <li>Enter the provider's OpenAI-compatible base URL (use <code>Load models</code> or manual entry to confirm the model ID).</li>
-                <li>Save the provider, then press <b>Test connection</b> — it lists models and sends one tiny request when a model is set.</li>
+                <li>Choose the API protocol and enter the provider's base URL (use <code>Load models</code> or manual entry to confirm the model ID).</li>
+                <li>Save the provider, then press <b>Check connection</b> — it only reads the model list and never sends inference. Use <b>Test model</b> separately; it sends a tiny prompt and may consume provider tokens.</li>
                 <li>Local gateways (Ollama, FlagshipRouter, vLLM, LM Studio) only work when the backend can reach them. A deployed backend cannot reach <code>localhost</code> — use a public HTTPS tunnel or run VupsRouter locally.</li>
                 <li>Switch chat between providers any time with <b>Use for chat</b> — every provider keeps its own key and models.</li>
               </ol>
@@ -733,6 +879,7 @@ export default function SettingsPage() {
             <ul>
               <li>Keys are encrypted with AES-256-GCM using a server-side secret and are never returned to the browser — only a masked preview.</li>
               <li>Localhost and private-network base URLs are rejected on production servers with an explanation, so a local gateway failure is never misreported as an invalid key.</li>
+              <li><b>Check connection</b> never runs inference. Only the explicit <b>Test model</b> action sends a small prompt, and it always asks for confirmation first.</li>
               <li>Deleting a provider removes only that provider's configuration; all others stay untouched.</li>
             </ul>
           </section>

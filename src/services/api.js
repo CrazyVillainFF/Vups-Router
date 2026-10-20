@@ -91,6 +91,12 @@ export async function testProviderConnection(payload) {
   return data;
 }
 
+export async function testProviderModel(payload) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.post("/settings/provider/test-model", payload);
+  return data;
+}
+
 export async function listProviders() {
   ensureApiBaseURL();
   const { data } = await apiClient.get("/settings/providers");
@@ -128,6 +134,13 @@ export async function testManagedProvider(providerId, payload) {
   ensureApiBaseURL();
   const id = encodeURIComponent(providerId);
   const { data } = await apiClient.post(`/settings/providers/${id}/test`, payload ?? {});
+  return data;
+}
+
+export async function testManagedProviderModel(providerId, payload) {
+  ensureApiBaseURL();
+  const id = encodeURIComponent(providerId);
+  const { data } = await apiClient.post(`/settings/providers/${id}/test-model`, payload ?? {});
   return data;
 }
 

@@ -18,7 +18,8 @@ import {
   signIn,
   signOut,
   signUp,
-  testProviderConnection
+  testProviderConnection,
+  testProviderModel
 } from "../src/services/api.js";
 
 function mockAdapter() {
@@ -116,7 +117,8 @@ test("provider configuration methods use the settings endpoints", async () => {
   try {
     await fetchProviderConfig();
     await saveProviderConfig({ provider: "Fake", baseUrl: "https://p.example/v1", apiKey: "sk-1", model: "m1" });
-    await testProviderConnection({ baseUrl: "https://p.example/v1", apiKey: "sk-1", model: "m1" });
+    await testProviderConnection({ baseUrl: "https://p.example/v1", apiKey: "sk-1" });
+    await testProviderModel({ baseUrl: "https://p.example/v1", apiKey: "sk-1", model: "m1" });
     await fetchProviderModels();
     await deleteProviderConfig();
   } finally {
@@ -127,6 +129,7 @@ test("provider configuration methods use the settings endpoints", async () => {
     "get /settings/provider",
     "put /settings/provider",
     "post /settings/provider/test",
+    "post /settings/provider/test-model",
     "get /settings/models",
     "delete /settings/provider"
   ]);

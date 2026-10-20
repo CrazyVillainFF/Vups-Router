@@ -15,7 +15,8 @@ import {
   removeProvider,
   saveManagedProvider,
   saveProviderModels,
-  testManagedProvider
+  testManagedProvider,
+  testManagedProviderModel
 } from "../src/services/api.js";
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,59}$/;
@@ -36,17 +37,37 @@ test("every provider entry carries the fields the settings UI renders", () => {
     assert.ok(entry.name && entry.name.length >= 2, `name missing for ${entry.id}`);
     assert.ok(CATEGORY_IDS.has(entry.category), `unknown category for ${entry.id}`);
     assert.ok(["hosted", "gateway", "local", "custom"].includes(entry.deployment), `deployment for ${entry.id}`);
-    assert.ok(["openai", "anthropic", "other"].includes(entry.compatibility), `compatibility for ${entry.id}`);
+    assert.ok(["openai", "anthropic", "azure", "watsonx", "other"].includes(entry.compatibility), `compatibility for ${entry.id}`);
     assert.ok(["supported", "listed"].includes(entry.status), `status for ${entry.id}`);
     assert.ok(entry.note && entry.note.length > 20, `note too short for ${entry.id}`);
     assert.ok(entry.cost && entry.cost.length > 5, `cost missing for ${entry.id}`);
   }
 });
 
-test("supported entries only promise the OpenAI-compatible adapter that exists", () => {
+test("supported entries only promise adapters that exist", () => {
   for (const entry of PROVIDERS.filter(item => item.status === "supported")) {
-    assert.equal(entry.compatibility, "openai", `${entry.id} is marked supported but needs a different adapter`);
+    assert.ok(["openai", "anthropic", "azure", "watsonx"].includes(entry.compatibility), `${entry.id} is marked supported but needs a different adapter`);
   }
+});
+
+test("previously pending providers now resolve to a working adapter", () => {
+  const expected = {
+    "vercel-ai-gateway": ["openai", "https://ai-gateway.vercel.sh/v1"],
+    "huggingface": ["openai", "https://router.huggingface.co/v1"],
+    "cloudflare-workers-ai": ["openai", ""],
+    "amazon-bedrock": ["openai", "https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1"],
+    "azure-ai-foundry": ["azure", ""],
+    "ibm-watsonx": ["watsonx", "https://us-south.ml.cloud.ibm.com"],
+    "ai21": ["openai", "https://api.ai21.com/studio/v1"]
+  };
+  for (const [id, [compatibility, baseUrl]] of Object.entries(expected)) {
+    const entry = providerById(id);
+    assert.ok(entry, `${id} entry missing`);
+    assert.equal(entry.status, "supported", `${id} should not show adapter pending`);
+    assert.equal(entry.compatibility, compatibility, `${id} compatibility`);
+    assert.equal(entry.baseUrl, baseUrl, `${id} baseUrl`);
+  }
+  assert.equal(PROVIDERS.filter(entry => entry.status !== "supported").length, 0);
 });
 
 test("external links are https, and base URLs are https or local http", () => {
@@ -98,7 +119,7 @@ test("custom endpoints exist for both OpenAI and Anthropic shapes", () => {
   assert.equal(openai.status, "supported");
   assert.equal(openai.baseUrl, "");
   assert.equal(anthropic.compatibility, "anthropic");
-  assert.equal(anthropic.status, "listed");
+  assert.equal(anthropic.status, "supported");
 });
 
 test("registry helpers return consistent subsets", () => {
@@ -141,6 +162,7 @@ test("multi-provider API calls use the managed provider endpoints", async () => 
     await createManagedProvider({ providerId: "deepseek", provider: "DeepSeek", baseUrl: "https://api.deepseek.com", apiKey: "sk-second", model: "deepseek-chat" });
     await activateProvider("deepseek");
     await testManagedProvider("deepseek", { baseUrl: "https://api.deepseek.com" });
+    await testManagedProviderModel("deepseek", { model: "deepseek-chat" });
     await saveProviderModels("deepseek", { models: ["deepseek-chat"], defaultModel: "deepseek-chat" });
     await fetchProviderModelsDetailed("deepseek");
     await removeProvider("deepseek");
@@ -153,6 +175,7 @@ test("multi-provider API calls use the managed provider endpoints", async () => 
         "post /settings/providers",
         "post /settings/providers/deepseek/activate",
         "post /settings/providers/deepseek/test",
+        "post /settings/providers/deepseek/test-model",
         "put /settings/providers/deepseek/models",
         "get /settings/models",
         "delete /settings/providers/deepseek"
@@ -161,8 +184,8 @@ test("multi-provider API calls use the managed provider endpoints", async () => 
     assert.equal(mock.requests[1].data.baseUrl, "https://api.deepseek.com");
     assert.equal(mock.requests[2].data.providerId, "deepseek");
     assert.equal(mock.requests[2].data.apiKey, "sk-second");
-    assert.deepEqual(mock.requests[5].data, { models: ["deepseek-chat"], defaultModel: "deepseek-chat" });
-    assert.deepEqual(mock.requests[6].params, { configId: "deepseek" });
+    assert.deepEqual(mock.requests[6].data, { models: ["deepseek-chat"], defaultModel: "deepseek-chat" });
+    assert.deepEqual(mock.requests[7].params, { configId: "deepseek" });
   } finally {
     mock.restore();
   }

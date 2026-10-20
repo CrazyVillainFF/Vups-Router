@@ -2,10 +2,11 @@
 //
 // Every entry is data only — the chat and settings components render from this
 // list, so new providers are added by extending this array, never by editing
-// chat components. "supported" means the current OpenAI-compatible adapter
-// works (verified request/response structure); "listed" means the service is
-// real and documented but needs a dedicated adapter or manual field handling,
-// and is shown clearly as not yet integrated instead of pretending otherwise.
+// chat components. "supported" means one of the implemented adapters (OpenAI
+// Chat Completions, OpenAI Responses, Anthropic Messages, Azure OpenAI, or
+// IBM watsonx) works; "listed" means the service is real and documented but
+// still needs a dedicated adapter, and is shown clearly as not yet integrated
+// instead of pretending otherwise.
 //
 // Base URLs are only filled in when they are documented by the provider.
 // Free-tier notes are deliberately cautious: availability changes, so users
@@ -71,13 +72,13 @@ export const PROVIDERS = [
     category: "aggregator",
     deployment: "hosted",
     compatibility: "openai",
-    status: "listed",
-    baseUrl: "",
+    status: "supported",
+    baseUrl: "https://ai-gateway.vercel.sh/v1",
     website: "https://vercel.com/ai-gateway",
     keysUrl: "https://vercel.com/dashboard",
     docsUrl: "https://vercel.com/docs/ai-gateway",
     pricingUrl: "https://vercel.com/docs/ai-gateway/pricing",
-    note: "Gateway for many models with one key. Enter the documented OpenAI-compatible base URL from the official docs.",
+    note: "OpenAI Chat Completions endpoint at https://ai-gateway.vercel.sh/v1. Use an AI Gateway API key; model IDs look like openai/gpt-5.5.",
     cost: "Usage-based; check official pricing."
   },
   {
@@ -178,13 +179,13 @@ export const PROVIDERS = [
     category: "direct",
     deployment: "hosted",
     compatibility: "anthropic",
-    status: "listed",
-    baseUrl: "",
+    status: "supported",
+    baseUrl: "https://api.anthropic.com",
     website: "https://console.anthropic.com/",
     keysUrl: "https://console.anthropic.com/settings/keys",
     docsUrl: "https://docs.anthropic.com/",
     pricingUrl: "https://www.anthropic.com/pricing",
-    note: "Claude models speak the Anthropic Messages API, not the OpenAI format. A dedicated adapter is not wired up yet — this entry is listed, not integration-ready.",
+    note: "Claude models use the Anthropic Messages API through VupsRouter's native adapter, including streaming responses.",
     cost: "Paid — check official pricing."
   },
   {
@@ -328,13 +329,13 @@ export const PROVIDERS = [
     category: "direct",
     deployment: "hosted",
     compatibility: "openai",
-    status: "listed",
-    baseUrl: "",
+    status: "supported",
+    baseUrl: "https://router.huggingface.co/v1",
     website: "https://huggingface.co/",
     keysUrl: "https://huggingface.co/settings/tokens",
     docsUrl: "https://huggingface.co/docs/inference-providers/index",
     pricingUrl: "https://huggingface.co/pricing",
-    note: "Inference Providers gateway. Enter the documented OpenAI-compatible router base URL from the official docs.",
+    note: "OpenAI-compatible Inference Providers router. Use a Hugging Face token with inference permissions; add :fastest or :cheapest to a model ID to pick routing.",
     cost: "Free credits and paid tiers; check official pricing."
   },
   {
@@ -343,13 +344,13 @@ export const PROVIDERS = [
     category: "direct",
     deployment: "hosted",
     compatibility: "openai",
-    status: "listed",
+    status: "supported",
     baseUrl: "",
     website: "https://developers.cloudflare.com/workers-ai/",
     keysUrl: "https://dash.cloudflare.com/profile/api-tokens",
     docsUrl: "https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/",
     pricingUrl: "https://developers.cloudflare.com/workers-ai/platform/pricing/",
-    note: "OpenAI-compatible endpoint lives under /client/v4/accounts/{account_id}/ai/v1 — you must include your account ID, so enter the full URL manually.",
+    note: "OpenAI-compatible endpoint at https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1 — replace {account_id} with yours and enter the full URL manually.",
     cost: "Free daily allocation; check official pricing."
   },
   {
@@ -357,14 +358,14 @@ export const PROVIDERS = [
     name: "Amazon Bedrock",
     category: "direct",
     deployment: "hosted",
-    compatibility: "other",
-    status: "listed",
-    baseUrl: "",
+    compatibility: "openai",
+    status: "supported",
+    baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1",
     website: "https://aws.amazon.com/bedrock/",
     keysUrl: "https://console.aws.amazon.com/iam/",
-    docsUrl: "https://docs.aws.amazon.com/bedrock/",
+    docsUrl: "https://docs.aws.amazon.com/bedrock/latest/userguide/inference-chat-completions.html",
     pricingUrl: "https://aws.amazon.com/bedrock/pricing/",
-    note: "AWS Signature V4 authentication is required — a plain Bearer key cannot work. Listed for completeness; a dedicated adapter is future work.",
+    note: "OpenAI-compatible Chat Completions at https://bedrock-runtime.{region}.amazonaws.com/openai/v1. Use an Amazon Bedrock API key (Bearer) and a model ID such as openai.gpt-oss-20b-1:0. There is no /models route, so Check connection reports reachable and Test model verifies the key.",
     cost: "Paid — check official pricing."
   },
   {
@@ -372,14 +373,14 @@ export const PROVIDERS = [
     name: "Microsoft Azure AI Foundry",
     category: "direct",
     deployment: "hosted",
-    compatibility: "openai",
-    status: "listed",
+    compatibility: "azure",
+    status: "supported",
     baseUrl: "",
     website: "https://ai.azure.com/",
     keysUrl: "https://ai.azure.com/",
     docsUrl: "https://learn.microsoft.com/azure/ai-services/openai/",
     pricingUrl: "https://azure.microsoft.com/pricing/details/cognitive-services/openai-service/",
-    note: "Your deployment endpoint looks like https://{resource}.openai.azure.com/openai/v1 — enter it manually. Keys are sent as a Bearer token on the v1 compatibility path.",
+    note: "Use your resource's v1 endpoint, https://{resource}.openai.azure.com/openai/v1, and enter it manually. The API key is sent in the api-key header; the model ID is your deployment name.",
     cost: "Paid — check official pricing."
   },
   {
@@ -387,14 +388,14 @@ export const PROVIDERS = [
     name: "IBM watsonx",
     category: "direct",
     deployment: "hosted",
-    compatibility: "other",
-    status: "listed",
-    baseUrl: "",
+    compatibility: "watsonx",
+    status: "supported",
+    baseUrl: "https://us-south.ml.cloud.ibm.com",
     website: "https://www.ibm.com/products/watsonx-ai",
     keysUrl: "https://cloud.ibm.com/iam/apikeys",
-    docsUrl: "https://www.ibm.com/docs/en/watsonx",
+    docsUrl: "https://www.ibm.com/docs/en/watsonx/saas?topic=code-chat",
     pricingUrl: "https://www.ibm.com/products/watsonx-ai/pricing",
-    note: "Requires an IAM token exchange and per-region endpoints — not Bearer-compatible out of the box. Listed for completeness.",
+    note: "Enter your region's cluster URL and append ?project_id=YOUR_PROJECT_ID. VupsRouter exchanges the IBM Cloud API key for an IAM token, then calls /ml/v1/text/chat (model IDs like ibm/granite-3-8b-instruct).",
     cost: "Paid — check official pricing."
   },
   {
@@ -402,14 +403,14 @@ export const PROVIDERS = [
     name: "AI21 Labs",
     category: "direct",
     deployment: "hosted",
-    compatibility: "other",
-    status: "listed",
-    baseUrl: "",
+    compatibility: "openai",
+    status: "supported",
+    baseUrl: "https://api.ai21.com/studio/v1",
     website: "https://www.ai21.com/",
     keysUrl: "https://studio.ai21.com/account/api-key",
     docsUrl: "https://docs.ai21.com/",
     pricingUrl: "https://www.ai21.com/pricing",
-    note: "Studio API uses its own request shape; the OpenAI-compatible surface differs per model. Listed; verify against the official docs before use.",
+    note: "OpenAI-compatible Studio endpoint at https://api.ai21.com/studio/v1. Use a Studio API key; Jamba model IDs are listed by Check connection.",
     cost: "Free trial credits; check official pricing."
   },
 
@@ -512,13 +513,13 @@ export const PROVIDERS = [
     category: "custom",
     deployment: "custom",
     compatibility: "anthropic",
-    status: "listed",
+    status: "supported",
     baseUrl: "",
     website: "",
     keysUrl: "",
     docsUrl: "https://docs.anthropic.com/",
     pricingUrl: "",
-    note: "Proxy or self-hosted endpoint speaking the Anthropic Messages API. The dedicated adapter is future work; this entry documents the format gap instead of accepting a config that cannot work yet.",
+    note: "Proxy or self-hosted endpoint speaking the Anthropic Messages API. Use the base URL before /v1/messages; VupsRouter adds /v1 when needed.",
     cost: "Set by the endpoint's operator."
   }
 ];
