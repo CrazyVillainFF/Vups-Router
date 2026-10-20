@@ -5,7 +5,7 @@ const viteEnv = import.meta.env ?? {};
 export function resolveApiBaseURL(env = viteEnv) {
   const configured = env.VITE_API_BASE_URL?.trim();
   if (configured) return configured.replace(/\/+$/, "");
-  return env.DEV ? "http://localhost:4000/api" : "";
+  return env.DEV ? "http://localhost:4000/api" : "/api";
 }
 
 export const apiClient = axios.create({

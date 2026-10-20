@@ -49,9 +49,13 @@ test("configured API base URL is trimmed and normalized", () => {
   assert.equal(resolveApiBaseURL({ VITE_API_BASE_URL: " https://api.example.test/api/// " }), "https://api.example.test/api");
 });
 
-test("development defaults to localhost and production requires configuration", () => {
+test("development defaults to localhost and production uses the same-origin /api proxy", () => {
   assert.equal(resolveApiBaseURL({ DEV: true }), "http://localhost:4000/api");
-  assert.equal(resolveApiBaseURL({ DEV: false }), "");
+  assert.equal(resolveApiBaseURL({ DEV: false }), "/api");
+});
+
+test("a relative API base URL is honored for proxied production deployments", () => {
+  assert.equal(resolveApiBaseURL({ DEV: false, VITE_API_BASE_URL: "/api/" }), "/api");
 });
 
 test("the API client sends cookies with every request", () => {

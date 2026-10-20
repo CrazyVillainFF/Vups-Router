@@ -95,12 +95,23 @@ test("index.html ships production metadata", () => {
   assert.ok(html.includes("lang=\"en\""));
 });
 
-test("vercel.json keeps SPA routing and adds security headers", () => {
+test("vercel.json keeps SPA routing, proxies the API on the same origin, and adds security headers", () => {
   const config = JSON.parse(read("vercel.json"));
-  assert.deepEqual(config.rewrites, [{ source: "/(.*)", destination: "/index.html" }]);
+  assert.deepEqual(config.rewrites, [
+    { source: "/api/:path*", destination: "https://vups-router-be.onrender.com/api/:path*" },
+    { source: "/(.*)", destination: "/index.html" }
+  ]);
   assert.equal(config.outputDirectory, "dist");
 
-  const headers = Object.fromEntries(config.headers[0].headers.map(h => [h.key, h.value]));
+  const apiHeaders = Object.fromEntries(
+    config.headers.find(group => group.source === "/api/:path*").headers.map(h => [h.key, h.value])
+  );
+  assert.equal(apiHeaders["Cache-Control"], "no-store");
+  assert.equal(apiHeaders["x-vercel-enable-rewrite-caching"], "0");
+
+  const headers = Object.fromEntries(
+    config.headers.find(group => group.source === "/(.*)").headers.map(h => [h.key, h.value])
+  );
   assert.match(headers["Content-Security-Policy"], /default-src 'self'/);
   assert.match(headers["Content-Security-Policy"], /frame-ancestors 'none'/);
   assert.match(headers["Content-Security-Policy"], /connect-src 'self' https:\/\/vups-router-be\.onrender\.com/);
