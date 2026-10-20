@@ -94,6 +94,9 @@ function statusLabel(provider) {
     if (last.status === "reachable") return { label: "Endpoint reachable — test a model", tone: "warn" };
     if (last.status === "invalid_key") return { label: "Last test: invalid key", tone: "error" };
     if (last.status === "insufficient_balance") return { label: "Last test: insufficient balance", tone: "warn" };
+    if (last.status === "restricted") return { label: "Last test: restricted to official client", tone: "warn" };
+    if (last.status === "unsupported") return { label: "Last test: protocol not supported", tone: "warn" };
+    if (last.status === "model_unavailable") return { label: "Last test: model unavailable", tone: "warn" };
     if (last.status === "unreachable") return { label: "Last test: unreachable", tone: "error" };
     if (last.status === "timeout") return { label: "Last test: timed out", tone: "error" };
     return { label: "Last test failed", tone: "error" };

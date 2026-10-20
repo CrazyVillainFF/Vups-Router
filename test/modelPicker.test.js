@@ -178,6 +178,18 @@ test("saved rows expose provider, masked key, and a saved marker", () => {
   assert.equal(row.saved, true);
 });
 
+test("OpenCode restricted free models are shown as unavailable with a clear reason", () => {
+  const entry = savedModel("cfg-zen", "deepseek-v4.1-flash-free", { provider: "OpenCode Zen", providerId: "opencode-zen" });
+  entry.free = true;
+  entry.restrictedProvider = true;
+  const catalog = buildCatalog({ models: [entry], shared: null });
+  const row = catalog[0];
+  assert.equal(row.disabled, true);
+  assert.match(row.tag, /OpenCode client only/);
+  assert.match(row.tag, /not usable from VupsRouter/);
+  assert.deepEqual(chatReference(row), {});
+});
+
 test("a personal OmniRoute provider stays saved and never becomes the shared gateway", () => {
   const catalog = buildCatalog({
     models: [savedModel("cfg-omni", "gpt-4o-mini", { provider: "OmniRoute", providerId: "omniroute" })],

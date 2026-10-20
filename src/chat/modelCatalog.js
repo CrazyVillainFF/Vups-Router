@@ -20,6 +20,7 @@ function savedRow(entry) {
   const provider = entry.provider || entry.ownedBy || "Your provider";
   const masked = entry.apiKeyMasked || "";
   const vision = entry.vision === true ? true : entry.vision === false ? false : null;
+  const restricted = entry.restrictedProvider === true || entry.free === true;
   return {
     key: `saved:${configId || entry.providerId || provider}:${model}`,
     kind: "saved",
@@ -34,7 +35,8 @@ function savedRow(entry) {
     saved: true,
     shared: false,
     vision,
-    tag: "Saved model",
+    disabled: restricted || undefined,
+    tag: restricted ? "OpenCode client only — not usable from VupsRouter" : "Saved model",
     meta: [provider, masked].filter(Boolean).join(" · ")
   };
 }

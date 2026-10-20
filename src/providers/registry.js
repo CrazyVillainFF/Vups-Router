@@ -140,8 +140,8 @@ export const PROVIDERS = [
     keysUrl: "https://opencode.ai/console",
     docsUrl: "https://opencode.ai/docs/zen/",
     pricingUrl: "https://opencode.ai/docs/zen/#pricing",
-    note: "OpenCode's pay-as-you-go gateway, also called OpenCode Console. Create a key in the Console, then use Load models or paste any model ID. VupsRouter routes each model to its documented OpenAI Chat Completions, OpenAI Responses, or Anthropic Messages endpoint automatically. Gemini and Jev models use native APIs that are not supported yet.",
-    cost: "Pay-as-you-go; check official pricing. Free-tier API access may be limited to the OpenCode client."
+    note: "OpenCode's pay-as-you-go gateway, also called OpenCode Console. Create a paid key in the Console, then use Load models or paste any model ID. VupsRouter routes each model to its documented OpenAI Chat Completions, OpenAI Responses, or Anthropic Messages endpoint automatically. OpenCode restricts models whose IDs end in -free to its official client; VupsRouter shows them as unavailable and will not bypass that restriction. Gemini and Jev models use native APIs that are not supported yet.",
+    cost: "Pay-as-you-go; add credits in the OpenCode Console. Free-tier Zen models only work inside the official OpenCode client."
   },
 
   // ─── Direct model providers ─────────────────────────────────────────────
