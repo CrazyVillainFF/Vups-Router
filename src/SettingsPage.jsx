@@ -19,6 +19,7 @@ import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import SiteHeader from "./components/SiteHeader.jsx";
+import { capabilityLabels } from "./chat/modelCatalog.js";
 import { PROVIDER_CATEGORIES, filterProviders, providerById } from "./providers/registry.js";
 import {
   activateProvider,
@@ -35,6 +36,11 @@ import {
   testProviderModel
 } from "./services/api.js";
 import "./settings.css";
+
+function capabilityTitle(model) {
+  const labels = capabilityLabels(model?.capabilities);
+  return labels.length > 0 ? `Supported: ${labels.join(", ")}` : "Capabilities not reported by this provider";
+}
 
 const EMPTY_FORM = {
   configId: "",
@@ -790,6 +796,7 @@ export default function SettingsPage() {
                         type="button"
                         className={`settings-model-chip${selectedModels.includes(model.id) ? " is-active" : ""}`}
                         aria-pressed={selectedModels.includes(model.id)}
+                        title={capabilityTitle(model)}
                         onClick={() => toggleModel(model.id)}
                       >
                         {model.id}
@@ -815,6 +822,10 @@ export default function SettingsPage() {
                   ))}
                   {selectedModels.length === 0 && <span className="settings-empty">No saved models yet — discover or add one below.</span>}
                 </div>
+                <p className="settings-empty">
+                  Capability badges come from provider metadata. This app currently routes chat and image inputs; image
+                  generation, audio, video, embeddings, reranking, and realtime are not exposed yet.
+                </p>
               </div>
               <div className="settings-filter-row">
                 <TextField

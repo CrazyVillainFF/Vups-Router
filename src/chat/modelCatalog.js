@@ -4,6 +4,39 @@ export const SHARED_GROUP = "FREE MODELS";
 export const GATEWAY_GROUP = "OMNIROUTE GATEWAY";
 export const OMNIROUTE_SOURCE = "omniroute";
 
+const CAPABILITY_LABELS = [
+  ["vision", "Vision"],
+  ["tools", "Tools"],
+  ["reasoning", "Reasoning"],
+  ["embeddings", "Embeddings"],
+  ["imageGeneration", "Image gen"],
+  ["audioInput", "Audio in"],
+  ["audioOutput", "Audio out"],
+  ["videoInput", "Video in"]
+];
+
+export function capabilityLabels(capabilities) {
+  if (!capabilities || typeof capabilities !== "object") return [];
+  return CAPABILITY_LABELS.filter(([key]) => capabilities[key] === true).map(([, label]) => label);
+}
+
+function capabilitiesFor(entry) {
+  const source = entry?.capabilities;
+  const capabilities = source && typeof source === "object" && !Array.isArray(source) ? { ...source } : {};
+  if (entry?.vision === true || entry?.vision === false) {
+    if (capabilities.vision !== true && capabilities.vision !== false) capabilities.vision = entry.vision;
+  }
+  return capabilities;
+}
+
+function visionFor(entry, capabilities) {
+  if (entry?.vision === true) return true;
+  if (entry?.vision === false) return false;
+  if (capabilities.vision === true) return true;
+  if (capabilities.vision === false) return false;
+  return null;
+}
+
 function cleanEntries(entries) {
   return (Array.isArray(entries) ? entries : [])
     .filter((entry) => entry && typeof entry.id === "string" && entry.id.trim())
@@ -19,8 +52,10 @@ function savedRow(entry) {
   const configId = entry.configId || "";
   const provider = entry.provider || entry.ownedBy || "Your provider";
   const masked = entry.apiKeyMasked || "";
-  const vision = entry.vision === true ? true : entry.vision === false ? false : null;
-  const restricted = entry.restrictedProvider === true || entry.free === true;
+  const capabilities = capabilitiesFor(entry);
+  const vision = visionFor(entry, capabilities);
+  const restricted = entry.restrictedProvider === true;
+  const free = entry.free === true;
   return {
     key: `saved:${configId || entry.providerId || provider}:${model}`,
     kind: "saved",
@@ -34,16 +69,20 @@ function savedRow(entry) {
     apiKeyMasked: masked,
     saved: true,
     shared: false,
+    free,
     vision,
+    capabilities,
+    capabilityLabels: capabilityLabels(capabilities),
     disabled: restricted || undefined,
-    tag: restricted ? "OpenCode client only — not usable from VupsRouter" : "Saved model",
-    meta: [provider, masked].filter(Boolean).join(" · ")
+    tag: restricted ? "OpenCode client only - not usable from VupsRouter" : free ? "Free model - saved" : "Saved model",
+    meta: [provider, masked].filter(Boolean).join(" - ")
   };
 }
 
 function sharedRow(entry) {
   const model = entry.id || entry.name;
-  const vision = entry.vision === true;
+  const capabilities = capabilitiesFor(entry);
+  const vision = visionFor(entry, capabilities);
   return {
     key: `shared:${model}`,
     kind: "shared",
@@ -57,9 +96,12 @@ function sharedRow(entry) {
     apiKeyMasked: "",
     saved: false,
     shared: true,
+    free: true,
     vision,
-    tag: "Free · No API key needed",
-    meta: ""
+    capabilities,
+    capabilityLabels: capabilityLabels(capabilities),
+    tag: "Free - no API key needed",
+    meta: entry.contextLength ? `${Math.round(entry.contextLength / 1000)}k context` : ""
   };
 }
 
@@ -110,7 +152,8 @@ function gatewayRow(entry) {
   const model = entry.id || entry.name;
   const source = entry.source || OMNIROUTE_SOURCE;
   const provider = entry.provider || entry.ownedBy || "OmniRoute";
-  const vision = entry.vision === true ? true : entry.vision === false ? false : null;
+  const capabilities = capabilitiesFor(entry);
+  const vision = visionFor(entry, capabilities);
   return {
     key: `gateway:${source}:${model}`,
     kind: "gateway",
@@ -127,6 +170,8 @@ function gatewayRow(entry) {
     gateway: true,
     source,
     vision,
+    capabilities,
+    capabilityLabels: capabilityLabels(capabilities),
     tag: `${provider} gateway`,
     meta: "Managed by the server"
   };

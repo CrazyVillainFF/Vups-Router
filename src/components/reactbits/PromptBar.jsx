@@ -174,6 +174,7 @@ export default function PromptBar({
   });
   const [dismissed, setDismissed] = useState(false);
   const [active, setActive] = useState(0);
+  const [modelQuery, setModelQuery] = useState('');
   const [listening, setListening] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -210,9 +211,19 @@ export default function PromptBar({
   const list = useMemo(() => {
     if (open === 'at') return sources.filter(s => s.name.toLowerCase().includes(query));
     if (open === 'slash') return commands.filter(c => c.name.replace(/^\//, '').toLowerCase().startsWith(query));
-    if (open === 'model') return models;
+    if (open === 'model') {
+      const needle = modelQuery.trim().toLowerCase();
+      if (!needle) return models;
+      return models.filter(row =>
+        [row.name, row.model, row.provider, row.tag, row.meta, ...(row.capabilityLabels || [])]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(needle)
+      );
+    }
     return [];
-  }, [open, query, sources, commands, models]);
+  }, [open, query, sources, commands, models, modelQuery]);
   const cursor = Math.min(active, Math.max(0, list.length - 1));
   const canSend = draft.trim().length > 0 || attachments.length > 0;
   const armed = busy || canSend;
@@ -259,6 +270,7 @@ export default function PromptBar({
   }, [open, cursor, list]);
   useEffect(() => {
     if (!open) lastOpen.current = null;
+    if (open !== 'model') setModelQuery('');
   }, [open]);
 
   useEffect(() => {
@@ -494,6 +506,10 @@ export default function PromptBar({
       }
       return;
     }
+    if (e.key === 'Enter' && e.currentTarget?.classList?.contains('prompt-bar__model-search')) {
+      e.preventDefault();
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       send();
@@ -594,6 +610,24 @@ export default function PromptBar({
             </>
           ) : (
             <>
+              {open === 'model' ? (
+                <div className="prompt-bar__model-search-wrap">
+                  <input
+                    className="prompt-bar__model-search"
+                    type="search"
+                    value={modelQuery}
+                    placeholder="Search models or capabilities"
+                    aria-label="Search models"
+                    autoComplete="off"
+                    spellCheck={false}
+                    onChange={event => {
+                      setModelQuery(event.target.value);
+                      setActive(0);
+                    }}
+                    onKeyDown={onKeyDown}
+                  />
+                </div>
+              ) : null}
               <div className="prompt-bar__list">
                 <span ref={glowRef} className="prompt-bar__glow" aria-hidden="true" />
                 {list.map((row, i) => {
@@ -629,6 +663,16 @@ export default function PromptBar({
                               {row.name}
                             </span>
                             {row.tag ? <span className="prompt-bar__model-sub">{row.tag}</span> : null}
+                            {row.capabilityLabels?.length > 0 ? (
+                              <span
+                                className="prompt-bar__model-caps"
+                                title={`Supported: ${row.capabilityLabels.join(", ")}`}
+                              >
+                                {row.capabilityLabels.slice(0, 3).map(label => (
+                                  <span key={label} className="prompt-bar__model-cap">{label}</span>
+                                ))}
+                              </span>
+                            ) : null}
                             {row.meta ? <span className="prompt-bar__model-meta">{row.meta}</span> : null}
                           </span>
                           {row.saved && onDeleteModel ? (
@@ -674,7 +718,11 @@ export default function PromptBar({
                     </Fragment>
                   );
                 })}
-                {list.length === 0 ? <div className="prompt-bar__empty">No matches for “{query}”</div> : null}
+                {list.length === 0 ? (
+                  <div className="prompt-bar__empty">
+                    {open === 'model' ? `No models match "${modelQuery.trim()}"` : `No matches for "${query}"`}
+                  </div>
+                ) : null}
               </div>
               {open === 'model' && onAddKey ? (
                 <button

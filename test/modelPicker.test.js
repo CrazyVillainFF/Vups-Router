@@ -79,6 +79,21 @@ function fakeStorage() {
   };
 }
 
+test("model capability metadata drives picker labels and vision flags", () => {
+  const known = {
+    ...savedModel("cfg-a", "vision-model"),
+    capabilities: { vision: true, tools: true, reasoning: true, contextLength: 128000 }
+  };
+  const unknown = savedModel("cfg-b", "unknown-model");
+  const catalog = buildCatalog({ models: [known, unknown], shared: null });
+  const vision = catalog.find((row) => row.model === "vision-model");
+  const other = catalog.find((row) => row.model === "unknown-model");
+  assert.deepEqual(vision.capabilityLabels, ["Vision", "Tools", "Reasoning"]);
+  assert.equal(vision.vision, true);
+  assert.deepEqual(other.capabilityLabels, []);
+  assert.equal(other.vision, null);
+});
+
 test("saved keys and free models are offered together", () => {
   const catalog = buildCatalog({
     models: [savedModel("cfg-a", "deepseek-chat")],
@@ -188,6 +203,18 @@ test("OpenCode restricted free models are shown as unavailable with a clear reas
   assert.match(row.tag, /OpenCode client only/);
   assert.match(row.tag, /not usable from VupsRouter/);
   assert.deepEqual(chatReference(row), {});
+});
+
+test("OpenRouter free models stay selectable and are labeled without being disabled", () => {
+  const entry = savedModel("cfg-or", "free/alpha:free", { provider: "OpenRouter", providerId: "openrouter" });
+  entry.free = true;
+  const catalog = buildCatalog({ models: [entry], shared: null });
+  const row = catalog[0];
+  assert.equal(row.free, true);
+  assert.equal(row.disabled, undefined);
+  assert.match(row.tag, /Free model/);
+  assert.ok(!/OpenCode client only/.test(row.tag));
+  assert.deepEqual(chatReference(row), { model: "free/alpha:free", configId: "cfg-or" });
 });
 
 test("a personal OmniRoute provider stays saved and never becomes the shared gateway", () => {
