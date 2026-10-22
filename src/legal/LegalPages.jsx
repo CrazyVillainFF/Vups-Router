@@ -385,7 +385,7 @@ export function CookiePolicy() {
           <tr>
             <td><code>vr_session</code></td>
             <td>Keeps you signed in by carrying your session token to the backend after you sign in. It is created when you sign in and cleared when you sign out.</td>
-            <td>Essential, first-party, HTTP-only, Secure, SameSite=None, Partitioned. It is not readable by client-side scripts and is sent only over HTTPS.</td>
+            <td>Essential, first-party, HTTP-only, Secure, SameSite=Lax, with a seven-day expiry. It is not readable by client-side scripts and is sent only over HTTPS.</td>
           </tr>
         </tbody>
       </table>

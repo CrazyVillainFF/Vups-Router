@@ -9,6 +9,7 @@ import {
   fetchProviderModels,
   getApiErrorMessage,
   getConversation,
+  isUnauthorizedError,
   listConversations,
   resolveApiBaseURL,
   requestPasswordReset,
@@ -45,8 +46,11 @@ function mockAdapter() {
   };
 }
 
-test("configured API base URL is trimmed and normalized", () => {
-  assert.equal(resolveApiBaseURL({ VITE_API_BASE_URL: " https://api.example.test/api/// " }), "https://api.example.test/api");
+test("configured development API base URL is trimmed and normalized", () => {
+  assert.equal(
+    resolveApiBaseURL({ DEV: true, VITE_API_BASE_URL: " https://api.example.test/api/// " }),
+    "https://api.example.test/api"
+  );
 });
 
 test("development defaults to localhost and production uses the same-origin /api proxy", () => {
@@ -54,8 +58,25 @@ test("development defaults to localhost and production uses the same-origin /api
   assert.equal(resolveApiBaseURL({ DEV: false }), "/api");
 });
 
+test("production never sends credentials to an absolute API origin", () => {
+  assert.equal(
+    resolveApiBaseURL({
+      DEV: false,
+      PROD: true,
+      VITE_API_BASE_URL: "https://vups-router-be.onrender.com/api"
+    }),
+    "/api"
+  );
+});
+
 test("a relative API base URL is honored for proxied production deployments", () => {
-  assert.equal(resolveApiBaseURL({ DEV: false, VITE_API_BASE_URL: "/api/" }), "/api");
+  assert.equal(resolveApiBaseURL({ DEV: false, PROD: true, VITE_API_BASE_URL: "/api/" }), "/api");
+});
+
+test("only a 401 marks a stored session as signed out", () => {
+  assert.equal(isUnauthorizedError({ response: { status: 401 } }), true);
+  assert.equal(isUnauthorizedError({ response: { status: 503 } }), false);
+  assert.equal(isUnauthorizedError(new Error("Network Error")), false);
 });
 
 test("the API client sends cookies with every request", () => {

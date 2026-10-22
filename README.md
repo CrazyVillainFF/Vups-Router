@@ -8,13 +8,13 @@ React 19 + Vite frontend for VupsRouter: the existing home, signup, and signin p
 npm ci
 ```
 
-Create `.env.local` (dev) or set the Vercel environment variable (production):
+Create `.env.local` for development:
 
 ```dotenv
 VITE_API_BASE_URL=http://localhost:4000/api
 ```
 
-In development this defaults to `http://localhost:4000/api` when unset. Production builds require it to be set; never put AI provider keys or server secrets in a `VITE_` variable.
+In development this defaults to `http://localhost:4000/api` when unset. Production always uses the same-origin `/api` proxy, even if a stale absolute backend URL is configured; never put AI provider keys or server secrets in a `VITE_` variable.
 
 ## Run
 
@@ -72,25 +72,19 @@ Vercel project settings:
 { "source": "/api/:path*", "destination": "https://vups-router-be.onrender.com/api/:path*" }
 ```
 
-Set this environment variable in Vercel (Project -> Settings -> Environment Variables, for Production *and* Preview):
+The production client always calls `/api` on its own origin; absolute backend URLs are ignored in production. You may unset `VITE_API_BASE_URL` in Vercel or set it to `/api` for clarity, then redeploy. Vite bakes `VITE_` variables into the bundle at build time.
 
-```dotenv
-VITE_API_BASE_URL=/api
-```
+Why the proxy: the browser talks to `https://vups-router-three.vercel.app/api/...`, so the backend's HTTP-only `vr_session` cookie is **first-party** and survives page reloads in Chrome, Safari, Firefox, and privacy-focused browsers. Pointing `VITE_API_BASE_URL` at the Render URL directly makes the cookie third-party; browsers increasingly block those, which signs users out on every refresh.
 
-Leaving it unset also works: production builds default to `/api`. Vite bakes `VITE_` variables into the bundle at build time, so you must **redeploy after setting or changing it**.
+The production cookie is `HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800` (host-only, no `Domain`), matching the seven-day JWT lifetime. `SameSite=Lax` is sent for same-origin proxy requests and is not available to cross-site requests. This was a deliberate correction from the older `SameSite=None; Secure; Partitioned` cookie, which is unnecessary for the first-party proxy and vulnerable to third-party cookie blocking. Logout clears the current cookie and the older partitioned variant.
 
-Why the proxy: the browser talks to `https://vups-router-three.vercel.app/api/...`, so the backend's HTTP-only `vr_session` cookie is **first-party** and survives page reloads in Chrome, Safari, Firefox, and privacy-focused browsers. Pointing `VITE_API_BASE_URL` at the Render URL directly makes the cookie third-party; browsers increasingly block or partition those, which signs users out on every refresh.
-
-The legacy deployed bundle hardcoded `http://localhost:4000/api` as a fallback (old `VITE_API_URL` variable name), which is why Sign Up/Sign In failed in production. The current code reads only `VITE_API_BASE_URL`; remove any old `VITE_API_URL` variable.
-
-Backend CORS remains allowlisted for direct API clients: the backend allows `https://vups-router-three.vercel.app` (plus anything in its `CLIENT_ORIGIN`/`CLIENT_ORIGINS`) and sends `SameSite=None; Secure; Partitioned` session cookies, which are valid first-party cookies when served through the proxy.
+Backend CORS remains allowlisted for direct API clients: the backend allows `https://vups-router-three.vercel.app` (plus anything in its `CLIENT_ORIGIN`/`CLIENT_ORIGINS`). Direct API clients should use bearer tokens rather than relying on cross-site cookies.
 
 ## Launch readiness (legal, SEO, security)
 
 - **Legal pages:** `/privacy-policy`, `/terms`, `/cookie-policy` are real routes rendered from `src/legal/LegalPages.jsx`. They are generated from `src/legal/config.js`, which reads `VITE_LEGAL_*` environment variables (documented in `.env.example`). The defaults are explicit placeholders (`not yet configured` / `.example` contact) — set `VITE_LEGAL_ENTITY`, `VITE_LEGAL_JURISDICTION`, `VITE_LEGAL_CONTACT_EMAIL`, and `VITE_LEGAL_RETENTION_DESCRIPTION` in Vercel, then redeploy. The pages show an on-page configuration notice until real values are set.
 - **SEO:** `public/robots.txt` and `public/sitemap.xml` ship with the build; `index.html` carries canonical/Open Graph/Twitter metadata; `src/components/PageMeta.jsx` sets per-route titles and `noindex` on private routes (sign-in, sign-up, settings, 404).
-- **Security headers:** `vercel.json` sets a Content-Security-Policy (self + Google Fonts + the proxied Render API), HSTS, `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, and `Permissions-Policy`. The `/api/:path*` rewrite also disables CDN caching so authenticated responses are never cached. If you point `VITE_API_BASE_URL` at a different origin, add it to `connect-src` there.
+- **Security headers:** `vercel.json` sets a Content-Security-Policy (self + Google Fonts + the proxied Render API), HSTS, `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, and `Permissions-Policy`. The `/api/:path*` rewrite also disables CDN caching so authenticated responses are never cached.
 - **Verification:** `npm test` covers the legal config, routes, footer links, robots/sitemap, metadata, and headers; direct navigation to all three legal routes was smoke-tested against `vite preview` (HTTP 200).
 
 ## Checks

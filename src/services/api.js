@@ -4,8 +4,14 @@ const viteEnv = import.meta.env ?? {};
 
 export function resolveApiBaseURL(env = viteEnv) {
   const configured = env.VITE_API_BASE_URL?.trim();
-  if (configured) return configured.replace(/\/+$/, "");
-  return env.DEV ? "http://localhost:4000/api" : "/api";
+  if (env.DEV) {
+    return configured ? configured.replace(/\/+$/, "") : "http://localhost:4000/api";
+  }
+  if (configured?.startsWith("/")) return configured.replace(/\/+$/, "");
+  // Production requests must stay on the Vercel origin so the HttpOnly
+  // session cookie is first-party. An absolute Render URL makes it a
+  // third-party cookie, which browsers can block on refresh or reopen.
+  return "/api";
 }
 
 export const apiClient = axios.create({
@@ -198,6 +204,10 @@ export async function deleteConversation(id) {
 }
 
 // ─── Errors ─────────────────────────────────────────────────────────────────
+
+export function isUnauthorizedError(error) {
+  return error?.response?.status === 401;
+}
 
 export function getApiErrorMessage(error) {
   if (axios.isAxiosError(error)) {
