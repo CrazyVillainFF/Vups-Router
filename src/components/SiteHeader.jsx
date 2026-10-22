@@ -31,8 +31,8 @@ export default function SiteHeader() {
           <span>vups<span className="brand-light">router</span></span>
         </Link>
         <nav id="main-nav" className={menuOpen ? "nav-links nav-open" : "nav-links"} aria-label="Main navigation">
-          <a href="/#features" onClick={() => setMenuOpen(false)}>Free models</a>
-          <a href="/#how-it-works" onClick={() => setMenuOpen(false)}>How to choose</a>
+          <NavLink to="/features" onClick={() => setMenuOpen(false)}>Features</NavLink>
+          <NavLink to="/about" onClick={() => setMenuOpen(false)}>About</NavLink>
           <NavLink
             to="/chat"
             onClick={() => setMenuOpen(false)}

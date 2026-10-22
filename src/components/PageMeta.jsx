@@ -19,12 +19,7 @@ export default function PageMeta({ title, description, noIndex = false }) {
     setMeta("property", "og:description", description);
     setMeta("name", "twitter:title", title);
     setMeta("name", "twitter:description", description);
-    if (noIndex) {
-      setMeta("name", "robots", "noindex, nofollow");
-    } else {
-      const robots = document.head.querySelector('meta[name="robots"]');
-      if (robots) robots.remove();
-    }
+    setMeta("name", "robots", noIndex ? "noindex, nofollow" : "index, follow");
   }, [title, description, noIndex]);
   return null;
 }

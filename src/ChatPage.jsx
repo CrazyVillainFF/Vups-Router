@@ -26,7 +26,6 @@ import {
   SignOut,
   Image as ImageIcon,
 } from "@phosphor-icons/react";
-import { SparklesIcon, Globe02Icon, File02Icon } from "@hugeicons/core-free-icons";
 import PromptBar from "./components/reactbits/PromptBar.jsx";
 import MessageDownloads from "./components/MessageDownloads.jsx";
 import {
@@ -65,8 +64,8 @@ import "./chat.css";
 
 // ─── Chat configuration ─────────────────────────────────────────────────────
 
-const VUPS_EFFORTS = ["Low", "Medium", "High"];
-const EFFORT_TEMPERATURE = { Low: 0.3, Medium: 0.7, High: 1.0 };
+const VUPS_EFFORTS = ["Precise", "Balanced", "Creative"];
+const EFFORT_TEMPERATURE = { Precise: 0.3, Balanced: 0.7, Creative: 1.0 };
 const CHAT_MODE_STORAGE_KEY = "vupsrouter.chat.mode";
 const VUPS_MODES = [
   { key: "general", name: "General", description: "Everyday answers, research, and coding help" },
@@ -82,35 +81,6 @@ function loadChatMode() {
     return "general";
   }
 }
-
-const VUPS_SOURCES = [
-  {
-    key: "free-models",
-    name: "Free Models Guide",
-    description: "Explore zero-cost hosted & open-weight tiers",
-    icon: SparklesIcon,
-  },
-  {
-    key: "local-models",
-    name: "Local Models (Ollama)",
-    description: "Setup Gemma, Llama & Qwen offline",
-    icon: Globe02Icon,
-  },
-  {
-    key: "rate-limits",
-    name: "Rate Limits & Quotas",
-    description: "Free tier limits on AI Studio & OpenRouter",
-    icon: File02Icon,
-  },
-];
-
-const VUPS_COMMANDS = [
-  { key: "compare", name: "/compare", description: "Compare free models side by side" },
-  { key: "explain", name: "/explain", description: "Step-by-step technical explanation" },
-  { key: "code", name: "/code", description: "Generate code with free coding models" },
-  { key: "summarize", name: "/summarize", description: "Summarize the discussion" },
-  { key: "limits", name: "/limits", description: "Check rate limits and free tier quotas" },
-];
 
 // Web Speech API dictation (active only if supported by browser)
 const handleDictate =
@@ -680,7 +650,7 @@ export default function ChatPage() {
   const [selection, setSelection] = useState(null);
   const [catalogReady, setCatalogReady] = useState(false);
   const [notice, setNotice] = useState("");
-  const [currentEffort, setCurrentEffort] = useState("Medium");
+  const [currentEffort, setCurrentEffort] = useState("Balanced");
   const [chatMode, setChatMode] = useState(loadChatMode);
   const abortRef = useRef(null);
   const initializedRef = useRef(false);
@@ -824,6 +794,8 @@ export default function ChatPage() {
   }
 
   async function removeConversation(id) {
+    const title = conversations.find((conversation) => conversation.id === id)?.title;
+    if (!window.confirm(`Delete “${title || "this conversation"}”? This cannot be undone.`)) return;
     try {
       await deleteConversation(id);
       setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
@@ -1210,8 +1182,6 @@ export default function ChatPage() {
                         ? "Ask anything - using the OmniRoute gateway..."
                         : "Ask anything - your provider, your key, your model..."
               }
-              sources={VUPS_SOURCES}
-              commands={VUPS_COMMANDS}
               models={catalog}
               defaultModel={activeModelKey}
               onModelChange={changeModel}
@@ -1235,7 +1205,7 @@ export default function ChatPage() {
               className="vr-prompt-bar"
             />
             <p className="vr-composer-hint">
-              Enter to send · Shift+Enter for newline · Type / for commands or @ for guides
+              Enter to send · Shift+Enter for newline · Attach images with the paperclip
             </p>
           </div>
         </footer>

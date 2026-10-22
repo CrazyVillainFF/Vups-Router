@@ -4,17 +4,12 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import {
   ArrowDown01Icon,
   Attachment01Icon,
-  Calendar03Icon,
   Cancel01Icon,
-  ChartLineData01Icon,
   Delete02Icon,
   File02Icon,
-  Globe02Icon,
   HelpCircleIcon,
   Key01Icon,
-  Mail01Icon,
   Mic01Icon,
-  PlusSignIcon,
   SparklesIcon,
   Tick02Icon
 } from '@hugeicons/core-free-icons';
@@ -26,33 +21,8 @@ const EASE_IN_OUT = [0.77, 0, 0.175, 1];
 const LINE = 22;
 const EDGE = 11;
 
-const DEFAULT_SOURCES = [
-  {
-    key: 'files',
-    name: 'Photos & files',
-    description: 'Upload from this device',
-    icon: Attachment01Icon,
-    attach: true
-  },
-  { key: 'web', name: 'Web search', description: 'Live results', icon: Globe02Icon },
-  { key: 'sales', name: 'Sales data', description: 'Revenue and churn', icon: ChartLineData01Icon },
-  { key: 'docs', name: 'Documents', description: 'Specs, notes, briefs', icon: File02Icon },
-  { key: 'mail', name: 'Mail', description: 'Read and draft mail', icon: Mail01Icon },
-  { key: 'calendar', name: 'Calendar', description: 'Events and availability', icon: Calendar03Icon }
-];
-const DEFAULT_COMMANDS = [
-  { key: 'summarize', name: '/summarize', description: 'Digest the thread so far' },
-  { key: 'compare', name: '/compare', description: 'Two options side by side' },
-  { key: 'draft', name: '/draft', description: 'Write a first version' },
-  { key: 'explain', name: '/explain', description: 'A plain-language walkthrough' },
-  { key: 'tasks', name: '/tasks', description: 'Turn this into a to-do list' }
-];
-const DEFAULT_MODELS = [
-  { key: 'nova-3', name: 'Nova 3', tag: 'Flagship' },
-  { key: 'nova-mini', name: 'Nova Mini', tag: 'Fast' },
-  { key: 'nova-2', name: 'Nova 2', tag: 'Legacy' }
-];
-const DEFAULT_EFFORTS = ['Low', 'Medium', 'High', 'Extra', 'Max'];
+const DEFAULT_MODELS = [];
+const DEFAULT_EFFORTS = ['Precise', 'Balanced', 'Creative'];
 
 const mix = (a, b, t) => a + (b - a) * t;
 const pathAt = (a, b, t) => {
@@ -118,8 +88,8 @@ function SendGlyph({ busy, morphDuration, squash, tilt }) {
 
 export default function PromptBar({
   placeholder = 'Ask anything',
-  sources = DEFAULT_SOURCES,
-  commands = DEFAULT_COMMANDS,
+  sources = [],
+  commands = [],
   models = DEFAULT_MODELS,
   defaultModel = '',
   onModelChange,
@@ -189,7 +159,8 @@ export default function PromptBar({
       lastDefault.current = defaultModel;
     }
   }, [defaultModel, models]);
-  const token = dismissed ? null : parseToken(draft);
+  const hasTokenMenus = sources.length > 0 || commands.length > 0;
+  const token = dismissed || !hasTokenMenus ? null : parseToken(draft);
   const open = plusOpen ? 'at' : (token?.kind ?? (modelOpen ? 'model' : effortOpen ? 'effort' : null));
 
   useLayoutEffect(() => {
@@ -560,7 +531,7 @@ export default function PromptBar({
           className="prompt-bar__menu"
           role={open === 'effort' ? 'dialog' : 'listbox'}
           aria-label={
-            open === 'at' ? 'Sources' : open === 'slash' ? 'Commands' : open === 'model' ? 'Models' : 'Effort'
+            open === 'at' ? 'Sources' : open === 'slash' ? 'Commands' : open === 'model' ? 'Models' : 'Response style'
           }
           data-kind={open}
           style={open === 'model' ? { maxHeight: `${modelMenuMaxHeight}px` } : undefined}
@@ -568,21 +539,21 @@ export default function PromptBar({
           {open === 'effort' ? (
             <>
               <div className="prompt-bar__effort-head">
-                <span className="prompt-bar__effort-title">Effort</span>
+                <span className="prompt-bar__effort-title">Response style</span>
                 <span className="prompt-bar__effort-level">{level}</span>
-                <span className="prompt-bar__effort-help" title="Higher effort thinks longer before answering">
+                <span className="prompt-bar__effort-help" title="Adjusts response creativity through temperature">
                   <HugeiconsIcon icon={HelpCircleIcon} size={14} strokeWidth={1.8} />
                 </span>
               </div>
               <div className="prompt-bar__effort-ends">
-                <span>Faster</span>
-                <span>Smarter</span>
+                <span>Focused</span>
+                <span>Expressive</span>
               </div>
               <div
                 className="prompt-bar__effort-track"
                 role="slider"
                 tabIndex={0}
-                aria-label="Effort"
+                aria-label="Response style"
                 aria-valuemin={0}
                 aria-valuemax={efforts.length - 1}
                 aria-valuenow={effortIndex}
@@ -827,23 +798,6 @@ export default function PromptBar({
         />
 
         <div className="prompt-bar__bar">
-          <button
-            type="button"
-            className="prompt-bar__tool"
-            aria-label="Add files and sources"
-            aria-expanded={plusOpen}
-            data-on={plusOpen ? '' : undefined}
-            onMouseDown={e => e.preventDefault()}
-            onClick={() => {
-              focusInput();
-              setModelOpen(false);
-              setEffortOpen(false);
-              setActive(0);
-              setPlusOpen(v => !v);
-            }}
-          >
-            <HugeiconsIcon icon={PlusSignIcon} size={16} strokeWidth={2} />
-          </button>
           {models.length > 0 ? (
             <button
               type="button"
@@ -868,7 +822,7 @@ export default function PromptBar({
             <button
               type="button"
               className="prompt-bar__pick"
-              aria-label="Choose effort"
+              aria-label="Choose response style"
               aria-expanded={effortOpen}
               data-on={effortOpen ? '' : undefined}
               data-max={maxed ? '' : undefined}
