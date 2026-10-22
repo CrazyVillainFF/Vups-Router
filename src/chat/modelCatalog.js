@@ -1,6 +1,17 @@
 export const MODEL_SELECTION_STORAGE_KEY = "vupsrouter.chat.modelSelection";
+export const VUPS_MODELS_GROUP = "VUPS MODELS";
+export const VUPS_MODEL_ID = "vups-v3-galax";
+export const VUPS_MODEL_NAME = "Vups v3 Galax";
+export const VUPS_CAPABILITIES = [
+  "Full-stack developer",
+  "Motion design",
+  "CSS design",
+  "Image reading",
+  "Complex problem solving"
+];
 export const PERSONAL_GROUP = "YOUR KEYS";
 export const SHARED_GROUP = "FREE MODELS";
+export const SHARED_PAID_GROUP = "SHARED PAID MODELS";
 export const GATEWAY_GROUP = "OMNIROUTE GATEWAY";
 export const OMNIROUTE_SOURCE = "omniroute";
 
@@ -47,6 +58,33 @@ function isGatewayEntry(entry) {
   return entry?.gateway === true || entry?.source === OMNIROUTE_SOURCE;
 }
 
+function vupsRow() {
+  return {
+    key: `vups:${VUPS_MODEL_ID}`,
+    kind: "vups",
+    group: VUPS_MODELS_GROUP,
+    name: VUPS_MODEL_NAME,
+    model: VUPS_MODEL_ID,
+    configId: "",
+    providerId: "",
+    provider: "Vups",
+    ownedBy: "Vups",
+    apiKeyMasked: "",
+    saved: false,
+    shared: false,
+    vups: true,
+    builtin: true,
+    free: true,
+    badge: "Default",
+    vision: null,
+    capabilities: {},
+    capabilityLabels: [],
+    capabilityChips: VUPS_CAPABILITIES,
+    tag: "Free - no API key needed",
+    meta: "First-party model"
+  };
+}
+
 function savedRow(entry) {
   const model = entry.id;
   const configId = entry.configId || "";
@@ -83,10 +121,12 @@ function sharedRow(entry) {
   const model = entry.id || entry.name;
   const capabilities = capabilitiesFor(entry);
   const vision = visionFor(entry, capabilities);
+  const free = entry.free !== false;
+  const context = entry.contextLength ? `${Math.round(entry.contextLength / 1000)}k context` : "";
   return {
     key: `shared:${model}`,
     kind: "shared",
-    group: SHARED_GROUP,
+    group: free ? SHARED_GROUP : SHARED_PAID_GROUP,
     name: entry.name || model,
     model,
     configId: "",
@@ -96,12 +136,12 @@ function sharedRow(entry) {
     apiKeyMasked: "",
     saved: false,
     shared: true,
-    free: true,
+    free,
     vision,
     capabilities,
     capabilityLabels: capabilityLabels(capabilities),
-    tag: "Free - no API key needed",
-    meta: entry.contextLength ? `${Math.round(entry.contextLength / 1000)}k context` : ""
+    tag: free ? "Free - no API key needed" : "Paid - shared server key",
+    meta: [context, free ? "" : "Paid model on the shared key"].filter(Boolean).join(" - ")
   };
 }
 
@@ -177,7 +217,7 @@ function gatewayRow(entry) {
   };
 }
 
-export function buildCatalog({ models = [], shared = null, omniroute = null } = {}) {
+export function buildCatalog({ models = [], shared = null, omniroute = null, vups = false } = {}) {
   const entries = cleanEntries(models);
   const saved = new Map();
   for (const entry of entries) {
@@ -230,11 +270,17 @@ export function buildCatalog({ models = [], shared = null, omniroute = null } = 
     gateways.set(row.key, row);
   }
 
-  return [...saved.values(), ...free.values(), ...gateways.values()];
+  return [
+    ...(vups ? [vupsRow()] : []),
+    ...saved.values(),
+    ...free.values(),
+    ...gateways.values()
+  ];
 }
 
 export function selectionFromRow(row) {
   if (!row) return null;
+  if (row.vups) return { kind: "vups", model: VUPS_MODEL_ID };
   if (row.gateway) return { kind: "gateway", source: row.source || OMNIROUTE_SOURCE, model: row.model };
   if (row.shared) return { kind: "shared", model: row.model };
   return { kind: "saved", configId: row.configId || "", model: row.model };
@@ -248,6 +294,7 @@ export function resolveSelection(catalog, selection) {
   if (!wanted || typeof wanted !== "object" || typeof wanted.model !== "string") return null;
   const model = wanted.model.trim();
   if (!model) return null;
+  if (wanted.kind === "vups") return rows.find((row) => row.vups && row.model === model) || null;
   if (wanted.kind === "gateway") {
     const source = typeof wanted.source === "string" ? wanted.source : "";
     return (
@@ -258,6 +305,9 @@ export function resolveSelection(catalog, selection) {
   if (wanted.kind === "saved") {
     if (wanted.configId) {
       return rows.find((row) => !row.shared && row.model === model && row.configId === wanted.configId) || null;
+    }
+    if (wanted.providerId) {
+      return rows.find((row) => !row.shared && row.model === model && row.providerId === wanted.providerId) || null;
     }
     return rows.find((row) => !row.shared && row.model === model) || null;
   }
@@ -270,14 +320,15 @@ export function resolveSelection(catalog, selection) {
 
 export function fallbackRow(catalog) {
   const rows = Array.isArray(catalog) ? catalog : [];
-  return rows.find((row) => row.shared) || rows.find((row) => !row.disabled) || null;
+  return rows.find((row) => row.vups) || rows.find((row) => row.shared) || rows.find((row) => !row.disabled) || null;
 }
 
 export function chatReference(row) {
   if (!row || row.disabled) return {};
+  if (row.vups) return { model: VUPS_MODEL_ID, vups: true };
   if (row.gateway) return { model: row.model, source: row.source || OMNIROUTE_SOURCE };
   if (row.shared) return { model: row.model };
-  return { model: row.model, configId: row.configId || undefined };
+  return { model: row.model, configId: row.configId || undefined, providerId: row.providerId || undefined };
 }
 
 function defaultStorage() {
@@ -294,6 +345,7 @@ export function loadStoredSelection(storage = defaultStorage()) {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return null;
+    if (parsed.kind === "vups") return { kind: "vups", model: VUPS_MODEL_ID };
     if (parsed.kind === "gateway" && typeof parsed.model === "string" && parsed.model) {
       return {
         kind: "gateway",
@@ -321,11 +373,13 @@ export function saveStoredSelection(selection, storage = defaultStorage()) {
       return;
     }
     const payload =
-      selection.kind === "gateway"
-        ? { kind: "gateway", source: selection.source || OMNIROUTE_SOURCE, model: selection.model }
-        : selection.kind === "saved"
-          ? { kind: "saved", configId: selection.configId || "", model: selection.model }
-          : { kind: "shared", model: selection.model };
+      selection.kind === "vups"
+        ? { kind: "vups", model: VUPS_MODEL_ID }
+        : selection.kind === "gateway"
+          ? { kind: "gateway", source: selection.source || OMNIROUTE_SOURCE, model: selection.model }
+          : selection.kind === "saved"
+            ? { kind: "saved", configId: selection.configId || "", model: selection.model }
+            : { kind: "shared", model: selection.model };
     storage.setItem(MODEL_SELECTION_STORAGE_KEY, JSON.stringify(payload));
   } catch {
     /* storage is best-effort: private mode or quota errors must not break chat */

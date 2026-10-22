@@ -656,11 +656,14 @@ export default function PromptBar({
                           onClick={() => pick(row)}
                         >
                           <span className="prompt-bar__model-main">
-                            <span
-                              className="prompt-bar__row-name"
-                              title={row.meta ? `${row.name} · ${row.meta}` : row.name}
-                            >
-                              {row.name}
+                            <span className="prompt-bar__model-title">
+                              <span
+                                className="prompt-bar__row-name"
+                                title={row.meta ? `${row.name} - ${row.meta}` : row.name}
+                              >
+                                {row.name}
+                              </span>
+                              {row.badge ? <span className="prompt-bar__model-badge">{row.badge}</span> : null}
                             </span>
                             {row.tag ? <span className="prompt-bar__model-sub">{row.tag}</span> : null}
                             {row.capabilityLabels?.length > 0 ? (
@@ -674,6 +677,13 @@ export default function PromptBar({
                               </span>
                             ) : null}
                             {row.meta ? <span className="prompt-bar__model-meta">{row.meta}</span> : null}
+                            {row.capabilityChips?.length > 0 ? (
+                              <span className="prompt-bar__vups-chips">
+                                {row.capabilityChips.map(label => (
+                                  <span key={label} className="prompt-bar__vups-chip">{label}</span>
+                                ))}
+                              </span>
+                            ) : null}
                           </span>
                           {row.saved && onDeleteModel ? (
                             <button

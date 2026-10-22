@@ -6,6 +6,10 @@ import {
   OMNIROUTE_SOURCE,
   PERSONAL_GROUP,
   SHARED_GROUP,
+  SHARED_PAID_GROUP,
+  VUPS_CAPABILITIES,
+  VUPS_MODEL_ID,
+  VUPS_MODELS_GROUP,
   buildCatalog,
   chatReference,
   fallbackRow,
@@ -31,8 +35,8 @@ function savedModel(configId, model, { provider = "DeepSeek", masked = "sk-…aa
   };
 }
 
-function sharedModel(id, { vision = false } = {}) {
-  return { id, name: id, available: true, vision };
+function sharedModel(id, { vision = false, free = true } = {}) {
+  return { id, name: id, available: true, free, vision };
 }
 
 function sharedStatus(models) {
@@ -117,6 +121,22 @@ test("the full free catalogue is kept when the API already returns it", () => {
   const free = catalog.filter((row) => row.shared).map((row) => row.model);
   assert.deepEqual(free, ["free/alpha", "free/beta"]);
   assert.equal(catalog.filter((row) => row.saved).length, 1);
+});
+
+test("explicitly allowlisted paid shared models are labeled and never marked free", () => {
+  const catalog = buildCatalog({
+    models: [{ id: "paid/alpha", name: "Paid Alpha", ownedBy: "Shared", shared: true, vision: false, free: false }],
+    shared: sharedStatus([sharedModel("free/alpha"), sharedModel("paid/alpha", { free: false })])
+  });
+  const paid = catalog.find((row) => row.model === "paid/alpha");
+  assert.equal(paid.group, SHARED_PAID_GROUP);
+  assert.equal(paid.free, false);
+  assert.equal(paid.tag, "Paid - shared server key");
+  assert.match(paid.meta, /Paid model on the shared key/);
+  assert.deepEqual(chatReference(paid), { model: "paid/alpha" });
+  const free = catalog.find((row) => row.model === "free/alpha");
+  assert.equal(free.group, SHARED_GROUP);
+  assert.equal(free.free, true);
 });
 
 test("free models stay visible when personal discovery returns nothing", () => {
@@ -214,7 +234,7 @@ test("OpenRouter free models stay selectable and are labeled without being disab
   assert.equal(row.disabled, undefined);
   assert.match(row.tag, /Free model/);
   assert.ok(!/OpenCode client only/.test(row.tag));
-  assert.deepEqual(chatReference(row), { model: "free/alpha:free", configId: "cfg-or" });
+  assert.deepEqual(chatReference(row), { model: "free/alpha:free", configId: "cfg-or", providerId: "openrouter" });
 });
 
 test("a personal OmniRoute provider stays saved and never becomes the shared gateway", () => {
@@ -228,7 +248,7 @@ test("a personal OmniRoute provider stays saved and never becomes the shared gat
   assert.equal(saved.group, PERSONAL_GROUP);
   assert.notEqual(saved.gateway, true);
   assert.equal(saved.source, undefined);
-  assert.deepEqual(chatReference(saved), { model: "gpt-4o-mini", configId: "cfg-omni" });
+  assert.deepEqual(chatReference(saved), { model: "gpt-4o-mini", configId: "cfg-omni", providerId: "omniroute" });
   assert.equal(catalog.some((row) => row.gateway === true), false);
 });
 
@@ -298,11 +318,57 @@ test("selection storage round-trips without ever storing a key", () => {
   assert.equal(loadStoredSelection(storage), null);
 });
 
-test("chat requests carry configId only for saved rows", () => {
+test("chat requests carry configId and provider identity only for saved rows", () => {
   const saved = buildCatalog({ models: [savedModel("cfg-a", "deepseek-chat")], shared: null })[0];
   const free = buildCatalog({ models: [], shared: sharedStatus([sharedModel("gemma3:4b")]) })[0];
-  assert.deepEqual(chatReference(saved), { model: "deepseek-chat", configId: "cfg-a" });
+  assert.deepEqual(chatReference(saved), { model: "deepseek-chat", configId: "cfg-a", providerId: "deepseek" });
   assert.deepEqual(chatReference(free), { model: "gemma3:4b" });
+});
+
+test("Vups v3 Galax is the built-in free default above user keys", () => {
+  const catalog = buildCatalog({
+    models: [savedModel("cfg-a", "deepseek-chat")],
+    shared: sharedStatus([sharedModel("gemma3:4b")]),
+    vups: true
+  });
+  assert.equal(catalog[0].group, VUPS_MODELS_GROUP);
+  const vups = catalog.find((row) => row.vups);
+  assert.equal(vups.group, VUPS_MODELS_GROUP);
+  assert.equal(vups.model, VUPS_MODEL_ID);
+  assert.equal(vups.name, "Vups v3 Galax");
+  assert.equal(vups.badge, "Default");
+  assert.equal(vups.free, true);
+  assert.ok(!vups.configId, "built-in Vups has no user provider identity");
+  assert.deepEqual(vups.capabilityChips, VUPS_CAPABILITIES);
+  assert.deepEqual(VUPS_CAPABILITIES, [
+    "Full-stack developer",
+    "Motion design",
+    "CSS design",
+    "Image reading",
+    "Complex problem solving"
+  ]);
+  assert.ok(catalog.some((row) => row.saved), "user-key models remain available");
+  assert.equal(fallbackRow(catalog).vups, true);
+  assert.deepEqual(chatReference(vups), { model: VUPS_MODEL_ID, vups: true });
+});
+
+test("Vups selection storage is versioned and preserves explicit non-default choices", () => {
+  const storage = fakeStorage();
+  assert.equal(loadStoredSelection(storage), null, "a new visitor gets the Vups fallback, not a written key");
+  const catalog = buildCatalog({
+    models: [savedModel("cfg-a", "deepseek-chat")],
+    shared: sharedStatus([sharedModel("gemma3:4b")]),
+    vups: true
+  });
+  const vups = catalog.find((row) => row.vups);
+  saveStoredSelection(selectionFromRow(vups), storage);
+  assert.deepEqual(loadStoredSelection(storage), { kind: "vups", model: VUPS_MODEL_ID });
+  assert.ok(!/sk-|apiKey|encrypted|https?:/i.test(storage.dump()));
+
+  const savedSelection = { kind: "saved", configId: "cfg-a", model: "deepseek-chat" };
+  const resolved = resolveSelection(catalog, savedSelection);
+  assert.equal(resolved.configId, "cfg-a");
+  assert.equal(resolved.vups, undefined, "an explicit saved choice is not replaced by the default");
 });
 
 test("gateway models appear in their own group without replacing saved or free rows", () => {

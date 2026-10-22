@@ -28,6 +28,7 @@ import {
 } from "@phosphor-icons/react";
 import { SparklesIcon, Globe02Icon, File02Icon } from "@hugeicons/core-free-icons";
 import PromptBar from "./components/reactbits/PromptBar.jsx";
+import MessageDownloads from "./components/MessageDownloads.jsx";
 import {
   IMAGE_LIMITS,
   formatBytes,
@@ -66,6 +67,21 @@ import "./chat.css";
 
 const VUPS_EFFORTS = ["Low", "Medium", "High"];
 const EFFORT_TEMPERATURE = { Low: 0.3, Medium: 0.7, High: 1.0 };
+const CHAT_MODE_STORAGE_KEY = "vupsrouter.chat.mode";
+const VUPS_MODES = [
+  { key: "general", name: "General", description: "Everyday answers, research, and coding help" },
+  { key: "motion", name: "Motion Design", description: "Animation engineering, GSAP, and visual implementation" }
+];
+
+function loadChatMode() {
+  if (typeof window === "undefined") return "general";
+  try {
+    const stored = window.localStorage.getItem(CHAT_MODE_STORAGE_KEY);
+    return stored === "motion" ? "motion" : "general";
+  } catch {
+    return "general";
+  }
+}
 
 const VUPS_SOURCES = [
   {
@@ -381,6 +397,9 @@ function Message({ message, isStreaming, currentSteps, onRetry, onContinue }) {
                 ) : null}
               </div>
             ) : null}
+            {!isStreaming && !message.truncated && message.content ? (
+              <MessageDownloads content={message.content} />
+            ) : null}
           </>
         )}
       </div>
@@ -393,27 +412,27 @@ function Message({ message, isStreaming, currentSteps, onRetry, onContinue }) {
 const SUGGESTIONS = [
   {
     id: "s1",
-    title: "Compare free models",
-    text: "Which free AI models are best for coding tasks?",
+    title: "Build a full-stack app",
+    text: "Build a full-stack app with Vups v3 Galax: React frontend, Express API, MongoDB, authentication, and deployment steps.",
   },
   {
     id: "s2",
-    title: "Run locally",
-    text: "How do I run Gemma or Llama locally with Ollama?",
+    title: "Design a landing page",
+    text: "Design a modern responsive landing page with Vups v3 Galax. Give me the complete HTML, CSS, and JavaScript with tasteful motion.",
   },
   {
     id: "s3",
-    title: "Rate limits",
-    text: "What are the rate limits on Google AI Studio's free tier?",
+    title: "Debug complex code",
+    text: "Help me find the root cause of a difficult bug. Ask for the code and error, then give a tested fix.",
   },
   {
     id: "s4",
-    title: "OpenRouter models",
-    text: "What free models are currently available on OpenRouter?",
+    title: "Plan a motion system",
+    text: "Create a motion design system for a product website using GSAP, CSS transitions, and reduced-motion fallbacks.",
   },
 ];
 
-function WelcomeScreen({ onSuggestion, configured, modelName, sharedActive, gatewayActive, sharedLoading }) {
+function WelcomeScreen({ onSuggestion, configured, modelName, sharedActive, gatewayActive, vupsActive, sharedLoading }) {
   return (
     <div className="vr-welcome">
       <div className="vr-welcome-art" aria-hidden="true">
@@ -428,14 +447,16 @@ function WelcomeScreen({ onSuggestion, configured, modelName, sharedActive, gate
       </h1>
       <p className="vr-welcome-desc">
         {configured
-          ? sharedActive
-            ? `Chatting with ${modelName || "the shared model"} — no API key needed.`
-            : gatewayActive
-              ? `Chatting with ${modelName || "this model"} through the OmniRoute gateway.`
-              : `Chatting with ${modelName || "your configured model"} through your own provider.`
+          ? vupsActive
+            ? `Chatting with ${modelName || "Vups v3 Galax"} - free, no API key needed.`
+            : sharedActive
+              ? `Chatting with ${modelName || "the shared model"} - no API key needed.`
+              : gatewayActive
+                ? `Chatting with ${modelName || "this model"} through the OmniRoute gateway.`
+                : `Chatting with ${modelName || "your configured model"} through your own provider.`
           : sharedLoading
-            ? "Checking for an available AI model…"
-            : "Connect your own AI provider in API settings, then ask anything about free AI models, hosted APIs, open-weight options, and local deployment."}
+            ? "Checking for an available AI model..."
+            : "Vups v3 Galax is not configured on this server yet. Add your own AI provider in API settings."}
       </p>
       <ul className="vr-suggestions" role="list" aria-label="Suggested prompts">
         {SUGGESTIONS.map((s) => (
@@ -660,6 +681,7 @@ export default function ChatPage() {
   const [catalogReady, setCatalogReady] = useState(false);
   const [notice, setNotice] = useState("");
   const [currentEffort, setCurrentEffort] = useState("Medium");
+  const [chatMode, setChatMode] = useState(loadChatMode);
   const abortRef = useRef(null);
   const initializedRef = useRef(false);
   const restoredSelectionRef = useRef(false);
@@ -701,7 +723,7 @@ export default function ChatPage() {
   }, [refreshConversations]);
 
   const catalog = useMemo(
-    () => buildCatalog({ models: providerModels, shared, omniroute }),
+    () => buildCatalog({ models: providerModels, shared, omniroute, vups: true }),
     [providerModels, shared, omniroute]
   );
 
@@ -720,12 +742,23 @@ export default function ChatPage() {
   const canChat = Boolean(activeRow && !activeRow.disabled);
   const activeIsShared = Boolean(activeRow?.shared);
   const activeIsGateway = Boolean(activeRow?.gateway);
+  const activeIsVups = Boolean(activeRow?.vups);
 
   function changeModel(row) {
     const next = selectionFromRow(row);
     if (!next) return;
     setSelection(next);
     saveStoredSelection(next);
+  }
+
+  function changeChatMode(mode) {
+    if (mode !== "general" && mode !== "motion") return;
+    setChatMode(mode);
+    try {
+      window.localStorage.setItem(CHAT_MODE_STORAGE_KEY, mode);
+    } catch {
+      /* storage is best-effort */
+    }
   }
 
   async function handleDeleteModel(row) {
@@ -742,7 +775,7 @@ export default function ChatPage() {
       const wasActive = Boolean(activeRow && !activeRow.shared && activeRow.configId === row.configId);
       setProviderModels(remaining);
       if (wasActive) {
-        const fallback = fallbackRow(buildCatalog({ models: remaining, shared }));
+        const fallback = fallbackRow(buildCatalog({ models: remaining, shared, vups: true }));
         const next = fallback ? selectionFromRow(fallback) : null;
         setSelection(next);
         saveStoredSelection(next);
@@ -762,6 +795,12 @@ export default function ChatPage() {
     setMessages([]);
     setNotice("");
     setMobileSidebarOpen(false);
+    const fresh = catalog.find((row) => row.vups);
+    if (fresh) {
+      const next = selectionFromRow(fresh);
+      setSelection(next);
+      saveStoredSelection(next);
+    }
   }
 
   async function selectConversation(id) {
@@ -892,7 +931,10 @@ export default function ChatPage() {
         messages: history,
         model: modelKey,
         configId: reference.configId,
+        providerId: reference.providerId,
         source: reference.source,
+        vups: reference.vups,
+        mode: chatMode,
         temperature: EFFORT_TEMPERATURE[chosenEffort] ?? 0.7,
         signal: controller.signal,
         onMeta: ({ conversationId }) => {
@@ -1000,7 +1042,10 @@ export default function ChatPage() {
         messages: [...history, { role: "user", content: CONTINUE_INSTRUCTION }],
         model: modelKey,
         configId: reference.configId,
+        providerId: reference.providerId,
         source: reference.source,
+        vups: reference.vups,
+        mode: chatMode,
         temperature: EFFORT_TEMPERATURE[currentEffort] ?? 0.7,
         signal: controller.signal,
         onChunk: (chunk) => {
@@ -1090,7 +1135,7 @@ export default function ChatPage() {
           <span className="vr-chat-header__dot" aria-hidden="true" />
           <span className="vr-chat-header__label">Chatting with</span>
           <strong className="vr-chat-header__model">{activeRow?.name || "No model selected"}</strong>
-          {activeRow && !activeRow.shared ? (
+          {activeRow && !activeRow.shared && !activeRow.vups ? (
             <span className="vr-chat-header__provider">{activeRow.provider}</span>
           ) : null}
         </header>
@@ -1101,6 +1146,7 @@ export default function ChatPage() {
             modelName={activeRow?.name || ""}
             sharedActive={activeIsShared}
             gatewayActive={activeIsGateway}
+            vupsActive={activeIsVups}
             sharedLoading={shared === null && omniroute === null && !config?.configured}
           />
         ) : (
@@ -1129,18 +1175,40 @@ export default function ChatPage() {
               <Link to="/settings">Open API settings</Link>
             </div>
           )}
+          <div className="vr-mode-switch" role="group" aria-label="Assistant mode">
+            <span className="vr-mode-switch__label">Mode</span>
+            {VUPS_MODES.map((mode) => (
+              <button
+                key={mode.key}
+                type="button"
+                className="vr-mode-switch__button"
+                data-active={chatMode === mode.key}
+                aria-pressed={chatMode === mode.key}
+                title={mode.description}
+                onClick={() => changeChatMode(mode.key)}
+                disabled={loading}
+              >
+                {mode.name}
+              </button>
+            ))}
+            {chatMode === "motion" ? (
+              <span className="vr-mode-switch__hint">GSAP, React motion, CSS, cleanup & reduced motion</span>
+            ) : null}
+          </div>
           <div className="vr-prompt-bar-wrap">
             <PromptBar
               placeholder={
                 !canChat
                   ? shared === null && omniroute === null
-                    ? "Checking for an available AI model…"
-                    : "No AI model available — connect a provider in API settings…"
-                  : activeIsShared
-                    ? "Ask anything — using the shared model, no API key needed…"
-                    : activeIsGateway
-                      ? "Ask anything — using the OmniRoute gateway…"
-                      : "Ask anything — your provider, your key, your model…"
+                    ? "Checking for an available AI model..."
+                    : "No AI model available - connect a provider in API settings..."
+                  : activeIsVups
+                    ? `Ask ${activeRow?.name || "Vups v3 Galax"} anything - free, no API key needed...`
+                    : activeIsShared
+                      ? "Ask anything - using the shared model, no API key needed..."
+                      : activeIsGateway
+                        ? "Ask anything - using the OmniRoute gateway..."
+                        : "Ask anything - your provider, your key, your model..."
               }
               sources={VUPS_SOURCES}
               commands={VUPS_COMMANDS}

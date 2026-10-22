@@ -212,6 +212,69 @@ test("streamChatResponse posts to the backend proxy and forwards SSE deltas", as
   assert.deepEqual(body.messages, [{ role: "user", content: "hi" }]);
 });
 
+test("streamChatResponse sends the selected mode and saved provider identity", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalBaseURL = apiClient.defaults.baseURL;
+  let captured;
+  apiClient.defaults.baseURL = "https://api.example.test/api";
+  globalThis.fetch = async (url, options) => {
+    captured = { url, options };
+    return new Response(sse({ type: "delta", content: "OK" }, { type: "done" }), { status: 200 });
+  };
+
+  try {
+    await streamChatResponse({
+      messages: [{ role: "user", content: "Animate this hero" }],
+      model: "deepseek-chat",
+      configId: "cfg-a",
+      providerId: "deepseek",
+      mode: "motion"
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    apiClient.defaults.baseURL = originalBaseURL;
+  }
+
+  const body = JSON.parse(captured.options.body);
+  assert.equal(body.mode, "motion");
+  assert.equal(body.providerId, "deepseek");
+  assert.equal(body.configId, "cfg-a");
+  assert.equal(body.model, "deepseek-chat");
+});
+
+test("streamChatResponse routes Vups v3 Galax to its dedicated endpoint", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalBaseURL = apiClient.defaults.baseURL;
+  let captured;
+  apiClient.defaults.baseURL = "https://api.example.test/api";
+  globalThis.fetch = async (url, options) => {
+    captured = { url, options };
+    return new Response(sse(
+      { type: "meta", conversationId: "conv-vups", model: "vups-v3-galax" },
+      { type: "delta", content: "Hi" },
+      { type: "done", conversationId: "conv-vups", model: "vups-v3-galax" }
+    ), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+  };
+
+  try {
+    const result = await streamChatResponse({
+      messages: [{ role: "user", content: "hello" }],
+      model: "vups-v3-galax",
+      vups: true
+    });
+    assert.equal(result.content, "Hi");
+    assert.equal(result.conversationId, "conv-vups");
+  } finally {
+    globalThis.fetch = originalFetch;
+    apiClient.defaults.baseURL = originalBaseURL;
+  }
+
+  assert.equal(captured.url, "https://api.example.test/api/chat/vups-v3-galax");
+  const body = JSON.parse(captured.options.body);
+  assert.equal(body.model, "vups-v3-galax");
+  assert.equal(body.stream, true);
+});
+
 test("streamChatResponse preserves finish_reason and does not end early on empty or usage-only chunks", async () => {
   const originalFetch = globalThis.fetch;
   const originalBaseURL = apiClient.defaults.baseURL;

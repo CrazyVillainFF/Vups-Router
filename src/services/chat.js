@@ -27,12 +27,12 @@ export class ChatNetworkError extends Error {
   }
 }
 
-function chatEndpoint() {
+function chatEndpoint(vups = false) {
   const base = apiClient.defaults.baseURL;
   if (!base) {
     throw new ChatConfigError("Set VITE_API_BASE_URL to your deployed backend API URL to enable chat.");
   }
-  return `${base}/chat`;
+  return `${base}/chat${vups ? "/vups-v3-galax" : ""}`;
 }
 
 // Exported for tests. Images are only ever attached to the final message —
@@ -58,6 +58,8 @@ export function toRequestMessages(messages) {
  * @param {string} [options.model] Model id to use. The backend falls back to the saved model only when omitted.
  * @param {string} [options.configId] Stable saved configuration id. Omit for the shared/free model.
  * @param {string} [options.source] Server-configured gateway source (for example "omniroute"). Never a URL.
+ * @param {boolean} [options.vups] Route to the first-party Vups v3 Galax endpoint.
+ * @param {"general"|"motion"} [options.mode] Assistant behavior mode. Defaults to general.
  * @param {number} [options.temperature]
  * @param {AbortSignal} [options.signal]
  * @param {(payload: {conversationId: string}) => void} [options.onMeta] Called once with the conversation id.
@@ -65,7 +67,7 @@ export function toRequestMessages(messages) {
  * @param {(step: string) => void} [options.onStep] Called with progress steps.
  * @returns {Promise<{content: string, conversationId: string|null, finishReason: string|null}>}
  */
-export async function streamChatResponse({ conversationId, messages, model, configId, source, temperature, signal, onMeta, onChunk, onStep } = {}) {
+export async function streamChatResponse({ conversationId, messages, model, configId, providerId, source, vups, mode, temperature, signal, onMeta, onChunk, onStep } = {}) {
   const body = {
     conversationId: conversationId || undefined,
     messages: toRequestMessages(messages),
@@ -73,14 +75,16 @@ export async function streamChatResponse({ conversationId, messages, model, conf
     stream: true
   };
   if (configId) body.configId = configId;
+  if (providerId) body.providerId = providerId;
   if (source) body.source = source;
+  if (mode === "motion" || mode === "general") body.mode = mode;
   if (typeof temperature === "number") body.temperature = temperature;
 
   onStep?.("Sending request");
 
   let response;
   try {
-    response = await fetch(chatEndpoint(), {
+    response = await fetch(chatEndpoint(vups === true), {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
