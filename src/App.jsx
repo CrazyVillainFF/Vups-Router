@@ -3,6 +3,7 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-r
 import { Button, Container, TextField, Typography, Alert, CircularProgress, IconButton, InputAdornment } from "@mui/material";
 import ChatPage from "./ChatPage.jsx";
 import SettingsPage from "./SettingsPage.jsx";
+import ElectricLogo from "./components/reactbits/ElectricLogo.jsx";
 import SiteHeader from "./components/SiteHeader.jsx";
 import SiteFooter from "./components/SiteFooter.jsx";
 import PageMeta from "./components/PageMeta.jsx";
@@ -14,10 +15,11 @@ import ArrowOutwardRoundedIcon from "@mui/icons-material/ArrowOutwardRounded";
 import NorthEastRoundedIcon from "@mui/icons-material/NorthEastRounded";
 import RouteRoundedIcon from "@mui/icons-material/RouteRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
-import ShieldRoundedIcon from "@mui/icons-material/ShieldRounded";
+import CodeRoundedIcon from "@mui/icons-material/CodeRounded";
 import SpeedRoundedIcon from "@mui/icons-material/SpeedRounded";
 import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
-import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
+import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
+import { AboutPage, FeaturesPage, NotFoundPage } from "./pages/InfoPages.jsx";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import { getApiErrorMessage } from "./services/api.js";
@@ -60,46 +62,46 @@ function HeroVisual() {
       <path className="route-path" d="M96 302 C132 300 137 226 202 228 S267 306 320 236 S372 119 431 105"/>
       {[["96","302"],["202","228"],["320","236"],["431","105"]].map(([cx,cy],i)=><g key={cx} className={`route-node node-${i}`}><circle cx={cx} cy={cy} r={i===3?13:8}/><circle cx={cx} cy={cy} r={i===3?25:18} className="node-ring"/></g>)}
     </svg>
-    <div className="visual-label label-top"><span className="status-dot"/> FREE MODEL OPTIONS</div>
-    <div className="visual-label label-bottom"><span className="label-icon"><SpeedRoundedIcon fontSize="small"/></span><span><b>Free to explore.</b><small>Limits may apply.</small></span></div>
-    <div className="visual-coordinate">WEB / API<br/>LOCAL / OPEN</div>
+    <div className="visual-label label-top"><span className="status-dot"/> VUPS V3 GALAX</div>
+    <div className="visual-label label-bottom"><span className="label-icon"><SpeedRoundedIcon fontSize="small"/></span><span><b>One chat. Many routes.</b><small>Start free. Bring your own key.</small></span></div>
+    <div className="visual-coordinate">GENERAL / MOTION<br/>YOUR KEYS / FREE MODELS</div>
   </div>;
 }
 
 const features = [
-  { icon: <RouteRoundedIcon />, number: "01", title: "Gemini in AI Studio", text: "Try eligible Gemini Flash models through Google AI Studio’s free tier. Model access and request limits vary by plan.", url: "https://aistudio.google.com/", ariaLabel: "Explore Google AI Studio free models" },
-  { icon: <SpeedRoundedIcon />, number: "02", title: "OpenRouter free models", text: "Browse a rotating catalog of $0 models, including free Nemotron options. Availability and rate limits can change.", url: "https://openrouter.ai/collections/free-models/", ariaLabel: "Browse free models on OpenRouter" },
-  { icon: <ShieldRoundedIcon />, number: "03", title: "Run models locally", text: "Download open-weight model families such as Gemma, Qwen, and Llama through Ollama. Local use has no hosted API charge, but your hardware does the work.", url: "https://ollama.com/library", ariaLabel: "Browse local models in Ollama library" }
+  { icon: <RouteRoundedIcon />, number: "01", title: "Vups v3 Galax, built in", text: "Start a real conversation without an API key. Use General for everyday work or Motion Design for frontend, CSS, and animation engineering.", to: "/features#vups", ariaLabel: "Learn about Vups v3 Galax" },
+  { icon: <TuneRoundedIcon />, number: "02", title: "Your models, one chat", text: "Bring OpenAI-compatible, Anthropic, Gemini, Azure, and other provider keys. VupsRouter keeps each configuration separate and encrypted.", to: "/features#models", ariaLabel: "Learn about model routing" },
+  { icon: <CodeRoundedIcon />, number: "03", title: "Answers you can keep", text: "Replies stream in, conversations are saved, images can be attached when the model supports vision, and generated project files can be downloaded as a ZIP.", to: "/features#workspace", ariaLabel: "Learn about the chat workspace" }
 ];
 
 function Home() {
   useReveal();
-  return <><PageMeta title="VupsRouter — Free AI Models" description="Compare free AI models for chat, coding, and reasoning. Start with free tiers or run open-weight models locally." /><SiteHeader /><main className="page-shell">
+  return <><PageMeta title="VupsRouter — AI chat and model routing" description="Chat with Vups v3 Galax, keep your conversations, and route requests through your own AI provider keys." /><SiteHeader /><main id="main-content" className="page-shell">
     <section className="hero section-pad">
       <div className="hero-copy">
-        <div className="eyebrow reveal"><span className="eyebrow-line"/> YOUR GUIDE TO FREE AI</div>
-        <Typography component="h1" className="hero-title reveal delay-1">Explore free AI.<br/><span>Find your model.</span></Typography>
-        <p className="hero-description reveal delay-2">Compare free AI models for chat, coding, reasoning, and local use. Start with free tiers or run open-weight models on your own hardware.</p>
-        <div className="hero-actions reveal delay-3"><Button component={Link} to="/signup" variant="contained" endIcon={<ArrowOutwardRoundedIcon />}>Start your journey</Button><a className="text-link" href="#how-it-works">Compare access options <NorthEastRoundedIcon fontSize="small"/></a></div>
-        <div className="hero-note reveal delay-3"><span className="avatar-stack"><i>V</i><i>+</i><i>R</i></span><span>Useful models. Clear access options.</span></div>
+        <div className="eyebrow reveal"><span className="eyebrow-line"/> VUPSROUTER AI</div>
+        <Typography component="h1" className="hero-title reveal delay-1">One chat.<br/><span>More ways to build.</span></Typography>
+        <p className="hero-description reveal delay-2">VupsRout AI starts with Vups v3 Galax, a first-party model for code, design, and complex problems. Add your own provider keys when you want another route.</p>
+        <div className="hero-actions reveal delay-3"><Button component={Link} to="/chat" variant="contained" endIcon={<ArrowOutwardRoundedIcon />}>Chat with Vups v3 Galax</Button><Link className="text-link" to="/features">See what’s inside <NorthEastRoundedIcon fontSize="small"/></Link></div>
+        <div className="hero-note reveal delay-3"><span className="avatar-stack"><i>V</i><i>3</i><i>G</i></span><span>No API key required to start. Free limits apply.</span></div>
       </div>
       <div className="hero-art reveal delay-2"><HeroVisual /></div>
-      <div className="hero-index"><span>FREE AI GUIDE</span><span>COMPARE BEFORE YOU CHOOSE</span></div>
+      <div className="hero-index"><span>BUILT-IN MODEL</span><span>GENERAL + MOTION DESIGN</span></div>
     </section>
-    <section className="ticker" aria-label="Product values"><div className="ticker-track">{Array.from({length:2},(_,i)=><div className="ticker-set" key={i}><span>FREE TIERS</span><b>✳</b><span>OPEN MODELS</span><b>✳</b><span>TRY SOMETHING NEW</span><b>✳</b><span>KNOW THE LIMITS</span><b>✳</b></div>)}</div></section>
+    <section className="ticker" aria-label="Product capabilities"><div className="ticker-track">{Array.from({length:2},(_,i)=><div className="ticker-set" key={i}><span>VUPS V3 GALAX</span><b>✳</b><span>GENERAL + MOTION</span><b>✳</b><span>SAVED CONVERSATIONS</span><b>✳</b><span>IMAGE INPUT</span><b>✳</b><span>PROJECT DOWNLOADS</span><b>✳</b></div>)}</div></section>
     <section id="features" className="features-section section-pad">
-      <div className="section-heading reveal"><div><div className="eyebrow"><span className="eyebrow-line"/> START WITHOUT THE SPEND</div><h2>Free to try.<br/><span>Built for different tasks.</span></h2></div><p>Find a free starting point for your next AI task.</p></div>
-      <div className="feature-grid">{features.map((feature,i)=><article className={`feature-card reveal delay-${i+1}`} key={feature.number}><div className="feature-top"><span className="feature-icon">{feature.icon}</span><span className="feature-number">{feature.number}</span></div><h3>{feature.title}</h3><p>{feature.text}</p><a className="feature-arrow" href={feature.url} target="_blank" rel="noreferrer" aria-label={feature.ariaLabel}><NorthEastRoundedIcon /></a></article>)}</div>
+      <div className="section-heading reveal"><div><div className="eyebrow"><span className="eyebrow-line"/> THE WORKING PRODUCT</div><h2>Start with Galax.<br/><span>Route it your way.</span></h2></div><p>Real chat, real model choices, and real controls — not a catalogue of promises.</p></div>
+      <div className="feature-grid">{features.map((feature,i)=><Link className={`feature-card reveal delay-${i+1}`} to={feature.to} key={feature.number} aria-label={feature.ariaLabel}><div className="feature-top"><span className="feature-icon">{feature.icon}</span><span className="feature-number">{feature.number}</span></div><h3>{feature.title}</h3><p>{feature.text}</p><span className="feature-arrow" aria-hidden="true"><NorthEastRoundedIcon /></span></Link>)}</div>
     </section>
     <section id="ai-chat" className="chat-hub section-pad">
-      <div className="chat-hub-copy reveal"><div className="eyebrow"><span className="eyebrow-line"/> TALK TO AI</div><h2>AI Chat</h2><p>Chat with AI models, explore free options, and discover new ways to use AI.</p><div className="chat-hub-actions"><Button component={Link} to="/chat" variant="contained" startIcon={<ChatBubbleOutlineRoundedIcon />}>Go to Chat</Button></div></div>
-      <div className="a2a-card reveal delay-1"><div className="a2a-top"><span className="a2a-icon"><ForumRoundedIcon /></span><span className="a2a-badge">Coming soon</span></div><h3>Try AI-to-AI Chats</h3><p>Two models, one conversation. This experience isn’t live yet — meanwhile, open AI Chat and use the /compare command to compare free models side by side.</p><Link className="text-link" to="/chat">Open AI Chat <NorthEastRoundedIcon fontSize="small"/></Link></div>
+      <div className="chat-hub-copy reveal"><div className="eyebrow"><span className="eyebrow-line"/> VUPSROUT AI</div><h2>One chat.<br/><span>Built for work.</span></h2><p>Ask for code, a landing page, a debugging plan, or a complete project. Switch modes, choose a model, and keep the thread when you come back.</p><div className="chat-hub-actions"><Button component={Link} to="/chat" variant="contained" startIcon={<ChatBubbleOutlineRoundedIcon />}>Open AI Chat</Button><Button component={Link} to="/signup" variant="outlined">Create an account</Button></div></div>
+      <div className="a2a-card reveal delay-1"><div className="a2a-top"><span className="a2a-icon"><CodeRoundedIcon /></span><span className="a2a-badge">Real project files</span></div><h3>From answer to download</h3><p>When a reply includes named code files, VupsRouter can package them into a ZIP so you can inspect and run the project locally.</p><Link className="text-link" to="/features#workspace">See the workspace <NorthEastRoundedIcon fontSize="small"/></Link></div>
     </section>
     <section id="how-it-works" className="manifesto section-pad">
-      <div className="manifesto-art reveal"><div className="manifesto-ring ring-a"/><div className="manifesto-ring ring-b"/><div className="manifesto-core"><AutoAwesomeRoundedIcon /></div><span className="manifesto-tag tag-a">FREE TIERS</span><span className="manifesto-tag tag-b">OPEN WEIGHTS</span><span className="manifesto-tag tag-c">MODEL CHOICE</span></div>
-      <div className="manifesto-copy reveal delay-1"><div className="eyebrow"><span className="eyebrow-line"/> CHOOSING A MODEL</div><h2>Choose how to run<br/>your <span>AI model.</span></h2><p>Choose a hosted free tier for convenience, a model directory for variety, or a local model for more control. “Free” can still mean quotas, changing availability, hardware costs, or provider-specific data terms.</p><Button component={Link} to="/signup" variant="outlined" endIcon={<ArrowOutwardRoundedIcon />}>Create your account</Button></div>
+      <div className="manifesto-art reveal"><div className="manifesto-ring ring-a"/><div className="manifesto-ring ring-b"/><div className="manifesto-core"><AutoAwesomeRoundedIcon /></div><span className="manifesto-tag tag-a">VUPS V3 GALAX</span><span className="manifesto-tag tag-b">YOUR KEYS</span><span className="manifesto-tag tag-c">SAVED THREADS</span></div>
+      <div className="manifesto-copy reveal delay-1"><div className="eyebrow"><span className="eyebrow-line"/> HOW VUPSROUTER WORKS</div><h2>Start free.<br/>Choose your <span>route.</span></h2><p>Vups v3 Galax works immediately. Add encrypted provider keys when you need a different model, then pick it in the composer. Requests go through the VupsRouter backend proxy, and switching models never silently reuses another provider’s key.</p><Button component={Link} to="/features" variant="outlined" endIcon={<ArrowOutwardRoundedIcon />}>Explore the features</Button></div>
     </section>
-    <section className="closing-cta section-pad reveal"><div className="cta-glow"/><div className="eyebrow"><span className="eyebrow-line"/> YOUR NEXT MODEL STARTS HERE</div><h2>Ready to try<br/><span>AI for free?</span></h2><p>Start with a free tier or run an open model locally. Check each provider’s current terms before using it for sensitive work.</p><Button component={Link} to="/signup" variant="contained" endIcon={<ArrowOutwardRoundedIcon />}>Create your account</Button><div className="cta-stamp">FREE<br/>AI<br/>OPTIONS</div></section>
+    <section className="closing-cta section-pad reveal"><div className="cta-glow"/><div className="eyebrow"><span className="eyebrow-line"/> READY WHEN YOU ARE</div><h2>One chat.<br/><span>Your next build.</span></h2><p>Start with the built-in model, or connect your own provider. You can change routes later without losing the conversation.</p><Button component={Link} to="/signup" state={{ from: "/chat" }} variant="contained" endIcon={<ArrowOutwardRoundedIcon />}>Create an account</Button><div className="cta-stamp">START<br/>FREE<br/>CHAT</div></section>
   </main><SiteFooter /></>;
 }
 
@@ -133,7 +135,7 @@ function AuthPage({ mode }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [touched, setTouched] = useState({});
-  const redirectTo = location.state?.from || "/settings";
+  const redirectTo = location.state?.from || "/chat";
 
   useEffect(() => {
     setMessage("");
@@ -178,7 +180,7 @@ function AuthPage({ mode }) {
       setError(getApiErrorMessage(err));
     } finally { setBusy(false); }
   }
-  return <div className="auth-layout"><div className="auth-art-panel"><Link to="/" className="brand auth-brand"><span className="brand-mark"><RouteRoundedIcon /></span><span>vups<span className="brand-light">router</span></span></Link><div className="auth-art-copy"><div className="eyebrow"><span className="eyebrow-line"/> FREE AI, MADE CLEAR</div><h1>Find your next<br/><span>AI model.</span></h1><p>Compare free access options and open models.</p><div className="auth-art-lines"><span/><span/><span/><span/><span/></div></div><div className="auth-art-foot"><span>FREE AI / CLEAR CHOICES</span><span>VUPSROUTER / 2026</span></div></div>
+    return <div className="auth-layout"><div className="auth-art-panel"><Link to="/" className="brand auth-brand"><span className="brand-mark"><RouteRoundedIcon /></span><span>vups<span className="brand-light">router</span></span></Link><div className="auth-art-copy"><div className="eyebrow"><span className="eyebrow-line"/> FREE AI, MADE CLEAR</div><h1>Find your next<br/><span>AI model.</span></h1><p>Compare free access options and open models.</p><div className="auth-electric" aria-hidden="true"><img className="auth-electric-static" src="/vups-logo.svg" alt="" /><ElectricLogo src="/vups-logo.svg" color="#d4ff3f" glowColor="#79ffad" scale={0.72} intensity={1} glow={0.85} thickness={1.1} strands={4} bend={0.45} crackle={1.4} arcs={1} flicker={0.5} fill={0.04} speed={2.2} interactive cursorIntensity={0.7} cursorRadius={90} theme="dark" className="auth-electric-canvas" /></div><div className="auth-art-lines"><span/><span/><span/><span/><span/></div></div><div className="auth-art-foot"><span>FREE AI / CLEAR CHOICES</span><span>VUPSROUTER / 2026</span></div></div>
     <div className="auth-form-panel"><Link to="/" className="back-home">← Back to home</Link><div className="auth-form-wrap"><div className="auth-form-heading"><span className="auth-kicker">{isSignup ? "JOIN VUPSROUTER" : "GOOD TO HAVE YOU BACK"}</span><h2>{isSignup ? "Create your account" : "Welcome back"}</h2><p>{isSignup ? "Create an account to use your VupsRouter account features." : "Sign in to your VupsRouter account."}</p></div>
       {error && <Alert severity="error" sx={{mb:2}}>{error}</Alert>}{message && <Alert severity="success" sx={{mb:2}}>{message}</Alert>}
       <form className="auth-form" onSubmit={handleSubmit}>
@@ -243,15 +245,17 @@ function ScrollToTop() {
 export default function App() {
   return <AuthProvider><ScrollToTop /><Routes>
     <Route path="/" element={<Home />} />
-    <Route path="/signup" element={<><PageMeta title="Create your account — VupsRouter" description="Create a free VupsRouter account to compare and chat with free AI models." noIndex /><AuthPage mode="signup" /></>} />
+    <Route path="/features" element={<FeaturesPage />} />
+    <Route path="/about" element={<AboutPage />} />
+    <Route path="/signup" element={<><PageMeta title="Create your account — VupsRouter" description="Create a VupsRouter account to chat with Vups v3 Galax and connect your own AI providers." noIndex /><AuthPage mode="signup" /></>} />
     <Route path="/signin" element={<><PageMeta title="Sign in — VupsRouter" description="Sign in to your VupsRouter account." noIndex /><AuthPage mode="signin" /></>} />
     <Route path="/forgot-password" element={<><PageMeta title="Forgot password — VupsRouter" noIndex /><ForgotPasswordPage /></>} />
     <Route path="/reset-password" element={<Navigate to="/forgot-password" replace />} />
     <Route path="/settings" element={<><PageMeta title="API Settings — VupsRouter" noIndex /><RequireAuth><SettingsPage /></RequireAuth></>} />
-    <Route path="/chat" element={<><PageMeta title="Chat — VupsRouter" description="Chat with free AI models through VupsRouter." /><RequireAuth><ChatPage /></RequireAuth></>} />
+    <Route path="/chat" element={<><PageMeta title="Chat — VupsRouter" description="Chat with Vups v3 Galax or route requests through your own AI provider." noIndex /><RequireAuth><ChatPage /></RequireAuth></>} />
     <Route path="/privacy-policy" element={<PrivacyPolicy />} />
     <Route path="/terms" element={<TermsOfService />} />
     <Route path="/cookie-policy" element={<CookiePolicy />} />
-    <Route path="*" element={<><PageMeta title="Page not found — VupsRouter" noIndex /><div className="not-found"><SiteHeader/><h1>That route went nowhere.</h1><Link to="/">Return home</Link></div></>} />
+    <Route path="*" element={<><PageMeta title="Page not found — VupsRouter" noIndex /><NotFoundPage /></>} />
   </Routes></AuthProvider>;
 }

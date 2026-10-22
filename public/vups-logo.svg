@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="VupsRouter">
+  <g fill="none" stroke="#16a34a" stroke-width="76" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M238 238 512 566"/>
+    <path d="M786 238 512 566"/>
+    <path d="M512 190V836"/>
+  </g>
+  <circle cx="238" cy="238" r="84" fill="#3b82f6"/>
+  <circle cx="238" cy="238" r="30" fill="#ffffff"/>
+  <circle cx="512" cy="190" r="84" fill="#16a34a"/>
+  <circle cx="512" cy="190" r="32" fill="#86efac"/>
+  <circle cx="786" cy="238" r="84" fill="#ef4444"/>
+  <circle cx="786" cy="238" r="30" fill="#ffffff"/>
+  <circle cx="512" cy="836" r="82" fill="#14532d"/>
+  <circle cx="512" cy="836" r="30" fill="#86efac"/>
+</svg>
