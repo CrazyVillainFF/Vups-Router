@@ -75,12 +75,11 @@ function vupsRow() {
     vups: true,
     builtin: true,
     free: true,
-    badge: "Default",
+    badge: "Pro",
     vision: null,
     capabilities: {},
     capabilityLabels: [],
     capabilityChips: VUPS_CAPABILITIES,
-    tag: "Free - no API key needed",
     meta: "First-party model"
   };
 }
@@ -140,7 +139,7 @@ function sharedRow(entry) {
     vision,
     capabilities,
     capabilityLabels: capabilityLabels(capabilities),
-    tag: free ? "Free - no API key needed" : "Paid - shared server key",
+    tag: free ? "Free" : "Paid - shared server key",
     meta: [context, free ? "" : "Paid model on the shared key"].filter(Boolean).join(" - ")
   };
 }

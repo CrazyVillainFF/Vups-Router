@@ -99,8 +99,10 @@ export default function PromptBar({
   defaultEffort = '',
   onEffortChange,
   busy = false,
+  generating = false,
   onSend,
   onStop,
+  onGenerateImage,
   onAttach,
   onDictate,
   background = '#27272a',
@@ -130,7 +132,7 @@ export default function PromptBar({
   const lastOpen = useRef(null);
   const dictation = useRef(0);
   const latest = useRef({});
-  latest.current = { onSend, onStop, onAttach, onDictate, onEffortChange, onModelChange, onDeleteModel, onAddKey };
+  latest.current = { onSend, onStop, onGenerateImage, onAttach, onDictate, onEffortChange, onModelChange, onDeleteModel, onAddKey };
 
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState([]);
@@ -197,6 +199,7 @@ export default function PromptBar({
   }, [open, query, sources, commands, models, modelQuery]);
   const cursor = Math.min(active, Math.max(0, list.length - 1));
   const canSend = draft.trim().length > 0 || attachments.length > 0;
+  const canGenerate = draft.trim().length > 0 && !busy && !generating;
   const armed = busy || canSend;
   const level = efforts[effortIndex] ?? '';
   const maxed = efforts.length > 1 && effortIndex === efforts.length - 1;
@@ -634,7 +637,7 @@ export default function PromptBar({
                               >
                                 {row.name}
                               </span>
-                              {row.badge ? <span className="prompt-bar__model-badge">{row.badge}</span> : null}
+                              {row.badge ? <span className={`prompt-bar__model-badge${row.vups ? ' prompt-bar__model-badge--vups' : ''}`}>{row.badge}</span> : null}
                             </span>
                             {row.tag ? <span className="prompt-bar__model-sub">{row.tag}</span> : null}
                             {row.capabilityLabels?.length > 0 ? (
@@ -836,6 +839,24 @@ export default function PromptBar({
             >
               <HugeiconsIcon icon={SparklesIcon} size={13} strokeWidth={2} />
               <span>{level}</span>
+            </button>
+          ) : null}
+          {onGenerateImage ? (
+            <button
+              type="button"
+              className="prompt-bar__pick prompt-bar__generate"
+              aria-label="Generate an image from the prompt"
+              title="Generate an image from the prompt"
+              disabled={!canGenerate}
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => {
+                if (!canGenerate) return;
+                closeMenus();
+                latest.current.onGenerateImage?.(draft.trim());
+              }}
+            >
+              <HugeiconsIcon icon={SparklesIcon} size={13} strokeWidth={2} />
+              <span>Image</span>
             </button>
           ) : null}
           <span className="prompt-bar__spacer" />

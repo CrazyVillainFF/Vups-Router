@@ -3,10 +3,10 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import { AppBar, Button, CircularProgress, Container, IconButton } from "@mui/material";
 import ArrowOutwardRoundedIcon from "@mui/icons-material/ArrowOutwardRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
-import RouteRoundedIcon from "@mui/icons-material/RouteRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
+import VupsLogo from "./VupsLogo.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 
 export default function SiteHeader() {
@@ -27,7 +27,7 @@ export default function SiteHeader() {
     <AppBar position="sticky" elevation={0} className="topbar">
       <Container maxWidth="lg" className="nav-wrap">
         <Link to="/" className="brand" aria-label="VupsRouter home">
-          <span className="brand-mark"><RouteRoundedIcon /></span>
+          <span className="brand-mark"><VupsLogo /></span>
           <span>vups<span className="brand-light">router</span></span>
         </Link>
         <nav id="main-nav" className={menuOpen ? "nav-links nav-open" : "nav-links"} aria-label="Main navigation">

@@ -1,11 +1,11 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Container } from "@mui/material";
-import RouteRoundedIcon from "@mui/icons-material/RouteRounded";
+import VupsLogo from "./VupsLogo.jsx";
 
 export default function SiteFooter() {
   return <footer className="footer"><Container maxWidth="lg" className="footer-inner">
-    <Link to="/" className="brand" aria-label="VupsRouter home"><span className="brand-mark"><RouteRoundedIcon /></span><span>vups<span className="brand-light">router</span></span></Link>
+    <Link to="/" className="brand" aria-label="VupsRouter home"><span className="brand-mark"><VupsLogo /></span><span>vups<span className="brand-light">router</span></span></Link>
     <span className="footer-copy">VupsRout AI, built by Vups.</span>
     <div className="footer-links">
       <Link to="/features">Features</Link>

@@ -224,6 +224,10 @@
   text-transform: uppercase;
 }
 
+.prompt-bar__model-badge--vups {
+  text-transform: none;
+}
+
 .prompt-bar__model-sub {
   overflow: hidden;
   color: var(--pb-muted);
@@ -583,6 +587,11 @@
 
 .prompt-bar__pick[data-max] {
   color: var(--pb-spark);
+}
+
+.prompt-bar__pick:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .prompt-bar__menu[data-kind='effort'] {

@@ -13,6 +13,7 @@ import {
   apiClient,
   createManagedProvider,
   fetchProviderModelsDetailed,
+  generateImage,
   listProviders,
   removeProvider,
   saveManagedProvider,
@@ -241,6 +242,19 @@ test("multi-provider API calls use the managed provider endpoints", async () => 
     assert.equal(mock.requests[2].data.apiKey, "sk-second");
     assert.deepEqual(mock.requests[6].data, { models: ["deepseek-chat"], defaultModel: "deepseek-chat" });
     assert.deepEqual(mock.requests[7].params, { configId: "deepseek" });
+  } finally {
+    mock.restore();
+  }
+});
+
+test("generateImage sends the prompt to the dedicated image endpoint", async () => {
+  const mock = mockAdapter();
+  try {
+    const result = await generateImage("a lime green robot");
+    assert.deepEqual(result, { ok: true });
+    assert.deepEqual(mock.requests, [
+      { method: "post", url: "/images/generate", params: undefined, data: { prompt: "a lime green robot" } }
+    ]);
   } finally {
     mock.restore();
   }

@@ -3,8 +3,8 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-r
 import { Button, Container, TextField, Typography, Alert, CircularProgress, IconButton, InputAdornment } from "@mui/material";
 import ChatPage from "./ChatPage.jsx";
 import SettingsPage from "./SettingsPage.jsx";
-import ElectricLogo from "./components/reactbits/ElectricLogo.jsx";
 import SiteHeader from "./components/SiteHeader.jsx";
+import VupsLogo from "./components/VupsLogo.jsx";
 import SiteFooter from "./components/SiteFooter.jsx";
 import PageMeta from "./components/PageMeta.jsx";
 import RequireAuth from "./components/RequireAuth.jsx";
@@ -180,7 +180,7 @@ function AuthPage({ mode }) {
       setError(getApiErrorMessage(err));
     } finally { setBusy(false); }
   }
-    return <div className="auth-layout"><div className="auth-art-panel"><Link to="/" className="brand auth-brand"><span className="brand-mark"><RouteRoundedIcon /></span><span>vups<span className="brand-light">router</span></span></Link><div className="auth-art-copy"><div className="eyebrow"><span className="eyebrow-line"/> FREE AI, MADE CLEAR</div><h1>Find your next<br/><span>AI model.</span></h1><p>Compare free access options and open models.</p><div className="auth-electric" aria-hidden="true"><img className="auth-electric-static" src="/vups-logo.svg" alt="" /><ElectricLogo src="/vups-logo.svg" color="#d4ff3f" glowColor="#79ffad" scale={0.72} intensity={1} glow={0.85} thickness={1.1} strands={4} bend={0.45} crackle={1.4} arcs={1} flicker={0.5} fill={0.04} speed={2.2} interactive cursorIntensity={0.7} cursorRadius={90} theme="dark" className="auth-electric-canvas" /></div><div className="auth-art-lines"><span/><span/><span/><span/><span/></div></div><div className="auth-art-foot"><span>FREE AI / CLEAR CHOICES</span><span>VUPSROUTER / 2026</span></div></div>
+    return <div className="auth-layout"><div className="auth-art-panel"><Link to="/" className="brand auth-brand"><span className="brand-mark"><VupsLogo /></span><span>vups<span className="brand-light">router</span></span></Link><div className="auth-art-copy"><div className="eyebrow"><span className="eyebrow-line"/> FREE AI, MADE CLEAR</div><h1>Find your next<br/><span>AI model.</span></h1><p>Compare free access options and open models.</p><div className="auth-logo" aria-hidden="true"><VupsLogo className="auth-logo-image" /></div><div className="auth-art-lines"><span/><span/><span/><span/><span/></div></div><div className="auth-art-foot"><span>FREE AI / CLEAR CHOICES</span><span>VUPSROUTER / 2026</span></div></div>
     <div className="auth-form-panel"><Link to="/" className="back-home">← Back to home</Link><div className="auth-form-wrap"><div className="auth-form-heading"><span className="auth-kicker">{isSignup ? "JOIN VUPSROUTER" : "GOOD TO HAVE YOU BACK"}</span><h2>{isSignup ? "Create your account" : "Welcome back"}</h2><p>{isSignup ? "Create an account to use your VupsRouter account features." : "Sign in to your VupsRouter account."}</p></div>
       {error && <Alert severity="error" sx={{mb:2}}>{error}</Alert>}{message && <Alert severity="success" sx={{mb:2}}>{message}</Alert>}
       <form className="auth-form" onSubmit={handleSubmit}>

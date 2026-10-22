@@ -203,6 +203,14 @@ export async function deleteConversation(id) {
   return data;
 }
 
+// ─── Image generation ─────────────────────────────────────────────────────
+
+export async function generateImage(prompt) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.post("/images/generate", { prompt });
+  return data;
+}
+
 // ─── Errors ─────────────────────────────────────────────────────────────────
 
 export function isUnauthorizedError(error) {

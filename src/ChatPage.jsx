@@ -16,7 +16,6 @@ import {
   ChatCircle,
   SignIn,
   UserPlus,
-  Compass,
   ArrowClockwise,
   Warning,
   Copy,
@@ -28,6 +27,7 @@ import {
 } from "@phosphor-icons/react";
 import PromptBar from "./components/reactbits/PromptBar.jsx";
 import MessageDownloads from "./components/MessageDownloads.jsx";
+import VupsLogo from "./components/VupsLogo.jsx";
 import {
   IMAGE_LIMITS,
   formatBytes,
@@ -54,6 +54,7 @@ import {
   fetchOmniRouteStatus,
   fetchProviderModels,
   fetchSharedModelStatus,
+  generateImage,
   getApiErrorMessage,
   getConversation,
   listConversations,
@@ -145,6 +146,13 @@ function requestHistory(messages) {
 function errorMessageFor(error) {
   if (error instanceof ChatConfigError || error instanceof ChatNetworkError) return error.message;
   return getApiErrorMessage(error);
+}
+
+function imageExtension(mimeType) {
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/webp") return "webp";
+  if (mimeType === "image/gif") return "gif";
+  return "jpg";
 }
 
 function sharedModelNotice(shared) {
@@ -279,7 +287,7 @@ function Message({ message, isStreaming, currentSteps, onRetry, onContinue }) {
     <div className={`vr-msg ${isUser ? "vr-msg--user" : "vr-msg--assistant"}`}>
       {!isUser && (
         <div className="vr-msg-avatar" aria-hidden="true">
-          <Compass size={14} weight="bold" />
+          <VupsLogo />
         </div>
       )}
       <div className="vr-msg-body">
@@ -379,37 +387,14 @@ function Message({ message, isStreaming, currentSteps, onRetry, onContinue }) {
 
 // ─── Welcome Screen ─────────────────────────────────────────────────────────
 
-const SUGGESTIONS = [
-  {
-    id: "s1",
-    title: "Build a full-stack app",
-    text: "Build a full-stack app with Vups v3 Galax: React frontend, Express API, MongoDB, authentication, and deployment steps.",
-  },
-  {
-    id: "s2",
-    title: "Design a landing page",
-    text: "Design a modern responsive landing page with Vups v3 Galax. Give me the complete HTML, CSS, and JavaScript with tasteful motion.",
-  },
-  {
-    id: "s3",
-    title: "Debug complex code",
-    text: "Help me find the root cause of a difficult bug. Ask for the code and error, then give a tested fix.",
-  },
-  {
-    id: "s4",
-    title: "Plan a motion system",
-    text: "Create a motion design system for a product website using GSAP, CSS transitions, and reduced-motion fallbacks.",
-  },
-];
-
-function WelcomeScreen({ onSuggestion, configured, modelName, sharedActive, gatewayActive, vupsActive, sharedLoading }) {
+function WelcomeScreen({ configured, modelName, sharedActive, gatewayActive, vupsActive, sharedLoading }) {
   return (
     <div className="vr-welcome">
       <div className="vr-welcome-art" aria-hidden="true">
         <div className="vr-welcome-ring ring-outer" />
         <div className="vr-welcome-ring ring-inner" />
         <div className="vr-welcome-icon">
-          <Compass size={30} weight="bold" />
+          <VupsLogo />
         </div>
       </div>
       <h1 className="vr-welcome-title">
@@ -418,9 +403,9 @@ function WelcomeScreen({ onSuggestion, configured, modelName, sharedActive, gate
       <p className="vr-welcome-desc">
         {configured
           ? vupsActive
-            ? `Chatting with ${modelName || "Vups v3 Galax"} - free, no API key needed.`
+            ? `Chatting with ${modelName || "Vups v3 Galax"}.`
             : sharedActive
-              ? `Chatting with ${modelName || "the shared model"} - no API key needed.`
+              ? `Chatting with ${modelName || "the shared model"}.`
               : gatewayActive
                 ? `Chatting with ${modelName || "this model"} through the OmniRoute gateway.`
                 : `Chatting with ${modelName || "your configured model"} through your own provider.`
@@ -428,19 +413,6 @@ function WelcomeScreen({ onSuggestion, configured, modelName, sharedActive, gate
             ? "Checking for an available AI model..."
             : "Vups v3 Galax is not configured on this server yet. Add your own AI provider in API settings."}
       </p>
-      <ul className="vr-suggestions" role="list" aria-label="Suggested prompts">
-        {SUGGESTIONS.map((s) => (
-          <li key={s.id}>
-            <button
-              className="vr-suggestion-card"
-              onClick={() => onSuggestion(s.text)}
-            >
-              <span className="vr-suggestion-title">{s.title}</span>
-              <span className="vr-suggestion-text">{s.text}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
@@ -478,7 +450,7 @@ function Sidebar({
         <div className="vr-sidebar-top">
           <Link to="/" className="vr-brand" aria-label="VupsRouter home">
             <span className="vr-brand-mark" aria-hidden="true">
-              <Compass size={18} weight="bold" />
+              <VupsLogo />
             </span>
             {!collapsed && (
               <span className="vr-brand-name">
@@ -650,6 +622,9 @@ export default function ChatPage() {
   const [selection, setSelection] = useState(null);
   const [catalogReady, setCatalogReady] = useState(false);
   const [notice, setNotice] = useState("");
+  const [imageGenerating, setImageGenerating] = useState(false);
+  const [generatedImage, setGeneratedImage] = useState(null);
+  const [imageError, setImageError] = useState("");
   const [currentEffort, setCurrentEffort] = useState("Balanced");
   const [chatMode, setChatMode] = useState(loadChatMode);
   const abortRef = useRef(null);
@@ -764,6 +739,8 @@ export default function ChatPage() {
     setActiveConvId(null);
     setMessages([]);
     setNotice("");
+    setGeneratedImage(null);
+    setImageError("");
     setMobileSidebarOpen(false);
     const fresh = catalog.find((row) => row.vups);
     if (fresh) {
@@ -785,6 +762,8 @@ export default function ChatPage() {
     setStreamingId(null);
     setActiveConvId(id);
     setMessages([]);
+    setGeneratedImage(null);
+    setImageError("");
     try {
       const conversation = await getConversation(id);
       setMessages(conversation.messages.map(toLocalMessage));
@@ -832,6 +811,37 @@ export default function ChatPage() {
         }
       })
     );
+  }
+
+  async function handleGenerateImage(text) {
+    const prompt = typeof text === "string" ? text.trim() : "";
+    if (!prompt) {
+      setImageError("Enter a prompt before generating an image.");
+      return;
+    }
+    if (imageGenerating || loading) return;
+    if (!user) {
+      setImageError("Sign in to generate images.");
+      return;
+    }
+    setImageGenerating(true);
+    setImageError("");
+    setGeneratedImage(null);
+    try {
+      const result = await generateImage(prompt);
+      if (!result?.image || typeof result.image !== "string") {
+        throw new Error("The backend returned no generated image.");
+      }
+      setGeneratedImage({
+        image: result.image,
+        mimeType: result.mimeType || "image/jpeg",
+        prompt,
+      });
+    } catch (error) {
+      setImageError(getApiErrorMessage(error));
+    } finally {
+      setImageGenerating(false);
+    }
   }
 
   async function handleSend(text, retryHistory, meta) {
@@ -1113,7 +1123,6 @@ export default function ChatPage() {
         </header>
         {messages.length === 0 ? (
           <WelcomeScreen
-            onSuggestion={(text) => handleSend(text)}
             configured={canChat}
             modelName={activeRow?.name || ""}
             sharedActive={activeIsShared}
@@ -1133,6 +1142,41 @@ export default function ChatPage() {
         )}
 
         <footer className="vr-composer" role="region" aria-label="Chat composer">
+          {(imageGenerating || generatedImage || imageError) && (
+            <section className="vr-image-gen" aria-live="polite" aria-label="Image generation">
+              {imageGenerating ? (
+                <div className="vr-image-gen__loading">
+                  <span className="vr-image-gen__spinner" aria-hidden="true" />
+                  <span>Generating image with Cloudflare Workers AI...</span>
+                </div>
+              ) : imageError ? (
+                <div className="vr-image-gen__error" role="alert">
+                  <Warning size={15} weight="fill" aria-hidden="true" />
+                  <span>{imageError}</span>
+                  <button type="button" onClick={() => setImageError("")}>Dismiss</button>
+                </div>
+              ) : (
+                <div className="vr-image-gen__result">
+                  <img src={generatedImage.image} alt={`Generated image: ${generatedImage.prompt}`} />
+                  <div className="vr-image-gen__details">
+                    <span className="vr-image-gen__eyebrow">
+                      <ImageIcon size={14} aria-hidden="true" /> Generated image
+                    </span>
+                    <p>{generatedImage.prompt}</p>
+                    <div className="vr-image-gen__actions">
+                      <a
+                        href={generatedImage.image}
+                        download={`vups-generated-${Date.now()}.${imageExtension(generatedImage.mimeType)}`}
+                      >
+                        Download
+                      </a>
+                      <button type="button" onClick={() => setGeneratedImage(null)}>Dismiss</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
           {notice && (
             <div className="vr-notice" role="alert">
               <Warning size={15} weight="fill" aria-hidden="true" />
@@ -1175,9 +1219,9 @@ export default function ChatPage() {
                     ? "Checking for an available AI model..."
                     : "No AI model available - connect a provider in API settings..."
                   : activeIsVups
-                    ? `Ask ${activeRow?.name || "Vups v3 Galax"} anything - free, no API key needed...`
+                    ? `Ask ${activeRow?.name || "Vups v3 Galax"} anything...`
                     : activeIsShared
-                      ? "Ask anything - using the shared model, no API key needed..."
+                      ? "Ask anything - using the shared model..."
                       : activeIsGateway
                         ? "Ask anything - using the OmniRoute gateway..."
                         : "Ask anything - your provider, your key, your model..."
@@ -1191,8 +1235,10 @@ export default function ChatPage() {
               defaultEffort={currentEffort}
               onEffortChange={(effort) => setCurrentEffort(effort)}
               busy={loading}
+              generating={imageGenerating}
               onSend={(text, meta) => handleSend(text, null, meta)}
               onStop={handleStop}
+              onGenerateImage={handleGenerateImage}
               onAttach={pickAttachments}
               onDictate={handleDictate}
               background="#111416"

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Alert, Button, CircularProgress, IconButton, InputAdornment, TextField } from "@mui/material";
 import ArrowOutwardRoundedIcon from "@mui/icons-material/ArrowOutwardRounded";
-import RouteRoundedIcon from "@mui/icons-material/RouteRounded";
 import CodeSlots from "../components/reactbits/CodeSlots.jsx";
+import VupsLogo from "../components/VupsLogo.jsx";
 import { getApiErrorMessage, requestPasswordReset, resetPassword, verifyResetCode } from "../services/api.js";
 import {
   RECOVERY_CODE_TTL_MS,
@@ -17,7 +17,7 @@ import {
 } from "./recoveryForm.js";
 
 function RecoveryLayout({ kicker, heading, intro, children }) {
-  return <div className="auth-layout"><div className="auth-art-panel"><Link to="/" className="brand auth-brand"><span className="brand-mark"><RouteRoundedIcon /></span><span>vups<span className="brand-light">router</span></span></Link><div className="auth-art-copy"><div className="eyebrow"><span className="eyebrow-line" /> FREE AI, MADE CLEAR</div><h1>Find your next<br /><span>AI model.</span></h1><p>Compare free access options and open models.</p><div className="auth-art-lines"><span /><span /><span /><span /><span /></div></div><div className="auth-art-foot"><span>FREE AI / CLEAR CHOICES</span><span>VUPSROUTER / 2026</span></div></div>
+  return <div className="auth-layout"><div className="auth-art-panel"><Link to="/" className="brand auth-brand"><span className="brand-mark"><VupsLogo /></span><span>vups<span className="brand-light">router</span></span></Link><div className="auth-art-copy"><div className="eyebrow"><span className="eyebrow-line" /> FREE AI, MADE CLEAR</div><h1>Find your next<br /><span>AI model.</span></h1><p>Compare free access options and open models.</p><div className="auth-art-lines"><span /><span /><span /><span /><span /></div></div><div className="auth-art-foot"><span>FREE AI / CLEAR CHOICES</span><span>VUPSROUTER / 2026</span></div></div>
     <div className="auth-form-panel"><Link to="/" className="back-home">← Back to home</Link><div className="auth-form-wrap"><div className="auth-form-heading"><span className="auth-kicker">{kicker}</span><h2>{heading}</h2><p>{intro}</p></div>
       {children}
     </div><div className="auth-side-note">OPEN MODELS <span>•</span> CHECK THE LIMITS</div></div></div>;

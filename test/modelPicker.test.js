@@ -336,7 +336,9 @@ test("Vups v3 Galax is the built-in free default above user keys", () => {
   assert.equal(vups.group, VUPS_MODELS_GROUP);
   assert.equal(vups.model, VUPS_MODEL_ID);
   assert.equal(vups.name, "Vups v3 Galax");
-  assert.equal(vups.badge, "Default");
+  assert.equal(vups.badge, "Pro");
+  assert.equal(vups.tag, undefined);
+  assert.equal(vups.meta, "First-party model");
   assert.equal(vups.free, true);
   assert.ok(!vups.configId, "built-in Vups has no user provider identity");
   assert.deepEqual(vups.capabilityChips, VUPS_CAPABILITIES);
