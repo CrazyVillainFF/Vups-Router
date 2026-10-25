@@ -14,6 +14,9 @@ export const SHARED_GROUP = "FREE MODELS";
 export const SHARED_PAID_GROUP = "SHARED PAID MODELS";
 export const GATEWAY_GROUP = "OMNIROUTE GATEWAY";
 export const OMNIROUTE_SOURCE = "omniroute";
+export const CUSTOM_MODEL_TYPE = "custom";
+export const FREE_MODEL_TYPE = "free";
+export const MODEL_TYPES = [CUSTOM_MODEL_TYPE, FREE_MODEL_TYPE];
 
 const CAPABILITY_LABELS = [
   ["vision", "Vision"],
@@ -144,6 +147,41 @@ function sharedRow(entry) {
   };
 }
 
+function freeCatalogRow(entry) {
+  if (!entry || typeof entry.id !== "string" || !entry.id.trim()) return null;
+  const model = entry.id.trim();
+  if (entry.shared === true) return sharedRow({ ...entry, id: model, name: entry.name || model });
+  const configId = entry.configId || "";
+  const provider = entry.provider || entry.ownedBy || "Your provider";
+  const masked = entry.apiKeyMasked || "";
+  const capabilities = capabilitiesFor(entry);
+  const vision = visionFor(entry, capabilities);
+  return {
+    key: `free:${configId || provider}:${model}`,
+    kind: "free",
+    group: SHARED_GROUP,
+    name: entry.name || model,
+    model,
+    configId,
+    providerId: entry.providerId || "",
+    provider,
+    ownedBy: entry.ownedBy || "",
+    apiKeyMasked: masked,
+    saved: false,
+    shared: false,
+    free: true,
+    freeCatalog: true,
+    freeSource: entry.freeSource || "provider_pricing",
+    vision,
+    capabilities,
+    capabilityLabels: capabilityLabels(capabilities),
+    tag: "Free model",
+    meta: [provider, masked, entry.contextLength ? `${Math.round(entry.contextLength / 1000)}k context` : ""]
+      .filter(Boolean)
+      .join(" - ")
+  };
+}
+
 export function gatewayStatusLabel(status) {
   switch (status?.status) {
     case "disabled":
@@ -216,7 +254,7 @@ function gatewayRow(entry) {
   };
 }
 
-export function buildCatalog({ models = [], shared = null, omniroute = null, vups = false } = {}) {
+export function buildCatalog({ models = [], shared = null, omniroute = null, vups = false, modelType = null, freeCatalog = null } = {}) {
   const entries = cleanEntries(models);
   const saved = new Map();
   for (const entry of entries) {
@@ -230,6 +268,10 @@ export function buildCatalog({ models = [], shared = null, omniroute = null, vup
   // shared rows the models endpoint returned (which may add vision flags).
   const free = new Map();
   const freeIds = new Set();
+  const freeCatalogOnly = new Map();
+  const savedByConfigModel = new Map(
+    [...saved.values()].map((row) => [`${row.configId}\u0000${row.model}`, row])
+  );
   const sharedStatusModels = shared?.available && Array.isArray(shared.models) ? shared.models : [];
   for (const entry of sharedStatusModels) {
     if (!entry || entry.available === false) continue;
@@ -248,6 +290,28 @@ export function buildCatalog({ models = [], shared = null, omniroute = null, vup
       free.set(row.key, row);
       freeIds.add(row.model);
     }
+  }
+
+  // The universal catalogue is authoritative: only IDs explicitly marked free
+  // by a shared or saved personal provider can appear here. A catalogue-only
+  // personal row still carries its configId so routing stays provider-specific.
+  const catalogEntries = Array.isArray(freeCatalog?.models) ? freeCatalog.models : [];
+  for (const entry of catalogEntries) {
+    const row = freeCatalogRow(entry);
+    if (!row) continue;
+    freeIds.add(row.model);
+    if (row.shared) {
+      if (!free.has(row.key)) free.set(row.key, row);
+      continue;
+    }
+    const savedRowForEntry = savedByConfigModel.get(`${row.configId}\u0000${row.model}`);
+    if (savedRowForEntry) {
+      savedRowForEntry.free = true;
+      savedRowForEntry.freeCatalog = true;
+      if (row.freeSource) savedRowForEntry.freeSource = row.freeSource;
+      continue;
+    }
+    if (!freeCatalogOnly.has(row.key)) freeCatalogOnly.set(row.key, row);
   }
 
   // Gateway rows are additive: they never replace saved or free models, and a
@@ -269,10 +333,28 @@ export function buildCatalog({ models = [], shared = null, omniroute = null, vup
     gateways.set(row.key, row);
   }
 
+  if (modelType === FREE_MODEL_TYPE) {
+    const freeRows = new Map();
+    for (const row of [...free.values(), ...freeCatalogOnly.values(), ...saved.values()]) {
+      if (!row.free) continue;
+      freeRows.set(row.key, { ...row, group: SHARED_GROUP });
+    }
+    return [...(vups ? [vupsRow()] : []), ...freeRows.values()];
+  }
+
+  if (modelType === CUSTOM_MODEL_TYPE) {
+    return [
+      ...(vups ? [vupsRow()] : []),
+      ...saved.values(),
+      ...gateways.values()
+    ];
+  }
+
   return [
     ...(vups ? [vupsRow()] : []),
     ...saved.values(),
     ...free.values(),
+    ...freeCatalogOnly.values(),
     ...gateways.values()
   ];
 }

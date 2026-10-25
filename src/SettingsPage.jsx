@@ -24,11 +24,13 @@ import { PROVIDER_CATEGORIES, filterProviders, providerById } from "./providers/
 import {
   activateProvider,
   createManagedProvider,
+  fetchFreeModels,
   fetchProviderModelsDetailed,
   getApiErrorMessage,
   listProviders,
   removeProvider,
   saveManagedProvider,
+  saveModelType,
   saveProviderModels,
   testManagedProvider,
   testManagedProviderModel,
@@ -161,11 +163,15 @@ export default function SettingsPage() {
   const [selectedModels, setSelectedModels] = useState([]);
   const [defaultModel, setDefaultModel] = useState("");
   const [manualModel, setManualModel] = useState("");
+  const [modelType, setModelType] = useState("custom");
+  const [freeCatalog, setFreeCatalog] = useState(null);
+  const [freeCatalogLoading, setFreeCatalogLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     const data = await listProviders();
     setProviders(data.providers || []);
     setActiveConfigId(data.activeConfigId ?? data.activeProviderId ?? "");
+    if (data.modelType === "free" || data.modelType === "custom") setModelType(data.modelType);
     return data.providers || [];
   }, []);
 
@@ -176,6 +182,7 @@ export default function SettingsPage() {
         if (cancelled) return;
         setProviders(data.providers || []);
         setActiveConfigId(data.activeConfigId ?? data.activeProviderId ?? "");
+        if (data.modelType === "free" || data.modelType === "custom") setModelType(data.modelType);
       })
       .catch(error => {
         if (!cancelled) setAlert({ severity: "error", message: getApiErrorMessage(error) });
@@ -183,10 +190,54 @@ export default function SettingsPage() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    fetchFreeModels()
+      .then(data => {
+        if (cancelled) return;
+        setFreeCatalog(data.catalog || null);
+        if (data.modelType === "free" || data.modelType === "custom") setModelType(data.modelType);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
   }, []);
+
+  async function handleModelTypeChange(next) {
+    if (next === modelType || busy) return;
+    setBusy("model-type");
+    try {
+      const data = await saveModelType(next);
+      setModelType(data.modelType || next);
+      setAlert({
+        severity: "success",
+        message: data.message || `Using ${next === "free" ? "All Free Models" : "Custom Models"} in chat.`
+      });
+    } catch (error) {
+      setAlert({ severity: "error", message: getApiErrorMessage(error) });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function handleRefreshFreeCatalog() {
+    if (freeCatalogLoading) return;
+    setFreeCatalogLoading(true);
+    try {
+      const data = await fetchFreeModels({ refresh: true });
+      setFreeCatalog(data.catalog || null);
+      const count = data.catalog?.counts?.models ?? 0;
+      setAlert({
+        severity: data.catalog?.partial ? "warning" : "success",
+        message: data.catalog?.partial
+          ? `Verified ${count} free models. Some providers could not be checked.`
+          : `Verified ${count} free models across ${data.catalog?.counts?.providers ?? 0} providers.`
+      });
+    } catch (error) {
+      setAlert({ severity: "error", message: getApiErrorMessage(error) });
+    } finally {
+      setFreeCatalogLoading(false);
+    }
+  }
 
   const savedProvider = form && form.configId
     ? providers.find(provider => provider.configId === form.configId) || null
@@ -489,6 +540,16 @@ export default function SettingsPage() {
     );
   }
 
+  const freeCounts = freeCatalog?.counts || null;
+  const freeUpdatedLabel = freeCatalog?.updatedAt
+    ? new Date(freeCatalog.updatedAt).toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit"
+      })
+    : "";
+
   return (
     <>
       <SiteHeader />
@@ -508,6 +569,77 @@ export default function SettingsPage() {
               {alert.message}
             </Alert>
           )}
+
+          <section className="settings-card" aria-labelledby="model-type-heading">
+            <div className="settings-presets">
+              <span className="settings-models-label" id="model-type-heading">MODEL TYPE</span>
+              {modelType === "free" && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  disabled={freeCatalogLoading}
+                  startIcon={freeCatalogLoading ? <CircularProgress size={14} color="inherit" /> : <BoltRoundedIcon />}
+                  onClick={handleRefreshFreeCatalog}
+                >
+                  {freeCatalogLoading ? "Checking…" : "Refresh free models"}
+                </Button>
+              )}
+            </div>
+            <p className="settings-empty">
+              This changes which models appear in the chat picker. Saved provider keys and models are never deleted.
+            </p>
+            <div className="settings-model-types" role="radiogroup" aria-label="Model type">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={modelType === "custom"}
+                className={`settings-model-type${modelType === "custom" ? " is-active" : ""}`}
+                disabled={Boolean(busy)}
+                onClick={() => handleModelTypeChange("custom")}
+              >
+                <span className="settings-model-type-title">
+                  <KeyRoundedIcon fontSize="small" /> Custom Models
+                </span>
+                <span className="settings-model-type-copy">
+                  Use Vups, your saved providers, and any server gateway. Full control over keys and models.
+                </span>
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={modelType === "free"}
+                className={`settings-model-type${modelType === "free" ? " is-active" : ""}`}
+                disabled={Boolean(busy)}
+                onClick={() => handleModelTypeChange("free")}
+              >
+                <span className="settings-model-type-title">
+                  <BoltRoundedIcon fontSize="small" /> All Free Models
+                </span>
+                <span className="settings-model-type-copy">
+                  Show Vups plus only models verified as free by shared or saved providers. No approximate matches.
+                </span>
+              </button>
+            </div>
+            <div className="settings-free-catalog" aria-live="polite">
+              <div>
+                <strong>
+                  {freeCounts ? `${freeCounts.models} verified free model${freeCounts.models === 1 ? "" : "s"}` : "Free catalogue not loaded"}
+                </strong>
+                {freeCounts ? (
+                  <span>
+                    {" "}— {freeCounts.sharedModels} shared, {freeCounts.personalModels} from your providers
+                  </span>
+                ) : null}
+              </div>
+              {freeUpdatedLabel && <span className="settings-provider-url">Updated {freeUpdatedLabel}</span>}
+              {freeCatalog?.stale && (
+                <span className="settings-badge settings-badge--warn">STALE — showing the last verified list</span>
+              )}
+              {freeCatalog?.partial && (
+                <span className="settings-badge settings-badge--warn">Some providers could not be checked</span>
+              )}
+            </div>
+          </section>
 
           {/* ─── Saved providers ─────────────────────────────────────────── */}
           <section className="settings-card" aria-labelledby="saved-providers-heading">

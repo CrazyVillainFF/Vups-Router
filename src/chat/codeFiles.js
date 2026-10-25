@@ -120,35 +120,69 @@ function uniquePath(path, used) {
   return null;
 }
 
-export function extractCodeFiles(markdown) {
+const FENCE_OPEN_RE = /^[ \t]{0,3}(`{3,}|~{3,})[ \t]*([^\n]*?)\r?$/;
+const FENCE_CLOSE_RE = /^[ \t]{0,3}(`{3,}|~{3,})[ \t]*\r?$/;
+
+function fenceBlocks(markdown) {
+  const text = String(markdown || "").replace(/\r\n?/g, "\n");
+  const lines = text.split("\n");
+  const blocks = [];
+  let lastEnd = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    const open = FENCE_OPEN_RE.exec(lines[index]);
+    if (!open) continue;
+    const marker = open[1];
+    const info = open[2] || "";
+    let close = -1;
+    for (let scan = index + 1; scan < lines.length; scan += 1) {
+      const candidate = FENCE_CLOSE_RE.exec(lines[scan]);
+      if (candidate && candidate[1][0] === marker[0] && candidate[1].length >= marker.length) {
+        close = scan;
+        break;
+      }
+    }
+    blocks.push({
+      info,
+      startLine: index,
+      endLine: close,
+      preceding: lines.slice(lastEnd, index).join("\n"),
+      content: lines.slice(index + 1, close === -1 ? lines.length : close).join("\n")
+    });
+    if (close === -1) break;
+    index = close;
+    lastEnd = close + 1;
+  }
+  return { lines, blocks };
+}
+
+export function extractCodeFiles(markdown, { includeUnclosed = false } = {}) {
   if (typeof markdown !== "string" || !markdown.trim()) return [];
+  const { blocks } = fenceBlocks(markdown);
   const files = [];
   const used = new Set();
-  let cursor = 0;
-  let match;
 
-  FENCE_RE.lastIndex = 0;
-  while ((match = FENCE_RE.exec(markdown))) {
-    const [full, , rawInfo, rawContent] = match;
-    const preceding = markdown.slice(cursor, match.index);
-    cursor = match.index + full.length;
-    const info = cleanInfo(rawInfo);
+  for (const block of blocks) {
+    if (block.endLine === -1 && !includeUnclosed) continue;
+    const info = cleanInfo(block.info);
     const lang = info.split(/\s+/)[0].toLowerCase().replace(/^language-/, "").replace(/[^\w+-]/g, "");
-    const content = rawContent.replace(/\r\n/g, "\n");
+    const closed = block.endLine !== -1;
+    const content = closed ? `${block.content}\n` : block.content;
     if (!content.trim()) continue;
 
-    const explicit = filenameFromInfo(info) || filenameNear(preceding);
-    if (!explicit && !KNOWN_LANGS.has(lang)) continue;
+    const explicitName = filenameFromInfo(info) || filenameNear(block.preceding);
+    if (!explicitName && !KNOWN_LANGS.has(lang)) continue;
     const fallback = DEFAULT_NAMES[lang] || `code-${files.length + 1}.txt`;
-    const path = safeFilePath(explicit, fallback);
+    const path = safeFilePath(explicitName, fallback);
     if (!path) continue;
     const unique = uniquePath(path, used);
     if (!unique) continue;
     files.push({
       path: unique,
       content,
-      language: lang || EXTENSIONS[path.split(".").pop()?.toLowerCase()] || "",
-      bytes: new TextEncoder().encode(content).length
+      language: lang || EXTENSIONS[unique.split(".").pop()?.toLowerCase()] || "",
+      bytes: new TextEncoder().encode(content).length,
+      explicit: Boolean(explicitName),
+      complete: closed
     });
   }
 

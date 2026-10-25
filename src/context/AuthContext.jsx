@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchCurrentUser,
   getApiErrorMessage,
@@ -14,7 +14,13 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [status, setStatus] = useState("loading");
   const [sessionError, setSessionError] = useState("");
+  const userRef = useRef(null);
   const checkRef = useRef(0);
+
+  const applyUser = useCallback(value => {
+    userRef.current = value;
+    setUser(value);
+  }, []);
 
   const refreshSession = useCallback(async () => {
     const check = ++checkRef.current;
@@ -23,20 +29,23 @@ export function AuthProvider({ children }) {
     try {
       const current = await fetchCurrentUser();
       if (check !== checkRef.current) return;
-      setUser(current);
+      applyUser(current);
       setStatus("authenticated");
     } catch (error) {
       if (check !== checkRef.current) return;
       if (isUnauthorizedError(error)) {
-        setUser(null);
+        applyUser(null);
         setStatus("anonymous");
         return;
       }
-      setUser(null);
       setSessionError(getApiErrorMessage(error));
-      setStatus("unavailable");
+      if (userRef.current) {
+        setStatus("authenticated");
+      } else {
+        setStatus("unavailable");
+      }
     }
-  }, []);
+  }, [applyUser]);
 
   useEffect(() => {
     refreshSession();
@@ -48,31 +57,31 @@ export function AuthProvider({ children }) {
   const signUp = useCallback(async payload => {
     const data = await signUpRequest(payload);
     checkRef.current += 1;
-    setUser(data.user);
+    applyUser(data.user);
     setSessionError("");
     setStatus("authenticated");
     return data;
-  }, []);
+  }, [applyUser]);
 
   const signIn = useCallback(async payload => {
     const data = await signInRequest(payload);
     checkRef.current += 1;
-    setUser(data.user);
+    applyUser(data.user);
     setSessionError("");
     setStatus("authenticated");
     return data;
-  }, []);
+  }, [applyUser]);
 
   const signOut = useCallback(async () => {
     checkRef.current += 1;
     try {
       await signOutRequest();
     } finally {
-      setUser(null);
+      applyUser(null);
       setSessionError("");
       setStatus("anonymous");
     }
-  }, []);
+  }, [applyUser]);
 
   const value = useMemo(
     () => ({

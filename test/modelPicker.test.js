@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  CUSTOM_MODEL_TYPE,
+  FREE_MODEL_TYPE,
   GATEWAY_GROUP,
   MODEL_SELECTION_STORAGE_KEY,
   OMNIROUTE_SOURCE,
@@ -468,4 +470,96 @@ test("gateway status labels are human-readable for every upstream state", () => 
   assert.match(gatewayStatusLabel({ status: "timeout" }), /timed out/i);
   assert.match(gatewayStatusLabel({ status: "empty" }), /no models/i);
   assert.match(gatewayStatusLabel({ status: "unreachable" }), /unreachable/i);
+});
+
+test("custom model type keeps Vups, saved providers, and gateways but hides free catalogue rows", () => {
+  const catalog = buildCatalog({
+    models: [
+      savedModel("cfg-a", "deepseek-chat"),
+      { id: "gateway-model", name: "Gateway Model", source: OMNIROUTE_SOURCE, provider: "OmniRoute" }
+    ],
+    shared: sharedStatus([sharedModel("shared-free")]),
+    omniroute: omnirouteStatus({ enabled: true, configured: true, available: true }),
+    vups: true,
+    modelType: CUSTOM_MODEL_TYPE,
+    freeCatalog: {
+      models: [
+        { id: "shared-free", name: "Shared Free", shared: true, free: true },
+        { id: "catalog-only", name: "Catalog Only", configId: "cfg-a", provider: "DeepSeek", free: true }
+      ]
+    }
+  });
+  assert.ok(catalog.some((row) => row.vups));
+  assert.ok(catalog.some((row) => row.configId === "cfg-a" && row.model === "deepseek-chat"));
+  assert.ok(catalog.some((row) => row.gateway));
+  assert.equal(catalog.some((row) => row.model === "shared-free"), false);
+  assert.equal(catalog.some((row) => row.model === "catalog-only"), false);
+});
+
+test("free model type shows only Vups and verified free rows, grouped as free", () => {
+  const catalog = buildCatalog({
+    models: [
+      savedModel("cfg-a", "catalog-only"),
+      savedModel("cfg-a", "paid-saved"),
+      { id: "gateway-model", name: "Gateway Model", source: OMNIROUTE_SOURCE, provider: "OmniRoute" }
+    ],
+    shared: sharedStatus([sharedModel("shared-free"), sharedModel("shared-paid", { free: false })]),
+    omniroute: omnirouteStatus({ enabled: true, configured: true, available: true }),
+    vups: true,
+    modelType: FREE_MODEL_TYPE,
+    freeCatalog: {
+      models: [
+        { id: "shared-free", name: "Shared Free", shared: true, free: true },
+        { id: "catalog-only", name: "Catalog Only", configId: "cfg-a", provider: "DeepSeek", free: true, freeSource: "provider_pricing" }
+      ]
+    }
+  });
+  assert.ok(catalog.some((row) => row.vups));
+  assert.ok(catalog.some((row) => row.model === "shared-free"));
+  const personal = catalog.find((row) => row.model === "catalog-only");
+  assert.ok(personal);
+  assert.equal(personal.configId, "cfg-a");
+  assert.equal(personal.free, true);
+  assert.equal(personal.group, SHARED_GROUP);
+  assert.equal(catalog.some((row) => row.model === "paid-saved"), false);
+  assert.equal(catalog.some((row) => row.model === "shared-paid"), false);
+  assert.equal(catalog.some((row) => row.gateway), false);
+});
+
+test("a catalogue-only personal free model routes to its exact saved provider configuration", () => {
+  const catalog = buildCatalog({
+    models: [],
+    vups: false,
+    modelType: FREE_MODEL_TYPE,
+    freeCatalog: {
+      models: [{ id: "free-model", name: "Free Model", configId: "cfg-free", provider: "Provider A", free: true }]
+    }
+  });
+  assert.equal(catalog.length, 1);
+  const reference = chatReference(catalog[0]);
+  assert.deepEqual(reference, { model: "free-model", configId: "cfg-free", providerId: undefined });
+  assert.equal(resolveSelection(catalog, selectionFromRow(catalog[0]))?.model, "free-model");
+});
+
+test("a personal catalogue row that is already saved is not duplicated", () => {
+  const catalog = buildCatalog({
+    models: [{ ...savedModel("cfg-a", "free-saved"), free: true }],
+    vups: false,
+    modelType: FREE_MODEL_TYPE,
+    freeCatalog: {
+      models: [{ id: "free-saved", configId: "cfg-a", provider: "DeepSeek", free: true }]
+    }
+  });
+  assert.equal(catalog.filter((row) => row.model === "free-saved").length, 1);
+  assert.equal(catalog[0].key.startsWith("saved:"), true);
+});
+
+test("missing catalogue metadata cannot turn a model into free by name alone", () => {
+  const catalog = buildCatalog({
+    models: [savedModel("cfg-a", "totally-free-model")],
+    vups: false,
+    modelType: FREE_MODEL_TYPE,
+    freeCatalog: null
+  });
+  assert.equal(catalog.length, 0);
 });

@@ -27,7 +27,9 @@ import {
 } from "@phosphor-icons/react";
 import PromptBar from "./components/reactbits/PromptBar.jsx";
 import MessageDownloads from "./components/MessageDownloads.jsx";
+import CodeArtifact from "./components/CodeArtifact.jsx";
 import VupsLogo from "./components/VupsLogo.jsx";
+import { responseSummary, streamingArtifact } from "./chat/artifacts.js";
 import {
   IMAGE_LIMITS,
   formatBytes,
@@ -38,7 +40,8 @@ import {
   validateImageFile,
 } from "./chat/attachments.js";
 import ThoughtLine from "./components/reactbits/ThoughtLine.jsx";
-import { streamChatResponse, ChatConfigError, ChatNetworkError } from "./services/chat.js";
+import { streamChatResponse } from "./services/chat.js";
+import { presentChatError } from "./chat/chatErrors.js";
 import {
   buildCatalog,
   chatReference,
@@ -47,13 +50,17 @@ import {
   resolveSelection,
   saveStoredSelection,
   selectionFromRow,
+  CUSTOM_MODEL_TYPE,
+  FREE_MODEL_TYPE,
 } from "./chat/modelCatalog.js";
 import {
   deleteConversation,
+  fetchFreeModels,
   fetchProviderConfig,
   fetchOmniRouteStatus,
   fetchProviderModels,
   fetchSharedModelStatus,
+  fetchConversationArtifacts,
   generateImage,
   getApiErrorMessage,
   getConversation,
@@ -63,7 +70,7 @@ import {
 import { useAuth } from "./context/AuthContext.jsx";
 import "./chat.css";
 
-// ─── Chat configuration ─────────────────────────────────────────────────────
+// â”€â”€â”€ Chat configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const VUPS_EFFORTS = ["Precise", "Balanced", "Creative"];
 const EFFORT_TEMPERATURE = { Precise: 0.3, Balanced: 0.7, Creative: 1.0 };
@@ -105,13 +112,13 @@ const handleDictate =
         })
     : undefined;
 
-// ─── Utilities ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ Utilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function generateId() {
   return Math.random().toString(36).slice(2, 11);
 }
 
-function toLocalMessage(message) {
+function toLocalMessage(message, artifactMap = null) {
   const images = Array.isArray(message.attachments)
     ? message.attachments.map((attachment) => ({
         id: generateAttachmentId(),
@@ -120,15 +127,19 @@ function toLocalMessage(message) {
         bytes: attachment.bytes,
       }))
     : [];
+  const artifact = artifactMap?.get(message.messageId) || null;
   return {
     id: generateId(),
     role: message.role,
     content: message.content,
+    ...(message.messageId ? { messageId: message.messageId } : {}),
+    ...(artifact ? { artifact } : {}),
+    ...(artifact && artifact.status !== "complete" ? { truncated: "error" } : {}),
     ...(images.length > 0 ? { images } : {}),
   };
 }
 
-// Only the final message may carry images — the backend rejects attachments
+// Only the final message may carry images â€” the backend rejects attachments
 // on earlier messages, so trimmed history stays text-only.
 function requestHistory(messages) {
   const filtered = messages.filter(
@@ -143,17 +154,6 @@ function requestHistory(messages) {
   });
 }
 
-function errorMessageFor(error) {
-  if (error instanceof ChatConfigError || error instanceof ChatNetworkError) return error.message;
-  return getApiErrorMessage(error);
-}
-
-function chatErrorMessageFor(error) {
-  const message = errorMessageFor(error);
-  const requestId = typeof error?.requestId === "string" ? error.requestId : "";
-  return requestId && !message.includes(requestId) ? `${message} (Request ID: ${requestId})` : message;
-}
-
 function imageExtension(mimeType) {
   if (mimeType === "image/png") return "png";
   if (mimeType === "image/webp") return "webp";
@@ -162,7 +162,7 @@ function imageExtension(mimeType) {
 }
 
 function sharedModelNotice(shared) {
-  if (!shared) return "Checking the shared model — try again in a moment.";
+  if (!shared) return "Checking the shared model â€” try again in a moment.";
   if (shared.status === "disabled") {
     return "The shared AI model has been disabled. Connect your own AI provider in API settings to keep chatting.";
   }
@@ -179,7 +179,7 @@ function sharedModelNotice(shared) {
 }
 
 function gatewayNotice(omniroute) {
-  if (!omniroute) return "Checking the OmniRoute gateway — try again in a moment.";
+  if (!omniroute) return "Checking the OmniRoute gateway â€” try again in a moment.";
   if (!omniroute.enabled) {
     return "The OmniRoute gateway is disabled on this server. Pick another model from the model menu.";
   }
@@ -211,7 +211,7 @@ function unavailableModelNotice(shared, omniroute) {
   return sharedModelNotice(shared);
 }
 
-// ─── Code Block with Copy ───────────────────────────────────────────────────
+// â”€â”€â”€ Code Block with Copy â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function CodeBlock({ children, className }) {
   const [copied, setCopied] = useState(false);
@@ -250,7 +250,7 @@ function CodeBlock({ children, className }) {
   );
 }
 
-// ─── Markdown Components ────────────────────────────────────────────────────
+// â”€â”€â”€ Markdown Components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const MARKDOWN_COMPONENTS = {
   code({ node, inline, className, children, ...props }) {
@@ -265,23 +265,46 @@ const MARKDOWN_COMPONENTS = {
   },
 };
 
-// ─── Message Bubble ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Message Bubble â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function Message({ message, isStreaming, currentSteps, onRetry, onContinue }) {
+function Message({ message, isStreaming, currentSteps, onRetry, onContinue, onSwitchModel }) {
   const isUser = message.role === "user";
   const isError = message.role === "error";
+  const streamedArtifact = useMemo(
+    () => (!isUser && !isError && isStreaming ? streamingArtifact(message.content) : null),
+    [isUser, isError, isStreaming, message.content]
+  );
+  const artifact = message.artifact || streamedArtifact;
+  const displayContent = useMemo(
+    () => (artifact ? responseSummary(message.content, artifact.files) : message.content),
+    [artifact, message.content]
+  );
 
   if (isError) {
+    const presentation = message.presentation;
     return (
       <div className="vr-msg vr-msg--error" role="alert">
         <Warning size={16} weight="fill" aria-hidden="true" />
-        <span>{message.content}</span>
-        {onRetry && (
-          <button className="vr-retry-btn" onClick={onRetry}>
-            <ArrowClockwise size={14} />
-            Retry
-          </button>
-        )}
+        <div className="vr-msg-error-body">
+          {presentation?.title ? <strong>{presentation.title}</strong> : null}
+          <span>{presentation?.message || message.content}</span>
+          {presentation?.model ? (
+            <span className="vr-msg-error-model">Model: <code>{presentation.model}</code></span>
+          ) : null}
+          <div className="vr-msg-error-actions">
+            {onRetry && presentation?.retry !== false && (
+              <button className="vr-retry-btn" onClick={onRetry}>
+                <ArrowClockwise size={14} />
+                Try again
+              </button>
+            )}
+            {onSwitchModel && presentation?.canSwitchModel !== false && (
+              <button className="vr-retry-btn" onClick={onSwitchModel}>
+                Try another model
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     );
   }
@@ -327,7 +350,7 @@ function Message({ message, isStreaming, currentSteps, onRetry, onContinue }) {
                 <ThoughtLine
                   working={isStreaming}
                   steps={stepsToUse || []}
-                  label="Thinking…"
+                  label="Thinkingâ€¦"
                   doneLabel="Thought for"
                   glyph="sparkle"
                   glyphColor="#d4ff3f"
@@ -353,19 +376,25 @@ function Message({ message, isStreaming, currentSteps, onRetry, onContinue }) {
                 />
               </div>
             )}
-            {message.content ? (
+            {displayContent ? (
               <div className={`vr-msg-md ${isStreaming ? "vr-streaming" : ""}`}>
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   rehypePlugins={[rehypeHighlight]}
                   components={MARKDOWN_COMPONENTS}
                 >
-                  {message.content}
+                  {displayContent}
                 </ReactMarkdown>
                 {isStreaming && <span className="vr-cursor" aria-hidden="true" />}
               </div>
             ) : null}
-            {!isStreaming && message.truncated && message.content ? (
+            {artifact ? (
+              <CodeArtifact
+                artifact={artifact}
+                streaming={isStreaming}
+              />
+            ) : null}
+            {!isStreaming && message.truncated && (message.content || artifact) ? (
               <div className="vr-truncated" role="status">
                 <Warning size={14} weight="fill" aria-hidden="true" />
                 <span>
@@ -381,7 +410,7 @@ function Message({ message, isStreaming, currentSteps, onRetry, onContinue }) {
                 ) : null}
               </div>
             ) : null}
-            {!isStreaming && !message.truncated && message.content ? (
+            {!isStreaming && !message.truncated && !artifact && message.content ? (
               <MessageDownloads content={message.content} />
             ) : null}
           </>
@@ -391,7 +420,7 @@ function Message({ message, isStreaming, currentSteps, onRetry, onContinue }) {
   );
 }
 
-// ─── Welcome Screen ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Welcome Screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function WelcomeScreen({ configured, modelName, sharedActive, gatewayActive, vupsActive, sharedLoading }) {
   return (
@@ -423,7 +452,7 @@ function WelcomeScreen({ configured, modelName, sharedActive, gatewayActive, vup
   );
 }
 
-// ─── Sidebar ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function Sidebar({
   conversations,
@@ -556,9 +585,9 @@ function Sidebar({
   );
 }
 
-// ─── Message List ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Message List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function MessageList({ messages, streamingId, loading, onRetry, onContinue, currentSteps }) {
+function MessageList({ messages, streamingId, loading, onRetry, onContinue, onSwitchModel, currentSteps }) {
   const bottomRef = useRef(null);
   const listRef = useRef(null);
   const isNearBottom = useRef(true);
@@ -596,6 +625,7 @@ function MessageList({ messages, streamingId, loading, onRetry, onContinue, curr
           isStreaming={msg.id === streamingId}
           currentSteps={msg.id === streamingId ? currentSteps : msg.steps || []}
           onRetry={msg.role === "error" && i === messages.length - 1 ? onRetry : undefined}
+          onSwitchModel={msg.role === "error" && i === messages.length - 1 ? onSwitchModel : undefined}
           onContinue={
             msg.role === "assistant" &&
             msg.truncated &&
@@ -611,7 +641,7 @@ function MessageList({ messages, streamingId, loading, onRetry, onContinue, curr
   );
 }
 
-// ─── ChatPage (Root) ─────────────────────────────────────────────────────────
+// â”€â”€â”€ ChatPage (Root) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function ChatPage() {
   const { user, signOut } = useAuth();
@@ -631,6 +661,10 @@ export default function ChatPage() {
   const [omniroute, setOmniroute] = useState(null);
   const [selection, setSelection] = useState(null);
   const [catalogReady, setCatalogReady] = useState(false);
+  const [modelType, setModelType] = useState(CUSTOM_MODEL_TYPE);
+  const [freeCatalog, setFreeCatalog] = useState(null);
+  const [freeCatalogSettled, setFreeCatalogSettled] = useState(false);
+  const [openModelSignal, setOpenModelSignal] = useState(0);
   const [notice, setNotice] = useState("");
   const [imageGenerating, setImageGenerating] = useState(false);
   const [generatedImage, setGeneratedImage] = useState(null);
@@ -640,7 +674,6 @@ export default function ChatPage() {
   const abortRef = useRef(null);
   const sendingRef = useRef(false);
   const initializedRef = useRef(false);
-  const restoredSelectionRef = useRef(false);
 
   const refreshConversations = useCallback(async () => {
     try {
@@ -655,6 +688,15 @@ export default function ChatPage() {
     if (initializedRef.current) return;
     initializedRef.current = true;
     refreshConversations();
+    fetchFreeModels()
+      .then((freeData) => {
+        setFreeCatalog(freeData?.catalog || null);
+        if (freeData?.modelType === FREE_MODEL_TYPE || freeData?.modelType === CUSTOM_MODEL_TYPE) {
+          setModelType(freeData.modelType);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setFreeCatalogSettled(true));
     Promise.all([
       fetchProviderConfig(),
       fetchSharedModelStatus().catch(() => null),
@@ -664,6 +706,9 @@ export default function ChatPage() {
         setConfig(stored);
         setShared(sharedStatus);
         setOmniroute(gatewayStatus);
+        setModelType(
+          stored?.modelType === FREE_MODEL_TYPE ? FREE_MODEL_TYPE : CUSTOM_MODEL_TYPE
+        );
         return fetchProviderModels()
           .then((models) => setProviderModels(models))
           .catch((error) => {
@@ -679,19 +724,23 @@ export default function ChatPage() {
   }, [refreshConversations]);
 
   const catalog = useMemo(
-    () => buildCatalog({ models: providerModels, shared, omniroute, vups: true }),
-    [providerModels, shared, omniroute]
+    () => buildCatalog({ models: providerModels, shared, omniroute, vups: true, modelType, freeCatalog }),
+    [providerModels, shared, omniroute, modelType, freeCatalog]
   );
 
   useEffect(() => {
-    if (restoredSelectionRef.current || !catalogReady || catalog.length === 0) return;
-    restoredSelectionRef.current = true;
+    if (!catalogReady || catalog.length === 0) return;
+    if (modelType === FREE_MODEL_TYPE && !freeCatalogSettled) return;
     const restored = resolveSelection(catalog, loadStoredSelection()) || fallbackRow(catalog);
     if (!restored) return;
     const next = selectionFromRow(restored);
-    setSelection(next);
-    saveStoredSelection(next);
-  }, [catalog, catalogReady]);
+    setSelection((current) => {
+      const currentKey = resolveSelection(catalog, current)?.key || "";
+      if (currentKey === restored.key) return current;
+      saveStoredSelection(next);
+      return next;
+    });
+  }, [catalog, catalogReady, modelType, freeCatalogSettled]);
 
   const activeRow = resolveSelection(catalog, selection) || fallbackRow(catalog);
   const activeModelKey = activeRow?.key || "";
@@ -731,7 +780,7 @@ export default function ChatPage() {
       const wasActive = Boolean(activeRow && !activeRow.shared && activeRow.configId === row.configId);
       setProviderModels(remaining);
       if (wasActive) {
-        const fallback = fallbackRow(buildCatalog({ models: remaining, shared, vups: true }));
+        const fallback = fallbackRow(buildCatalog({ models: remaining, shared, vups: true, modelType, freeCatalog }));
         const next = fallback ? selectionFromRow(fallback) : null;
         setSelection(next);
         saveStoredSelection(next);
@@ -776,8 +825,16 @@ export default function ChatPage() {
     setGeneratedImage(null);
     setImageError("");
     try {
-      const conversation = await getConversation(id);
-      setMessages(conversation.messages.map(toLocalMessage));
+      const [conversation, artifacts] = await Promise.all([
+        getConversation(id),
+        fetchConversationArtifacts(id).catch(() => [])
+      ]);
+      const artifactMap = new Map(
+        artifacts
+          .filter(artifact => artifact?.messageId)
+          .map(artifact => [artifact.messageId, artifact])
+      );
+      setMessages(conversation.messages.map(message => toLocalMessage(message, artifactMap)));
     } catch (error) {
       setNotice(getApiErrorMessage(error));
     }
@@ -785,7 +842,7 @@ export default function ChatPage() {
 
   async function removeConversation(id) {
     const title = conversations.find((conversation) => conversation.id === id)?.title;
-    if (!window.confirm(`Delete “${title || "this conversation"}”? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete â€œ${title || "this conversation"}â€? This cannot be undone.`)) return;
     try {
       await deleteConversation(id);
       setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
@@ -912,7 +969,10 @@ export default function ChatPage() {
     const assistantId = generateId();
     const initialSteps = ["Sending request"];
 
-    setMessages([...baseMessages, { id: assistantId, role: "assistant", content: "", steps: initialSteps }]);
+    setMessages([
+      ...baseMessages,
+      { id: assistantId, messageId: assistantId, role: "assistant", content: "", steps: initialSteps }
+    ]);
     setLoading(true);
     setStreamingId(assistantId);
     setCurrentSteps(initialSteps);
@@ -932,6 +992,7 @@ export default function ChatPage() {
         mode: chatMode,
         temperature: EFFORT_TEMPERATURE[chosenEffort] ?? 0.7,
         signal: controller.signal,
+        assistantMessageId: assistantId,
         onMeta: ({ conversationId }) => {
           setActiveConvId(conversationId);
           setConversations((prev) =>
@@ -966,27 +1027,43 @@ export default function ChatPage() {
           });
         },
       });
-      if (result?.finishReason === "length" || result?.finishReason === "error") {
-        setMessages((prev) =>
-          prev.map((message) =>
-            message.id === assistantId ? { ...message, truncated: result.finishReason } : message
-          )
-        );
-      }
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === assistantId
+            ? {
+                ...message,
+                ...(typeof result?.content === "string" ? { content: result.content } : {}),
+                ...(result?.messageId ? { messageId: result.messageId } : {}),
+                ...(result?.artifact ? { artifact: result.artifact } : {}),
+                truncated:
+                  result?.finishReason === "length" || result?.finishReason === "error"
+                    ? result.finishReason
+                    : null,
+              }
+            : message
+        )
+      );
       await refreshConversations();
     } catch (error) {
       if (error.name !== "AbortError") {
         const partial = typeof error.partialContent === "string" ? error.partialContent : "";
+        const presentation = presentChatError(error, {
+          modelLabel: selectedRow?.name || modelKey
+        });
+        if (error.conversationId) setActiveConvId(error.conversationId);
+        const keepAssistant = Boolean(partial || error.artifact);
         setMessages((prev) => {
-          const kept = partial
+          const kept = keepAssistant
             ? prev.map((message) =>
                 message.id === assistantId
                   ? {
                       ...message,
                       content:
-                        message.content && message.content.length >= partial.length
-                          ? message.content
-                          : partial,
+                        partial && (!message.content || message.content.length < partial.length)
+                          ? partial
+                          : message.content,
+                      ...(error.messageId ? { messageId: error.messageId } : {}),
+                      ...(error.artifact ? { artifact: error.artifact } : {}),
                       truncated: "error",
                     }
                   : message
@@ -994,7 +1071,7 @@ export default function ChatPage() {
             : prev.filter((message) => message.id !== assistantId);
           return [
             ...kept,
-            { id: generateId(), role: "error", content: chatErrorMessageFor(error) },
+            { id: generateId(), role: "error", content: presentation.message, presentation },
           ];
         });
       } else {
@@ -1013,7 +1090,7 @@ export default function ChatPage() {
   }
 
   const CONTINUE_INSTRUCTION =
-    "Continue from exactly where you stopped. Do not repeat any previously generated text — output only the continuation.";
+    "Continue from exactly where you stopped. Do not repeat any previously generated text â€” output only the continuation.";
 
   async function handleContinue(targetId) {
     if (sendingRef.current || loading) return;
@@ -1021,6 +1098,10 @@ export default function ChatPage() {
     if (targetIndex === -1) return;
     const target = messages[targetIndex];
     if (!target?.content?.trim()) return;
+    if (!target.messageId) {
+      setNotice("This older response cannot be continued automatically. Retry the request to generate it again.");
+      return;
+    }
     if (!canChat) {
       setNotice(unavailableModelNotice(shared, omniroute));
       return;
@@ -1038,10 +1119,20 @@ export default function ChatPage() {
     if (sendingRef.current) return;
     sendingRef.current = true;
     const initialSteps = ["Continuing response"];
+    const targetArtifact = target.artifact || streamingArtifact(target.content);
+    const artifactContinuation = Boolean(targetArtifact);
+    const targetFile = targetArtifact?.files?.find(file => file.complete === false)?.path || "";
 
     setMessages((prev) =>
       prev.map((message) =>
-        message.id === targetId ? { ...message, truncated: null, steps: initialSteps } : message
+        message.id === targetId
+          ? {
+              ...message,
+              ...(targetArtifact && !message.artifact ? { artifact: targetArtifact } : {}),
+              truncated: null,
+              steps: initialSteps
+            }
+          : message
       )
     );
     setLoading(true);
@@ -1063,7 +1154,10 @@ export default function ChatPage() {
         mode: chatMode,
         temperature: EFFORT_TEMPERATURE[currentEffort] ?? 0.7,
         signal: controller.signal,
+        assistantMessageId: target.messageId,
+        continuation: { messageId: target.messageId, ...(targetFile ? { targetFile } : {}) },
         onChunk: (chunk) => {
+          if (artifactContinuation) return;
           setMessages((prev) =>
             prev.map((message) =>
               message.id === targetId ? { ...message, content: message.content + chunk } : message
@@ -1080,31 +1174,59 @@ export default function ChatPage() {
           });
         },
       });
-      if (result?.finishReason === "length" || result?.finishReason === "error") {
-        setMessages((prev) =>
-          prev.map((message) =>
-            message.id === targetId ? { ...message, truncated: result.finishReason } : message
-          )
-        );
-      }
+      setMessages((prev) =>
+        prev.map((message) => {
+          if (message.id !== targetId) return message;
+          if (result?.artifact) {
+            return {
+              ...message,
+              content: responseSummary(message.content, result.artifact.files),
+              artifact: result.artifact,
+              ...(result.messageId ? { messageId: result.messageId } : {}),
+              truncated:
+                result.finishReason === "length" || result.finishReason === "error"
+                  ? result.finishReason
+                  : null
+            };
+          }
+          return {
+            ...message,
+            ...(typeof result?.content === "string" ? { content: result.content } : {}),
+            ...(result?.messageId ? { messageId: result.messageId } : {}),
+            artifact: null,
+            truncated:
+              result?.finishReason === "length" || result?.finishReason === "error"
+                ? result.finishReason
+                : null
+          };
+        })
+      );
       await refreshConversations();
     } catch (error) {
       if (error.name !== "AbortError") {
         const partial = typeof error.partialContent === "string" ? error.partialContent : "";
+        const presentation = presentChatError(error, {
+          modelLabel: activeRow?.name || modelKey
+        });
+        if (error.conversationId) setActiveConvId(error.conversationId);
         setMessages((prev) => [
           ...prev.map((message) =>
             message.id === targetId
               ? {
                   ...message,
                   content:
-                    partial && (!message.content || message.content.length < partial.length)
+                    !artifactContinuation &&
+                    partial &&
+                    (!message.content || message.content.length < partial.length)
                       ? partial
                       : message.content,
+                  ...(error.messageId ? { messageId: error.messageId } : {}),
+                  ...(error.artifact ? { artifact: error.artifact } : {}),
                   truncated: "error",
                 }
               : message
           ),
-          { id: generateId(), role: "error", content: chatErrorMessageFor(error) },
+          { id: generateId(), role: "error", content: presentation.message, presentation },
         ]);
       } else {
         await refreshConversations();
@@ -1184,6 +1306,7 @@ export default function ChatPage() {
             loading={loading}
             onRetry={handleRetry}
             onContinue={handleContinue}
+            onSwitchModel={() => setOpenModelSignal((value) => value + 1)}
             currentSteps={currentSteps}
           />
         )}
@@ -1278,6 +1401,7 @@ export default function ChatPage() {
               onModelChange={changeModel}
               onDeleteModel={handleDeleteModel}
               onAddKey={() => navigate("/settings")}
+              openModelSignal={openModelSignal}
               efforts={VUPS_EFFORTS}
               defaultEffort={currentEffort}
               onEffortChange={(effort) => setCurrentEffort(effort)}
@@ -1298,7 +1422,7 @@ export default function ChatPage() {
               className="vr-prompt-bar"
             />
             <p className="vr-composer-hint">
-              Enter to send · Shift+Enter for newline · Attach images with the paperclip
+              Enter to send Â· Shift+Enter for newline Â· Attach images with the paperclip
             </p>
           </div>
         </footer>

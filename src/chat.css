@@ -672,7 +672,7 @@
 /* Error message */
 .vr-msg--error {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   padding: 12px 16px;
   margin: 8px max(24px, calc((100% - 720px) / 2));
@@ -684,6 +684,13 @@
   line-height: 1.5;
   flex-wrap: wrap;
 }
+.vr-msg--error > svg { flex: none; margin-top: 1px; }
+.vr-msg-error-body { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 3px; }
+.vr-msg-error-body strong { color: #fecaca; font-size: 13px; }
+.vr-msg-error-model { color: #d6a5a5; font-size: 12px; overflow-wrap: anywhere; }
+.vr-msg-error-model code { font-family: var(--mono, monospace); font-size: 11.5px; color: #f2d1d1; }
+.vr-msg-error-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.vr-msg-error-actions .vr-retry-btn { margin-left: 0; }
 
 .vr-retry-btn {
   display: flex;

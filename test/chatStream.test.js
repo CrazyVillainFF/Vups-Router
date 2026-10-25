@@ -117,7 +117,11 @@ test("non-OK JSON errors preserve the backend code and request ID", async () => 
         message: "Vups is rate-limited.",
         code: "vups_rate_limited",
         requestId: "req-http-1",
-        diagnostic: { category: "rate_limit_requests" }
+        diagnostic: { category: "rate_limit_requests" },
+        model: "vups-v3-galax",
+        resetAt: "2026-10-25T12:17:00.000Z",
+        retryAfterSeconds: 17,
+        resetSource: "retry-after"
       }),
       { status: 429, headers: { "Content-Type": "application/json" } }
     );
@@ -129,7 +133,75 @@ test("non-OK JSON errors preserve the backend code and request ID", async () => 
       assert.equal(error.code, "vups_rate_limited");
       assert.equal(error.requestId, "req-http-1");
       assert.equal(error.diagnostic.category, "rate_limit_requests");
+      assert.equal(error.model, "vups-v3-galax");
+      assert.equal(error.resetAt, "2026-10-25T12:17:00.000Z");
+      assert.equal(error.retryAfterSeconds, 17);
+      assert.equal(error.resetSource, "retry-after");
       return true;
     }
   );
+});
+
+test("stream events carry truthful progress, stable message ids, and full artifacts", async () => {
+  apiClient.defaults.baseURL = "http://backend.test/api";
+  let requestBody = null;
+  globalThis.fetch = async (_url, options) => {
+    requestBody = JSON.parse(options.body);
+    return sseResponse([
+      'data: {"type":"meta","conversationId":"conv-artifact","messageId":"assistant-1","model":"vups-v3-galax"}\n\n',
+      'data: {"type":"progress","messageId":"assistant-1","phase":"generating_code","message":"Generating your code…"}\n\n',
+      'data: {"type":"delta","content":"FILE: index.html\\n```html\\n<h1>Hello</h1>\\n```"}\n\n',
+      'data: {"type":"progress","messageId":"assistant-1","phase":"preparing_files","message":"Preparing files…"}\n\n',
+      'data: {"type":"done","conversationId":"conv-artifact","messageId":"assistant-1","finishReason":"stop","message":{"role":"assistant","content":"Here is the page.","messageId":"assistant-1"},"artifact":{"id":"artifact-1","messageId":"assistant-1","title":"Generated code","status":"complete","fileCount":1,"bytes":20,"files":[{"path":"index.html","language":"html","content":"<h1>Hello</h1>\\n","bytes":20,"complete":true}]},"artifacts":[{"id":"artifact-1"}]}\n\n'
+    ]);
+  };
+  const steps = [];
+  let meta = null;
+  const result = await streamChatResponse({
+    conversationId: "conv-artifact",
+    messages: [{ role: "user", content: "Build a page" }],
+    assistantMessageId: "assistant-1",
+    onStep: step => steps.push(step),
+    onMeta: value => { meta = value; }
+  });
+  assert.equal(requestBody.assistantMessageId, "assistant-1");
+  assert.deepEqual(meta, { conversationId: "conv-artifact", messageId: "assistant-1" });
+  assert.ok(steps.includes("Generating your code…"));
+  assert.ok(steps.includes("Preparing files…"));
+  assert.equal(result.content, "Here is the page.");
+  assert.equal(result.messageId, "assistant-1");
+  assert.equal(result.artifact.files[0].content, "<h1>Hello</h1>\n");
+  assert.equal(result.artifact.status, "complete");
+});
+
+test("continuation requests include the target message and preserve recovered artifacts on failure", async () => {
+  apiClient.defaults.baseURL = "http://backend.test/api";
+  let requestBody = null;
+  globalThis.fetch = async (_url, options) => {
+    requestBody = JSON.parse(options.body);
+    return sseResponse([
+      'data: {"type":"meta","conversationId":"conv-artifact","messageId":"assistant-1"}\n\n',
+      'data: {"type":"delta","content":" world"}\n\n',
+      'data: {"type":"error","message":"The stream ended early.","code":"stream_interrupted","conversationId":"conv-artifact","messageId":"assistant-1","partial":true,"artifact":{"id":"artifact-1","messageId":"assistant-1","status":"partial","files":[{"path":"app.js","language":"js","content":"const a = 1; world","bytes":17,"complete":false}]}}\n\n'
+    ]);
+  };
+  try {
+    await streamChatResponse({
+      conversationId: "conv-artifact",
+      messages: [
+        { role: "user", content: "Build it" },
+        { role: "assistant", content: "Here is the app." }
+      ],
+      assistantMessageId: "assistant-1",
+      continuation: { messageId: "assistant-1", targetFile: "app.js" }
+    });
+    assert.fail("expected the stream error to be thrown");
+  } catch (error) {
+    assert.ok(error instanceof ChatNetworkError);
+    assert.deepEqual(requestBody.continuation, { messageId: "assistant-1", targetFile: "app.js" });
+    assert.equal(error.partialContent, " world");
+    assert.equal(error.conversationId, "conv-artifact");
+    assert.equal(error.messageId, "assistant-1");
+    assert.equal(error.artifact.files[0].content, "const a = 1; world");
+  }
 });

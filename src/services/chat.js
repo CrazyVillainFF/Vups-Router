@@ -20,7 +20,21 @@ export class ChatConfigError extends Error {
 }
 
 export class ChatNetworkError extends Error {
-  constructor(message, status, { code = null, requestId = null, partialContent = "", diagnostic = null } = {}) {
+  constructor(message, status, {
+    code = null,
+    requestId = null,
+    partialContent = "",
+    diagnostic = null,
+    model = null,
+    resetAt = null,
+    retryAfterSeconds = null,
+    resetSource = null,
+    conversationId = null,
+    messageId = null,
+    artifact = null,
+    artifacts = [],
+    continuedFile = null
+  } = {}) {
     super(message);
     this.name = "ChatNetworkError";
     this.status = status;
@@ -28,6 +42,15 @@ export class ChatNetworkError extends Error {
     this.requestId = requestId;
     this.partialContent = partialContent;
     this.diagnostic = diagnostic;
+    this.model = model;
+    this.resetAt = resetAt;
+    this.retryAfterSeconds = retryAfterSeconds;
+    this.resetSource = resetSource;
+    this.conversationId = conversationId;
+    this.messageId = messageId;
+    this.artifact = artifact;
+    this.artifacts = Array.isArray(artifacts) ? artifacts : [];
+    this.continuedFile = continuedFile;
   }
 }
 
@@ -68,10 +91,12 @@ export function toRequestMessages(messages) {
  * @param {AbortSignal} [options.signal]
  * @param {(payload: {conversationId: string}) => void} [options.onMeta] Called once with the conversation id.
  * @param {(chunk: string) => void} [options.onChunk] Called with each streamed text chunk.
- * @param {(step: string) => void} [options.onStep] Called with progress steps.
- * @returns {Promise<{content: string, conversationId: string|null, finishReason: string|null}>}
+ * @param {(step: string) => void} [options.onStep] Called with truthful progress steps.
+ * @param {string} [options.assistantMessageId] Stable client id for the assistant turn.
+ * @param {{messageId: string, targetFile?: string}} [options.continuation] Continue an incomplete saved response.
+ * @returns {Promise<{content: string, conversationId: string|null, messageId: string|null, finishReason: string|null, artifact: object|null, artifacts: object[], continuedFile: object|null}>}
  */
-export async function streamChatResponse({ conversationId, messages, model, configId, providerId, source, vups, mode, temperature, signal, onMeta, onChunk, onStep } = {}) {
+export async function streamChatResponse({ conversationId, messages, model, configId, providerId, source, vups, mode, temperature, signal, onMeta, onChunk, onStep, assistantMessageId, continuation } = {}) {
   const body = {
     conversationId: conversationId || undefined,
     messages: toRequestMessages(messages),
@@ -81,6 +106,8 @@ export async function streamChatResponse({ conversationId, messages, model, conf
   if (configId) body.configId = configId;
   if (providerId) body.providerId = providerId;
   if (source) body.source = source;
+  if (assistantMessageId) body.assistantMessageId = assistantMessageId;
+  if (continuation?.messageId) body.continuation = continuation;
   if (mode === "motion" || mode === "general") body.mode = mode;
   if (typeof temperature === "number") body.temperature = temperature;
 
@@ -107,16 +134,24 @@ export async function streamChatResponse({ conversationId, messages, model, conf
     let code = null;
     let requestId = responseRequestId;
     let diagnostic = null;
+    let model = null;
+    let resetAt = null;
+    let retryAfterSeconds = null;
+    let resetSource = null;
     try {
       const data = await response.json();
       if (typeof data?.message === "string") message = data.message;
       if (typeof data?.code === "string") code = data.code;
       if (typeof data?.requestId === "string") requestId = data.requestId;
       if (data?.diagnostic && typeof data.diagnostic === "object") diagnostic = data.diagnostic;
+      if (typeof data?.model === "string") model = data.model;
+      if (typeof data?.resetAt === "string") resetAt = data.resetAt;
+      if (Number.isFinite(data?.retryAfterSeconds)) retryAfterSeconds = data.retryAfterSeconds;
+      if (typeof data?.resetSource === "string") resetSource = data.resetSource;
     } catch {
       /* non-JSON error body */
     }
-    throw new ChatNetworkError(message, response.status, { code, requestId, diagnostic });
+    throw new ChatNetworkError(message, response.status, { code, requestId, diagnostic, model, resetAt, retryAfterSeconds, resetSource });
   }
 
   if (!response.body) {
@@ -129,6 +164,11 @@ export async function streamChatResponse({ conversationId, messages, model, conf
   let buffer = "";
   let fullText = "";
   let resolvedConversationId = conversationId || null;
+  let resolvedMessageId = assistantMessageId || continuation?.messageId || null;
+  let savedMessage = null;
+  let artifact = null;
+  let artifacts = [];
+  let continuedFile = null;
   let streamError = null;
   let finishReason = null;
   let sawDone = false;
@@ -147,11 +187,19 @@ export async function streamChatResponse({ conversationId, messages, model, conf
     if (event.type === "meta") {
       if (event.conversationId) {
         resolvedConversationId = event.conversationId;
-        onMeta?.({ conversationId: event.conversationId });
+        onMeta?.({
+          conversationId: event.conversationId,
+          ...(event.messageId ? { messageId: event.messageId } : {})
+        });
       }
+      if (event.messageId) resolvedMessageId = event.messageId;
       return;
     }
     if (streamError) return;
+    if (event.type === "progress") {
+      if (typeof event.message === "string" && event.message.trim()) onStep?.(event.message.trim());
+      return;
+    }
     if (event.type === "delta") {
       if (event.content) {
         if (!fullText) onStep?.("Receiving response");
@@ -163,6 +211,11 @@ export async function streamChatResponse({ conversationId, messages, model, conf
     if (event.type === "done") {
       sawDone = true;
       if (event.conversationId) resolvedConversationId = event.conversationId;
+      if (event.messageId) resolvedMessageId = event.messageId;
+      if (event.message?.content) savedMessage = event.message;
+      if (event.artifact) artifact = event.artifact;
+      if (Array.isArray(event.artifacts)) artifacts = event.artifacts;
+      if (event.continuedFile) continuedFile = event.continuedFile;
       if (typeof event.finishReason === "string" && event.finishReason) {
         finishReason = event.finishReason;
       }
@@ -170,12 +223,26 @@ export async function streamChatResponse({ conversationId, messages, model, conf
       return;
     }
     if (event.type === "error") {
+      if (event.conversationId) resolvedConversationId = event.conversationId;
+      if (event.messageId) resolvedMessageId = event.messageId;
+      if (event.artifact) artifact = event.artifact;
+      if (Array.isArray(event.artifacts)) artifacts = event.artifacts;
+      if (event.continuedFile) continuedFile = event.continuedFile;
       streamError = {
         message: event.message || "The provider reported an error.",
         code: typeof event.code === "string" ? event.code : null,
         requestId:
           typeof event.requestId === "string" ? event.requestId : responseRequestId,
-        diagnostic: event.diagnostic && typeof event.diagnostic === "object" ? event.diagnostic : null
+        diagnostic: event.diagnostic && typeof event.diagnostic === "object" ? event.diagnostic : null,
+        model: typeof event.model === "string" ? event.model : null,
+        resetAt: typeof event.resetAt === "string" ? event.resetAt : null,
+        retryAfterSeconds: Number.isFinite(event.retryAfterSeconds) ? event.retryAfterSeconds : null,
+        resetSource: typeof event.resetSource === "string" ? event.resetSource : null,
+        conversationId: event.conversationId || resolvedConversationId,
+        messageId: event.messageId || resolvedMessageId,
+        artifact,
+        artifacts,
+        continuedFile
       };
     }
   };
@@ -202,7 +269,16 @@ export async function streamChatResponse({ conversationId, messages, model, conf
         ? "The response stream was interrupted. The partial answer was kept — use Continue generating to finish it."
         : "The response stream was interrupted. Please try again.",
       null,
-      { code: "stream_interrupted", requestId: responseRequestId, partialContent: fullText }
+      {
+        code: "stream_interrupted",
+        requestId: responseRequestId,
+        partialContent: fullText,
+        conversationId: resolvedConversationId,
+        messageId: resolvedMessageId,
+        artifact,
+        artifacts,
+        continuedFile
+      }
     );
   }
 
@@ -212,7 +288,16 @@ export async function streamChatResponse({ conversationId, messages, model, conf
       code: streamError.code,
       requestId: streamError.requestId,
       partialContent: fullText,
-      diagnostic: streamError.diagnostic
+      diagnostic: streamError.diagnostic,
+      model: streamError.model,
+      resetAt: streamError.resetAt,
+      retryAfterSeconds: streamError.retryAfterSeconds,
+      resetSource: streamError.resetSource,
+      conversationId: streamError.conversationId,
+      messageId: streamError.messageId,
+      artifact: streamError.artifact,
+      artifacts: streamError.artifacts,
+      continuedFile: streamError.continuedFile
     });
   }
   if (!sawDone) {
@@ -220,18 +305,38 @@ export async function streamChatResponse({ conversationId, messages, model, conf
       throw new ChatNetworkError(
         "The response ended before the model signalled completion. The partial answer was kept — use Continue generating to finish it.",
         null,
-        { code: "stream_interrupted", requestId: responseRequestId, partialContent: fullText }
+        {
+          code: "stream_interrupted",
+          requestId: responseRequestId,
+          partialContent: fullText,
+          conversationId: resolvedConversationId,
+          messageId: resolvedMessageId
+        }
       );
     }
     throw new ChatNetworkError("The provider returned an empty response. Check the model ID in Settings.", null, {
       code: "empty_stream",
-      requestId: responseRequestId
+      requestId: responseRequestId,
+      conversationId: resolvedConversationId,
+      messageId: resolvedMessageId
     });
   }
   if (!fullText.trim()) throw new ChatNetworkError("The provider returned an empty response. Check the model ID in Settings.", null, {
     code: "empty_stream",
-    requestId: responseRequestId
+    requestId: responseRequestId,
+    conversationId: resolvedConversationId,
+    messageId: resolvedMessageId
   });
 
-  return { content: fullText, conversationId: resolvedConversationId, finishReason };
+  return {
+    content: savedMessage?.content ?? fullText,
+    rawContent: fullText,
+    message: savedMessage,
+    conversationId: resolvedConversationId,
+    messageId: resolvedMessageId,
+    finishReason,
+    artifact,
+    artifacts,
+    continuedFile
+  };
 }

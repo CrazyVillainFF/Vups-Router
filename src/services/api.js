@@ -109,6 +109,20 @@ export async function listProviders() {
   return data;
 }
 
+export async function saveModelType(modelType) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.put("/settings/model-type", { modelType });
+  return data;
+}
+
+export async function fetchFreeModels({ refresh = false } = {}) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.get("/settings/free-models", {
+    params: refresh ? { refresh: "1" } : undefined
+  });
+  return data;
+}
+
 export async function saveManagedProvider(providerId, payload) {
   ensureApiBaseURL();
   const id = encodeURIComponent(providerId);
@@ -195,6 +209,12 @@ export async function getConversation(id) {
   ensureApiBaseURL();
   const { data } = await apiClient.get(`/conversations/${id}`);
   return data.conversation;
+}
+
+export async function fetchConversationArtifacts(id) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.get(`/conversations/${id}/artifacts`);
+  return Array.isArray(data.artifacts) ? data.artifacts : [];
 }
 
 export async function deleteConversation(id) {

@@ -95,6 +95,7 @@ export default function PromptBar({
   onModelChange,
   onDeleteModel,
   onAddKey,
+  openModelSignal = 0,
   efforts = DEFAULT_EFFORTS,
   defaultEffort = '',
   onEffortChange,
@@ -161,6 +162,16 @@ export default function PromptBar({
       lastDefault.current = defaultModel;
     }
   }, [defaultModel, models]);
+  const lastOpenSignal = useRef(0);
+  useEffect(() => {
+    if (!openModelSignal || openModelSignal === lastOpenSignal.current) return;
+    lastOpenSignal.current = openModelSignal;
+    setPlusOpen(false);
+    setEffortOpen(false);
+    setDismissed(true);
+    setModelQuery('');
+    setModelOpen(true);
+  }, [openModelSignal]);
   const hasTokenMenus = sources.length > 0 || commands.length > 0;
   const token = dismissed || !hasTokenMenus ? null : parseToken(draft);
   const open = plusOpen ? 'at' : (token?.kind ?? (modelOpen ? 'model' : effortOpen ? 'effort' : null));
