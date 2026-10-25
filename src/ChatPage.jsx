@@ -148,6 +148,12 @@ function errorMessageFor(error) {
   return getApiErrorMessage(error);
 }
 
+function chatErrorMessageFor(error) {
+  const message = errorMessageFor(error);
+  const requestId = typeof error?.requestId === "string" ? error.requestId : "";
+  return requestId && !message.includes(requestId) ? `${message} (Request ID: ${requestId})` : message;
+}
+
 function imageExtension(mimeType) {
   if (mimeType === "image/png") return "png";
   if (mimeType === "image/webp") return "webp";
@@ -556,6 +562,7 @@ function MessageList({ messages, streamingId, loading, onRetry, onContinue, curr
   const bottomRef = useRef(null);
   const listRef = useRef(null);
   const isNearBottom = useRef(true);
+  const lastAssistantIndex = messages.map(message => message.role).lastIndexOf("assistant");
 
   useEffect(() => {
     const el = listRef.current;
@@ -590,7 +597,10 @@ function MessageList({ messages, streamingId, loading, onRetry, onContinue, curr
           currentSteps={msg.id === streamingId ? currentSteps : msg.steps || []}
           onRetry={msg.role === "error" && i === messages.length - 1 ? onRetry : undefined}
           onContinue={
-            msg.role === "assistant" && msg.truncated && i === messages.length - 1 && !loading
+            msg.role === "assistant" &&
+            msg.truncated &&
+            i === lastAssistantIndex &&
+            !loading
               ? () => onContinue?.(msg.id)
               : undefined
           }
@@ -628,6 +638,7 @@ export default function ChatPage() {
   const [currentEffort, setCurrentEffort] = useState("Balanced");
   const [chatMode, setChatMode] = useState(loadChatMode);
   const abortRef = useRef(null);
+  const sendingRef = useRef(false);
   const initializedRef = useRef(false);
   const restoredSelectionRef = useRef(false);
 
@@ -854,7 +865,7 @@ export default function ChatPage() {
     );
     const imagePayload = toPayloadImages(attachmentItems);
 
-    if (loading || typeof text !== "string" || (!text.trim() && imagePayload.length === 0)) return;
+    if (sendingRef.current || loading || typeof text !== "string" || (!text.trim() && imagePayload.length === 0)) return;
 
     if (failedAttachments.length > 0) {
       setNotice("Remove the failed attachments (marked in red) before sending.");
@@ -886,6 +897,8 @@ export default function ChatPage() {
       return;
     }
 
+    if (sendingRef.current) return;
+    sendingRef.current = true;
     setNotice("");
     const chosenEffort = meta?.effort || currentEffort;
     const userMsg = {
@@ -963,14 +976,32 @@ export default function ChatPage() {
       await refreshConversations();
     } catch (error) {
       if (error.name !== "AbortError") {
-        setMessages((prev) => [
-          ...prev.filter((message) => message.id !== assistantId),
-          { id: generateId(), role: "error", content: errorMessageFor(error) },
-        ]);
+        const partial = typeof error.partialContent === "string" ? error.partialContent : "";
+        setMessages((prev) => {
+          const kept = partial
+            ? prev.map((message) =>
+                message.id === assistantId
+                  ? {
+                      ...message,
+                      content:
+                        message.content && message.content.length >= partial.length
+                          ? message.content
+                          : partial,
+                      truncated: "error",
+                    }
+                  : message
+              )
+            : prev.filter((message) => message.id !== assistantId);
+          return [
+            ...kept,
+            { id: generateId(), role: "error", content: chatErrorMessageFor(error) },
+          ];
+        });
       } else {
         await refreshConversations();
       }
     } finally {
+      sendingRef.current = false;
       setLoading(false);
       setStreamingId(null);
       abortRef.current = null;
@@ -985,7 +1016,7 @@ export default function ChatPage() {
     "Continue from exactly where you stopped. Do not repeat any previously generated text — output only the continuation.";
 
   async function handleContinue(targetId) {
-    if (loading) return;
+    if (sendingRef.current || loading) return;
     const targetIndex = messages.findIndex((message) => message.id === targetId);
     if (targetIndex === -1) return;
     const target = messages[targetIndex];
@@ -1004,6 +1035,8 @@ export default function ChatPage() {
     setNotice("");
     const history = requestHistory(messages.slice(0, targetIndex + 1)).slice(-40);
     if (history.length === 0 || history[history.length - 1].role !== "assistant") return;
+    if (sendingRef.current) return;
+    sendingRef.current = true;
     const initialSteps = ["Continuing response"];
 
     setMessages((prev) =>
@@ -1057,14 +1090,27 @@ export default function ChatPage() {
       await refreshConversations();
     } catch (error) {
       if (error.name !== "AbortError") {
+        const partial = typeof error.partialContent === "string" ? error.partialContent : "";
         setMessages((prev) => [
-          ...prev.map((message) => (message.id === targetId ? { ...message, truncated: "error" } : message)),
-          { id: generateId(), role: "error", content: errorMessageFor(error) },
+          ...prev.map((message) =>
+            message.id === targetId
+              ? {
+                  ...message,
+                  content:
+                    partial && (!message.content || message.content.length < partial.length)
+                      ? partial
+                      : message.content,
+                  truncated: "error",
+                }
+              : message
+          ),
+          { id: generateId(), role: "error", content: chatErrorMessageFor(error) },
         ]);
       } else {
         await refreshConversations();
       }
     } finally {
+      sendingRef.current = false;
       setLoading(false);
       setStreamingId(null);
       abortRef.current = null;
@@ -1072,6 +1118,7 @@ export default function ChatPage() {
   }
 
   function handleRetry() {
+    if (sendingRef.current || loading) return;
     const lastUserIdx = messages.map((message) => message.role).lastIndexOf("user");
     if (lastUserIdx === -1) return;
     const lastUser = messages[lastUserIdx];

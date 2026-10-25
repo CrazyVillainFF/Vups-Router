@@ -326,7 +326,7 @@ test("streamChatResponse preserves finish_reason and does not end early on empty
   }
 });
 
-test("streamChatResponse keeps content when the stream ends without a done event", async () => {
+test("streamChatResponse rejects a stream that ends without a done event but keeps the partial text", async () => {
   const originalFetch = globalThis.fetch;
   const originalBaseURL = apiClient.defaults.baseURL;
   apiClient.defaults.baseURL = "https://api.example.test/api";
@@ -336,9 +336,15 @@ test("streamChatResponse keeps content when the stream ends without a done event
   ), { status: 200 });
 
   try {
-    const result = await streamChatResponse({ messages: [{ role: "user", content: "hi" }], model: "m" });
-    assert.equal(result.content, "answer without done");
-    assert.equal(result.finishReason, null, "an unknown finish state must not be reported as complete");
+    await assert.rejects(
+      streamChatResponse({ messages: [{ role: "user", content: "hi" }], model: "m" }),
+      error => {
+        assert.equal(error.code, "stream_interrupted");
+        assert.equal(error.partialContent, "answer without done");
+        assert.match(error.message, /partial answer was kept/i);
+        return true;
+      }
+    );
   } finally {
     globalThis.fetch = originalFetch;
     apiClient.defaults.baseURL = originalBaseURL;

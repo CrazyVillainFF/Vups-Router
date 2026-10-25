@@ -20,10 +20,14 @@ export class ChatConfigError extends Error {
 }
 
 export class ChatNetworkError extends Error {
-  constructor(message, status) {
+  constructor(message, status, { code = null, requestId = null, partialContent = "", diagnostic = null } = {}) {
     super(message);
     this.name = "ChatNetworkError";
     this.status = status;
+    this.code = code;
+    this.requestId = requestId;
+    this.partialContent = partialContent;
+    this.diagnostic = diagnostic;
   }
 }
 
@@ -96,15 +100,23 @@ export async function streamChatResponse({ conversationId, messages, model, conf
     throw new ChatNetworkError("Could not reach the VupsRouter backend. Check your connection and try again.", null);
   }
 
+  const responseRequestId = response.headers.get("x-request-id");
+
   if (!response.ok) {
     let message = `Chat request failed (HTTP ${response.status}).`;
+    let code = null;
+    let requestId = responseRequestId;
+    let diagnostic = null;
     try {
       const data = await response.json();
       if (typeof data?.message === "string") message = data.message;
+      if (typeof data?.code === "string") code = data.code;
+      if (typeof data?.requestId === "string") requestId = data.requestId;
+      if (data?.diagnostic && typeof data.diagnostic === "object") diagnostic = data.diagnostic;
     } catch {
       /* non-JSON error body */
     }
-    throw new ChatNetworkError(message, response.status);
+    throw new ChatNetworkError(message, response.status, { code, requestId, diagnostic });
   }
 
   if (!response.body) {
@@ -119,54 +131,107 @@ export async function streamChatResponse({ conversationId, messages, model, conf
   let resolvedConversationId = conversationId || null;
   let streamError = null;
   let finishReason = null;
+  let sawDone = false;
+
+  const handleLine = (line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith(":") || !trimmed.startsWith("data:")) return;
+    const raw = trimmed.slice(5).trim();
+    if (!raw) return;
+    let event;
+    try {
+      event = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (event.type === "meta") {
+      if (event.conversationId) {
+        resolvedConversationId = event.conversationId;
+        onMeta?.({ conversationId: event.conversationId });
+      }
+      return;
+    }
+    if (streamError) return;
+    if (event.type === "delta") {
+      if (event.content) {
+        if (!fullText) onStep?.("Receiving response");
+        fullText += event.content;
+        onChunk?.(event.content);
+      }
+      return;
+    }
+    if (event.type === "done") {
+      sawDone = true;
+      if (event.conversationId) resolvedConversationId = event.conversationId;
+      if (typeof event.finishReason === "string" && event.finishReason) {
+        finishReason = event.finishReason;
+      }
+      onStep?.("Response complete");
+      return;
+    }
+    if (event.type === "error") {
+      streamError = {
+        message: event.message || "The provider reported an error.",
+        code: typeof event.code === "string" ? event.code : null,
+        requestId:
+          typeof event.requestId === "string" ? event.requestId : responseRequestId,
+        diagnostic: event.diagnostic && typeof event.diagnostic === "object" ? event.diagnostic : null
+      };
+    }
+  };
+
+  const consume = (text) => {
+    buffer += text;
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) handleLine(line);
+  };
 
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
-        const raw = trimmed.slice(5).trim();
-        if (!raw) continue;
-        let event;
-        try {
-          event = JSON.parse(raw);
-        } catch {
-          continue;
-        }
-        if (event.type === "meta") {
-          if (event.conversationId) {
-            resolvedConversationId = event.conversationId;
-            onMeta?.({ conversationId: event.conversationId });
-          }
-        } else if (event.type === "delta") {
-          if (event.content) {
-            if (!fullText) onStep?.("Receiving response");
-            fullText += event.content;
-            onChunk?.(event.content);
-          }
-        } else if (event.type === "done") {
-          if (event.conversationId) resolvedConversationId = event.conversationId;
-          if (typeof event.finishReason === "string" && event.finishReason) {
-            finishReason = event.finishReason;
-          }
-          onStep?.("Response complete");
-        } else if (event.type === "error") {
-          streamError = event.message || "The provider reported an error.";
-        }
-      }
+      consume(decoder.decode(value, { stream: true }));
     }
+    buffer += decoder.decode();
+    for (const line of buffer.split("\n")) handleLine(line);
   } catch (error) {
     if (error.name === "AbortError" || signal?.aborted) throw error;
-    throw new ChatNetworkError("The response stream was interrupted. Please try again.", null);
+    throw new ChatNetworkError(
+      fullText
+        ? "The response stream was interrupted. The partial answer was kept — use Continue generating to finish it."
+        : "The response stream was interrupted. Please try again.",
+      null,
+      { code: "stream_interrupted", requestId: responseRequestId, partialContent: fullText }
+    );
   }
 
-  if (streamError) throw new ChatNetworkError(streamError, null);
-  if (!fullText.trim()) throw new ChatNetworkError("The provider returned an empty response. Check the model ID in Settings.", null);
+
+  if (streamError) {
+    throw new ChatNetworkError(streamError.message, null, {
+      code: streamError.code,
+      requestId: streamError.requestId,
+      partialContent: fullText,
+      diagnostic: streamError.diagnostic
+    });
+  }
+  if (!sawDone) {
+    if (fullText) {
+      throw new ChatNetworkError(
+        "The response ended before the model signalled completion. The partial answer was kept — use Continue generating to finish it.",
+        null,
+        { code: "stream_interrupted", requestId: responseRequestId, partialContent: fullText }
+      );
+    }
+    throw new ChatNetworkError("The provider returned an empty response. Check the model ID in Settings.", null, {
+      code: "empty_stream",
+      requestId: responseRequestId
+    });
+  }
+  if (!fullText.trim()) throw new ChatNetworkError("The provider returned an empty response. Check the model ID in Settings.", null, {
+    code: "empty_stream",
+    requestId: responseRequestId
+  });
 
   return { content: fullText, conversationId: resolvedConversationId, finishReason };
 }
