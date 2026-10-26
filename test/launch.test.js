@@ -100,6 +100,7 @@ test("index.html ships production metadata", () => {
 test("vercel.json keeps SPA routing, proxies the API on the same origin, and adds security headers", () => {
   const config = JSON.parse(read("vercel.json"));
   assert.deepEqual(config.rewrites, [
+    { source: "/api/(.*)", destination: "https://vups-router-be.onrender.com/api/$1" },
     { source: "/api/:path*", destination: "https://vups-router-be.onrender.com/api/:path*" },
     { source: "/(.*)", destination: "/index.html" }
   ]);
@@ -117,6 +118,7 @@ test("vercel.json keeps SPA routing, proxies the API on the same origin, and add
   assert.match(headers["Content-Security-Policy"], /default-src 'self'/);
   assert.match(headers["Content-Security-Policy"], /frame-ancestors 'none'/);
   assert.match(headers["Content-Security-Policy"], /connect-src 'self' https:\/\/vups-router-be\.onrender\.com/);
+  assert.doesNotMatch(headers["Content-Security-Policy"], /localhost|127\.0\.0\.1|\[::1\]/i);
   assert.equal(headers["X-Content-Type-Options"], "nosniff");
   assert.equal(headers["X-Frame-Options"], "DENY");
   assert.equal(headers["Referrer-Policy"], "strict-origin-when-cross-origin");

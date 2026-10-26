@@ -11,6 +11,8 @@
 
 import { apiClient } from "./api.js";
 import { toPayloadImages } from "../chat/attachments.js";
+import { isPersistenceFailureCode } from "../chat/chatErrors.js";
+import { sanitizeHistoryMessages } from "../chat/turnLifecycle.js";
 
 export class ChatConfigError extends Error {
   constructor(message) {
@@ -54,6 +56,14 @@ export class ChatNetworkError extends Error {
   }
 }
 
+export class ChatPersistenceError extends ChatNetworkError {
+  constructor(message, options = {}) {
+    super(message, options.status ?? null, options);
+    this.name = "ChatPersistenceError";
+    this.stage = "persist";
+  }
+}
+
 function chatEndpoint(vups = false) {
   const base = apiClient.defaults.baseURL;
   if (!base) {
@@ -65,7 +75,7 @@ function chatEndpoint(vups = false) {
 // Exported for tests. Images are only ever attached to the final message —
 // the backend rejects attachments on earlier messages by design.
 export function toRequestMessages(messages) {
-  const filtered = messages.filter(message => message.role === "user" || message.role === "assistant");
+  const filtered = sanitizeHistoryMessages(messages);
   return filtered.map((message, index) => {
     const entry = { role: message.role, content: String(message.content ?? "") };
     if (index === filtered.length - 1 && Array.isArray(message.images) && message.images.length > 0) {
@@ -94,7 +104,7 @@ export function toRequestMessages(messages) {
  * @param {(step: string) => void} [options.onStep] Called with truthful progress steps.
  * @param {string} [options.assistantMessageId] Stable client id for the assistant turn.
  * @param {{messageId: string, targetFile?: string}} [options.continuation] Continue an incomplete saved response.
- * @returns {Promise<{content: string, conversationId: string|null, messageId: string|null, finishReason: string|null, artifact: object|null, artifacts: object[], continuedFile: object|null}>}
+ * @returns {Promise<{content: string, conversationId: string|null, messageId: string|null, finishReason: string|null, saveWarning: object|null, artifact: object|null, artifacts: object[], continuedFile: object|null}>}
  */
 export async function streamChatResponse({ conversationId, messages, model, configId, providerId, source, vups, mode, temperature, signal, onMeta, onChunk, onStep, assistantMessageId, continuation } = {}) {
   const body = {
@@ -171,7 +181,9 @@ export async function streamChatResponse({ conversationId, messages, model, conf
   let continuedFile = null;
   let streamError = null;
   let finishReason = null;
+  let saveWarning = null;
   let sawDone = false;
+  let terminalEvent = null;
 
   const handleLine = (line) => {
     const trimmed = line.trim();
@@ -184,6 +196,11 @@ export async function streamChatResponse({ conversationId, messages, model, conf
     } catch {
       return;
     }
+    // Ignore every event after the turn reached a terminal stream state.
+    // A done event is authoritative: a later cleanup/error event must never
+    // turn a completed, persisted response into a failure.
+    if (terminalEvent === "done") return;
+    if (terminalEvent === "error" && event.type !== "done") return;
     if (event.type === "meta") {
       if (event.conversationId) {
         resolvedConversationId = event.conversationId;
@@ -195,7 +212,6 @@ export async function streamChatResponse({ conversationId, messages, model, conf
       if (event.messageId) resolvedMessageId = event.messageId;
       return;
     }
-    if (streamError) return;
     if (event.type === "progress") {
       if (typeof event.message === "string" && event.message.trim()) onStep?.(event.message.trim());
       return;
@@ -209,6 +225,8 @@ export async function streamChatResponse({ conversationId, messages, model, conf
       return;
     }
     if (event.type === "done") {
+      terminalEvent = "done";
+      streamError = null;
       sawDone = true;
       if (event.conversationId) resolvedConversationId = event.conversationId;
       if (event.messageId) resolvedMessageId = event.messageId;
@@ -219,10 +237,19 @@ export async function streamChatResponse({ conversationId, messages, model, conf
       if (typeof event.finishReason === "string" && event.finishReason) {
         finishReason = event.finishReason;
       }
+      if (event.saveWarning && typeof event.saveWarning === "object") {
+        saveWarning = {
+          code: typeof event.saveWarning.code === "string" ? event.saveWarning.code : "save_failed",
+          message: typeof event.saveWarning.message === "string" ? event.saveWarning.message : ""
+        };
+      } else if (typeof event.saveWarning === "string" && event.saveWarning.trim()) {
+        saveWarning = { code: "save_failed", message: event.saveWarning.trim() };
+      }
       onStep?.("Response complete");
       return;
     }
     if (event.type === "error") {
+      terminalEvent = "error";
       if (event.conversationId) resolvedConversationId = event.conversationId;
       if (event.messageId) resolvedMessageId = event.messageId;
       if (event.artifact) artifact = event.artifact;
@@ -264,27 +291,29 @@ export async function streamChatResponse({ conversationId, messages, model, conf
     for (const line of buffer.split("\n")) handleLine(line);
   } catch (error) {
     if (error.name === "AbortError" || signal?.aborted) throw error;
-    throw new ChatNetworkError(
-      fullText
-        ? "The response stream was interrupted. The partial answer was kept — use Continue generating to finish it."
-        : "The response stream was interrupted. Please try again.",
-      null,
-      {
-        code: "stream_interrupted",
-        requestId: responseRequestId,
-        partialContent: fullText,
-        conversationId: resolvedConversationId,
-        messageId: resolvedMessageId,
-        artifact,
-        artifacts,
-        continuedFile
-      }
-    );
+    // A confirmed done event wins over a later transport hiccup.
+    if (!sawDone) {
+      throw new ChatNetworkError(
+        fullText
+          ? "The response stream was interrupted. The partial answer was kept — use Continue generating to finish it."
+          : "The response stream was interrupted. Please try again.",
+        null,
+        {
+          code: "stream_interrupted",
+          requestId: responseRequestId,
+          partialContent: fullText,
+          conversationId: resolvedConversationId,
+          messageId: resolvedMessageId,
+          artifact,
+          artifacts,
+          continuedFile
+        }
+      );
+    }
   }
 
-
   if (streamError) {
-    throw new ChatNetworkError(streamError.message, null, {
+    const options = {
       code: streamError.code,
       requestId: streamError.requestId,
       partialContent: fullText,
@@ -298,7 +327,11 @@ export async function streamChatResponse({ conversationId, messages, model, conf
       artifact: streamError.artifact,
       artifacts: streamError.artifacts,
       continuedFile: streamError.continuedFile
-    });
+    };
+    if (isPersistenceFailureCode(streamError.code)) {
+      throw new ChatPersistenceError(streamError.message, options);
+    }
+    throw new ChatNetworkError(streamError.message, null, options);
   }
   if (!sawDone) {
     if (fullText) {
@@ -310,7 +343,10 @@ export async function streamChatResponse({ conversationId, messages, model, conf
           requestId: responseRequestId,
           partialContent: fullText,
           conversationId: resolvedConversationId,
-          messageId: resolvedMessageId
+          messageId: resolvedMessageId,
+          artifact,
+          artifacts,
+          continuedFile
         }
       );
     }
@@ -321,12 +357,14 @@ export async function streamChatResponse({ conversationId, messages, model, conf
       messageId: resolvedMessageId
     });
   }
-  if (!fullText.trim()) throw new ChatNetworkError("The provider returned an empty response. Check the model ID in Settings.", null, {
-    code: "empty_stream",
-    requestId: responseRequestId,
-    conversationId: resolvedConversationId,
-    messageId: resolvedMessageId
-  });
+  if (!fullText.trim() && !savedMessage?.content?.trim() && !artifact) {
+    throw new ChatNetworkError("The provider returned an empty response. Check the model ID in Settings.", null, {
+      code: "empty_stream",
+      requestId: responseRequestId,
+      conversationId: resolvedConversationId,
+      messageId: resolvedMessageId
+    });
+  }
 
   return {
     content: savedMessage?.content ?? fullText,
@@ -335,6 +373,7 @@ export async function streamChatResponse({ conversationId, messages, model, conf
     conversationId: resolvedConversationId,
     messageId: resolvedMessageId,
     finishReason,
+    saveWarning,
     artifact,
     artifacts,
     continuedFile

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "prebuild": "node scripts/check-api-config.mjs",
     "build": "node ./node_modules/vite/bin/vite.js build",
     "preview": "vite preview",
     "test": "node --test"

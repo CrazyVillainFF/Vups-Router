@@ -692,6 +692,61 @@
 .vr-msg-error-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .vr-msg-error-actions .vr-retry-btn { margin-left: 0; }
 
+/* Inline failure attached to a single assistant turn */
+.vr-msg-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 11px 14px;
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.22);
+  border-radius: 10px;
+  color: #fca5a5;
+  font-size: 13px;
+  line-height: 1.5;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.vr-msg-error > svg { flex: none; margin-top: 1px; }
+.vr-msg-error strong { color: #fecaca; font-size: 13px; }
+
+/* Persistence warning: generation succeeded, only saving failed */
+.vr-msg-save {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 10px;
+  padding: 9px 12px;
+  background: rgba(245, 158, 11, 0.07);
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  border-radius: 9px;
+  color: #e8d5ac;
+  font-size: 12.5px;
+  line-height: 1.5;
+  max-width: 100%;
+}
+.vr-msg-save > svg { flex: none; margin-top: 1px; }
+.vr-msg-save > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vr-msg-save strong { color: #fcd34d; font-size: 12.5px; }
+
+.vr-msg-recovery {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.vr-msg-recovery .vr-retry-btn { margin-left: 0; }
+.vr-msg-recovery-status { color: var(--muted); font-size: 12px; }
+.vr-msg-recovery-status--error { color: #fca5a5; }
+
+.vr-truncated--muted {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--muted);
+}
+
 .vr-retry-btn {
   display: flex;
   align-items: center;

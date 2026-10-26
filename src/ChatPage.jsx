@@ -20,6 +20,7 @@ import {
   Warning,
   Copy,
   Check,
+  DownloadSimple,
   Trash,
   Gear,
   SignOut,
@@ -29,7 +30,9 @@ import PromptBar from "./components/reactbits/PromptBar.jsx";
 import MessageDownloads from "./components/MessageDownloads.jsx";
 import CodeArtifact from "./components/CodeArtifact.jsx";
 import VupsLogo from "./components/VupsLogo.jsx";
-import { responseSummary, streamingArtifact } from "./chat/artifacts.js";
+import { artifactFromResponse, responseSummary, streamingArtifact } from "./chat/artifacts.js";
+import { copyText } from "./chat/clipboard.js";
+import { downloadBlob } from "./chat/downloads.js";
 import {
   IMAGE_LIMITS,
   formatBytes,
@@ -41,7 +44,20 @@ import {
 } from "./chat/attachments.js";
 import ThoughtLine from "./components/reactbits/ThoughtLine.jsx";
 import { streamChatResponse } from "./services/chat.js";
-import { presentChatError } from "./chat/chatErrors.js";
+import { presentSaveWarning, settleTurnFromError } from "./chat/turnOutcome.js";
+import { resolveTurnNotice, TURN_NOTICE } from "./chat/turnPresentation.js";
+import {
+  appendTurnChunk,
+  appendTurnStep,
+  beginContinuation,
+  cancelTurn,
+  completeTurn,
+  createAssistantTurn,
+  hasRecoverableOutput,
+  markTurnMeta,
+  sanitizeHistoryMessages,
+  TURN_STATUS
+} from "./chat/turnLifecycle.js";
 import {
   buildCatalog,
   chatReference,
@@ -74,6 +90,7 @@ import "./chat.css";
 
 const VUPS_EFFORTS = ["Precise", "Balanced", "Creative"];
 const EFFORT_TEMPERATURE = { Precise: 0.3, Balanced: 0.7, Creative: 1.0 };
+const MAX_USER_MESSAGE_CHARS = 32000;
 const CHAT_MODE_STORAGE_KEY = "vupsrouter.chat.mode";
 const VUPS_MODES = [
   { key: "general", name: "General", description: "Everyday answers, research, and coding help" },
@@ -132,9 +149,12 @@ function toLocalMessage(message, artifactMap = null) {
     id: generateId(),
     role: message.role,
     content: message.content,
+    status: artifact && artifact.status !== "complete" ? TURN_STATUS.INTERRUPTED : TURN_STATUS.COMPLETED,
+    error: null,
+    saveWarning: null,
+    truncated: null,
     ...(message.messageId ? { messageId: message.messageId } : {}),
     ...(artifact ? { artifact } : {}),
-    ...(artifact && artifact.status !== "complete" ? { truncated: "error" } : {}),
     ...(images.length > 0 ? { images } : {}),
   };
 }
@@ -142,9 +162,7 @@ function toLocalMessage(message, artifactMap = null) {
 // Only the final message may carry images â€” the backend rejects attachments
 // on earlier messages, so trimmed history stays text-only.
 function requestHistory(messages) {
-  const filtered = messages.filter(
-    (message) => message.role === "user" || message.role === "assistant"
-  );
+  const filtered = sanitizeHistoryMessages(messages);
   return filtered.map((message, index) => {
     const entry = { role: message.role, content: message.content };
     if (index === filtered.length - 1 && Array.isArray(message.images) && message.images.length > 0) {
@@ -269,51 +287,57 @@ const MARKDOWN_COMPONENTS = {
 
 function Message({ message, isStreaming, currentSteps, onRetry, onContinue, onSwitchModel }) {
   const isUser = message.role === "user";
-  const isError = message.role === "error";
+  const status = message.status || (isStreaming ? TURN_STATUS.STREAMING : TURN_STATUS.COMPLETED);
   const streamedArtifact = useMemo(
-    () => (!isUser && !isError && isStreaming ? streamingArtifact(message.content) : null),
-    [isUser, isError, isStreaming, message.content]
+    () => (!isUser && isStreaming ? streamingArtifact(message.content) : null),
+    [isUser, isStreaming, message.content]
   );
   const artifact = message.artifact || streamedArtifact;
   const displayContent = useMemo(
     () => (artifact ? responseSummary(message.content, artifact.files) : message.content),
     [artifact, message.content]
   );
+  const notice = resolveTurnNotice(message, isStreaming);
+  const presentation = notice === TURN_NOTICE.ERROR ? message.error : null;
+  const saveWarning = notice === TURN_NOTICE.SAVE_WARNING ? message.saveWarning : null;
+  const canContinue = Boolean(onContinue && !isStreaming && hasRecoverableOutput(message));
+  const [recovery, setRecovery] = useState("");
+  const recoveryTimer = useRef(null);
 
-  if (isError) {
-    const presentation = message.presentation;
-    return (
-      <div className="vr-msg vr-msg--error" role="alert">
-        <Warning size={16} weight="fill" aria-hidden="true" />
-        <div className="vr-msg-error-body">
-          {presentation?.title ? <strong>{presentation.title}</strong> : null}
-          <span>{presentation?.message || message.content}</span>
-          {presentation?.model ? (
-            <span className="vr-msg-error-model">Model: <code>{presentation.model}</code></span>
-          ) : null}
-          <div className="vr-msg-error-actions">
-            {onRetry && presentation?.retry !== false && (
-              <button className="vr-retry-btn" onClick={onRetry}>
-                <ArrowClockwise size={14} />
-                Try again
-              </button>
-            )}
-            {onSwitchModel && presentation?.canSwitchModel !== false && (
-              <button className="vr-retry-btn" onClick={onSwitchModel}>
-                Try another model
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => () => clearTimeout(recoveryTimer.current), []);
+
+  const markRecovery = useCallback((value) => {
+    setRecovery(value);
+    clearTimeout(recoveryTimer.current);
+    recoveryTimer.current = setTimeout(() => setRecovery(""), 3000);
+  }, []);
+
+  const handleCopyAnswer = useCallback(async () => {
+    try {
+      await copyText(message.content);
+      markRecovery("copied");
+    } catch {
+      markRecovery("copy-failed");
+    }
+  }, [message.content, markRecovery]);
+
+  const handleDownloadAnswer = useCallback(() => {
+    try {
+      downloadBlob(
+        new Blob([message.content], { type: "text/plain;charset=utf-8" }),
+        "vups-answer.txt"
+      );
+      markRecovery("downloaded");
+    } catch {
+      markRecovery("download-failed");
+    }
+  }, [message.content, markRecovery]);
 
   const stepsToUse = isStreaming ? currentSteps : message.steps;
   const showThoughtLine = !isUser && (isStreaming || (stepsToUse && stepsToUse.length > 0));
 
   return (
-    <div className={`vr-msg ${isUser ? "vr-msg--user" : "vr-msg--assistant"}`}>
+    <div className={`vr-msg ${isUser ? "vr-msg--user" : `vr-msg--assistant vr-msg--${status}`}`}>
       {!isUser && (
         <div className="vr-msg-avatar" aria-hidden="true">
           <VupsLogo />
@@ -394,15 +418,11 @@ function Message({ message, isStreaming, currentSteps, onRetry, onContinue, onSw
                 streaming={isStreaming}
               />
             ) : null}
-            {!isStreaming && message.truncated && (message.content || artifact) ? (
+            {notice === TURN_NOTICE.LENGTH ? (
               <div className="vr-truncated" role="status">
                 <Warning size={14} weight="fill" aria-hidden="true" />
-                <span>
-                  {message.truncated === "length"
-                    ? "Response reached its length limit."
-                    : "The response ended unexpectedly."}
-                </span>
-                {onContinue ? (
+                <span>Response reached its length limit.</span>
+                {canContinue ? (
                   <button type="button" className="vr-continue-btn" onClick={onContinue}>
                     <ArrowClockwise size={13} />
                     Continue generating
@@ -410,7 +430,93 @@ function Message({ message, isStreaming, currentSteps, onRetry, onContinue, onSw
                 ) : null}
               </div>
             ) : null}
-            {!isStreaming && !message.truncated && !artifact && message.content ? (
+            {notice === TURN_NOTICE.INTERRUPTED ? (
+              <div className="vr-truncated" role="status">
+                <Warning size={14} weight="fill" aria-hidden="true" />
+                <span>The response stopped early. Continue or retry.</span>
+                {canContinue ? (
+                  <button type="button" className="vr-continue-btn" onClick={onContinue}>
+                    <ArrowClockwise size={13} />
+                    Continue generating
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            {notice === TURN_NOTICE.CANCELLED ? (
+              <div className="vr-truncated vr-truncated--muted" role="status">
+                <span>Generation stopped.</span>
+                {canContinue ? (
+                  <button type="button" className="vr-continue-btn" onClick={onContinue}>
+                    <ArrowClockwise size={13} />
+                    Continue generating
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            {notice === TURN_NOTICE.SAVE_WARNING && saveWarning ? (
+              <div className="vr-msg-save" role="status">
+                <Warning size={14} weight="fill" aria-hidden="true" />
+                <div>
+                  <strong>{saveWarning.title}</strong>
+                  <span>{saveWarning.message}</span>
+                </div>
+              </div>
+            ) : null}
+            {notice === TURN_NOTICE.SAVE_WARNING && saveWarning && !artifact && message.content ? (
+              <div className="vr-msg-recovery">
+                <button type="button" className="vr-retry-btn" onClick={handleCopyAnswer}>
+                  <Copy size={13} aria-hidden="true" />
+                  Copy answer
+                </button>
+                <button type="button" className="vr-retry-btn" onClick={handleDownloadAnswer}>
+                  <DownloadSimple size={13} aria-hidden="true" />
+                  Download .txt
+                </button>
+                {recovery ? (
+                  <span
+                    className={`vr-msg-recovery-status${recovery.endsWith("failed") ? " vr-msg-recovery-status--error" : ""}`}
+                    role="status"
+                  >
+                    {recovery === "copied" ? "Copied." : null}
+                    {recovery === "downloaded" ? "Download started." : null}
+                    {recovery === "copy-failed" ? "Clipboard is blocked. Use Download .txt instead." : null}
+                    {recovery === "download-failed" ? "Download failed. Try Copy answer instead." : null}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+            {notice === TURN_NOTICE.ERROR && presentation ? (
+              <div className="vr-msg-error" role="alert">
+                <Warning size={16} weight="fill" aria-hidden="true" />
+                <div className="vr-msg-error-body">
+                  <strong>{presentation.title}</strong>
+                  <span>{presentation.message}</span>
+                  {presentation.model ? (
+                    <span className="vr-msg-error-model">Model: <code>{presentation.model}</code></span>
+                  ) : null}
+                  <div className="vr-msg-error-actions">
+                    {canContinue ? (
+                      <button className="vr-retry-btn" onClick={onContinue}>
+                        <ArrowClockwise size={14} />
+                        Continue generating
+                      </button>
+                    ) : null}
+                    {onRetry && presentation.retry !== false ? (
+                      <button className="vr-retry-btn" onClick={onRetry}>
+                        <ArrowClockwise size={14} />
+                        Try again
+                      </button>
+                    ) : null}
+                    {onSwitchModel && presentation.canSwitchModel !== false ? (
+                      <button className="vr-retry-btn" onClick={onSwitchModel}>
+                        Try another model
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            {!isStreaming && !artifact && message.content ? (
               <MessageDownloads content={message.content} />
             ) : null}
           </>
@@ -624,13 +730,16 @@ function MessageList({ messages, streamingId, loading, onRetry, onContinue, onSw
           message={msg}
           isStreaming={msg.id === streamingId}
           currentSteps={msg.id === streamingId ? currentSteps : msg.steps || []}
-          onRetry={msg.role === "error" && i === messages.length - 1 ? onRetry : undefined}
-          onSwitchModel={msg.role === "error" && i === messages.length - 1 ? onSwitchModel : undefined}
+          onRetry={msg.status === TURN_STATUS.FAILED && i === messages.length - 1 ? onRetry : undefined}
+          onSwitchModel={msg.status === TURN_STATUS.FAILED && i === messages.length - 1 ? onSwitchModel : undefined}
           onContinue={
             msg.role === "assistant" &&
-            msg.truncated &&
+            !loading &&
             i === lastAssistantIndex &&
-            !loading
+            (msg.status === TURN_STATUS.INTERRUPTED ||
+              msg.status === TURN_STATUS.CANCELLED ||
+              msg.status === TURN_STATUS.FAILED ||
+              msg.truncated === "length")
               ? () => onContinue?.(msg.id)
               : undefined
           }
@@ -666,6 +775,7 @@ export default function ChatPage() {
   const [freeCatalogSettled, setFreeCatalogSettled] = useState(false);
   const [openModelSignal, setOpenModelSignal] = useState(0);
   const [notice, setNotice] = useState("");
+  const [composerWarning, setComposerWarning] = useState("");
   const [imageGenerating, setImageGenerating] = useState(false);
   const [generatedImage, setGeneratedImage] = useState(null);
   const [imageError, setImageError] = useState("");
@@ -674,6 +784,28 @@ export default function ChatPage() {
   const abortRef = useRef(null);
   const sendingRef = useRef(false);
   const initializedRef = useRef(false);
+  const requestSeqRef = useRef(0);
+
+  function beginRequest() {
+    const controller = new AbortController();
+    requestSeqRef.current += 1;
+    abortRef.current = controller;
+    return { controller, seq: requestSeqRef.current };
+  }
+
+  function isCurrentRequest(seq) {
+    return requestSeqRef.current === seq;
+  }
+
+  function invalidateInFlight() {
+    requestSeqRef.current += 1;
+    const controller = abortRef.current;
+    abortRef.current = null;
+    controller?.abort();
+    sendingRef.current = false;
+    setLoading(false);
+    setStreamingId(null);
+  }
 
   const refreshConversations = useCallback(async () => {
     try {
@@ -795,10 +927,11 @@ export default function ChatPage() {
   }
 
   function startNewConversation() {
-    abortRef.current?.abort();
+    invalidateInFlight();
     setActiveConvId(null);
     setMessages([]);
     setNotice("");
+    setComposerWarning("");
     setGeneratedImage(null);
     setImageError("");
     setMobileSidebarOpen(false);
@@ -815,11 +948,10 @@ export default function ChatPage() {
       setMobileSidebarOpen(false);
       return;
     }
-    abortRef.current?.abort();
+    invalidateInFlight();
     setMobileSidebarOpen(false);
     setNotice("");
-    setLoading(false);
-    setStreamingId(null);
+    setComposerWarning("");
     setActiveConvId(id);
     setMessages([]);
     setGeneratedImage(null);
@@ -834,7 +966,16 @@ export default function ChatPage() {
           .filter(artifact => artifact?.messageId)
           .map(artifact => [artifact.messageId, artifact])
       );
-      setMessages(conversation.messages.map(message => toLocalMessage(message, artifactMap)));
+      setMessages(
+        conversation.messages
+          .filter(
+            (message) =>
+              message.role !== "assistant" ||
+              String(message.content || "").trim() ||
+              artifactMap.has(message.messageId)
+          )
+          .map(message => toLocalMessage(message, artifactMap))
+      );
     } catch (error) {
       setNotice(getApiErrorMessage(error));
     }
@@ -912,6 +1053,19 @@ export default function ChatPage() {
     }
   }
 
+  function canSubmitComposer(text, attachments) {
+    const items = Array.isArray(attachments) ? attachments : [];
+    if (text.length > MAX_USER_MESSAGE_CHARS) {
+      setComposerWarning("That message is too long. Keep it under 32,000 characters.");
+      return false;
+    }
+    if (items.some((item) => item && typeof item === "object" && item.status === "error")) {
+      setComposerWarning("Remove the failed attachments (marked in red) before sending.");
+      return false;
+    }
+    return true;
+  }
+
   async function handleSend(text, retryHistory, meta) {
     const rawAttachments = Array.isArray(meta?.attachments) ? meta.attachments : [];
     const failedAttachments = rawAttachments.filter(
@@ -924,8 +1078,13 @@ export default function ChatPage() {
 
     if (sendingRef.current || loading || typeof text !== "string" || (!text.trim() && imagePayload.length === 0)) return;
 
+    if (text.length > MAX_USER_MESSAGE_CHARS) {
+      setComposerWarning("That message is too long. Keep it under 32,000 characters.");
+      return;
+    }
+
     if (failedAttachments.length > 0) {
-      setNotice("Remove the failed attachments (marked in red) before sending.");
+      setComposerWarning("Remove the failed attachments (marked in red) before sending.");
       return;
     }
 
@@ -957,6 +1116,7 @@ export default function ChatPage() {
     if (sendingRef.current) return;
     sendingRef.current = true;
     setNotice("");
+    setComposerWarning("");
     const chosenEffort = meta?.effort || currentEffort;
     const userMsg = {
       id: generateId(),
@@ -971,14 +1131,13 @@ export default function ChatPage() {
 
     setMessages([
       ...baseMessages,
-      { id: assistantId, messageId: assistantId, role: "assistant", content: "", steps: initialSteps }
+      createAssistantTurn({ id: assistantId, steps: initialSteps })
     ]);
     setLoading(true);
     setStreamingId(assistantId);
     setCurrentSteps(initialSteps);
 
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const { controller, seq } = beginRequest();
 
     try {
       const result = await streamChatResponse({
@@ -993,8 +1152,10 @@ export default function ChatPage() {
         temperature: EFFORT_TEMPERATURE[chosenEffort] ?? 0.7,
         signal: controller.signal,
         assistantMessageId: assistantId,
-        onMeta: ({ conversationId }) => {
+        onMeta: ({ conversationId, messageId }) => {
+          if (!isCurrentRequest(seq)) return;
           setActiveConvId(conversationId);
+          setMessages((prev) => markTurnMeta(prev, assistantId, { messageId, conversationId }));
           setConversations((prev) =>
             prev.some((conversation) => conversation.id === conversationId)
               ? prev
@@ -1011,77 +1172,51 @@ export default function ChatPage() {
           );
         },
         onChunk: (chunk) => {
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === assistantId ? { ...message, content: message.content + chunk } : message
-            )
-          );
+          if (!isCurrentRequest(seq)) return;
+          setMessages((prev) => appendTurnChunk(prev, assistantId, chunk));
         },
         onStep: (step) => {
-          setCurrentSteps((prev) => {
-            const next = prev.includes(step) ? prev : [...prev, step];
-            setMessages((messages) =>
-              messages.map((message) => (message.id === assistantId ? { ...message, steps: next } : message))
-            );
-            return next;
-          });
+          if (!isCurrentRequest(seq)) return;
+          setCurrentSteps((prev) => (prev.includes(step) ? prev : [...prev, step]));
+          setMessages((prev) => appendTurnStep(prev, assistantId, step));
         },
       });
+      if (!isCurrentRequest(seq)) return;
       setMessages((prev) =>
-        prev.map((message) =>
-          message.id === assistantId
-            ? {
-                ...message,
-                ...(typeof result?.content === "string" ? { content: result.content } : {}),
-                ...(result?.messageId ? { messageId: result.messageId } : {}),
-                ...(result?.artifact ? { artifact: result.artifact } : {}),
-                truncated:
-                  result?.finishReason === "length" || result?.finishReason === "error"
-                    ? result.finishReason
-                    : null,
-              }
-            : message
-        )
+        completeTurn(prev, assistantId, {
+          content: typeof result?.content === "string" ? result.content : "",
+          messageId: result?.messageId,
+          artifact: result?.artifact || null,
+          finishReason: result?.finishReason,
+          saveWarning: result?.saveWarning ? presentSaveWarning(result.saveWarning.code) : null
+        })
       );
       await refreshConversations();
     } catch (error) {
-      if (error.name !== "AbortError") {
-        const partial = typeof error.partialContent === "string" ? error.partialContent : "";
-        const presentation = presentChatError(error, {
-          modelLabel: selectedRow?.name || modelKey
-        });
-        if (error.conversationId) setActiveConvId(error.conversationId);
-        const keepAssistant = Boolean(partial || error.artifact);
-        setMessages((prev) => {
-          const kept = keepAssistant
-            ? prev.map((message) =>
-                message.id === assistantId
-                  ? {
-                      ...message,
-                      content:
-                        partial && (!message.content || message.content.length < partial.length)
-                          ? partial
-                          : message.content,
-                      ...(error.messageId ? { messageId: error.messageId } : {}),
-                      ...(error.artifact ? { artifact: error.artifact } : {}),
-                      truncated: "error",
-                    }
-                  : message
-              )
-            : prev.filter((message) => message.id !== assistantId);
-          return [
-            ...kept,
-            { id: generateId(), role: "error", content: presentation.message, presentation },
-          ];
-        });
-      } else {
+      if (!isCurrentRequest(seq)) return;
+      if (error?.name === "AbortError") {
+        setMessages((prev) => cancelTurn(prev, assistantId));
         await refreshConversations();
+        return;
       }
+      const partial = typeof error.partialContent === "string" ? error.partialContent : "";
+      if (error.conversationId) setActiveConvId(error.conversationId);
+      setMessages((prev) =>
+        settleTurnFromError(prev, assistantId, {
+          error,
+          modelLabel: selectedRow?.name || modelKey,
+          content: partial,
+          recoverArtifact: (status) => (partial ? artifactFromResponse(partial, { status }) : null)
+        }).messages
+      );
+      await refreshConversations();
     } finally {
-      sendingRef.current = false;
-      setLoading(false);
-      setStreamingId(null);
-      abortRef.current = null;
+      if (isCurrentRequest(seq)) {
+        sendingRef.current = false;
+        setLoading(false);
+        setStreamingId(null);
+        abortRef.current = null;
+      }
     }
   }
 
@@ -1114,6 +1249,7 @@ export default function ChatPage() {
     }
 
     setNotice("");
+    setComposerWarning("");
     const history = requestHistory(messages.slice(0, targetIndex + 1)).slice(-40);
     if (history.length === 0 || history[history.length - 1].role !== "assistant") return;
     if (sendingRef.current) return;
@@ -1123,24 +1259,19 @@ export default function ChatPage() {
     const artifactContinuation = Boolean(targetArtifact);
     const targetFile = targetArtifact?.files?.find(file => file.complete === false)?.path || "";
 
-    setMessages((prev) =>
-      prev.map((message) =>
-        message.id === targetId
-          ? {
-              ...message,
-              ...(targetArtifact && !message.artifact ? { artifact: targetArtifact } : {}),
-              truncated: null,
-              steps: initialSteps
-            }
-          : message
-      )
-    );
+    setMessages((prev) => {
+      const next = beginContinuation(prev, targetId, initialSteps);
+      return targetArtifact
+        ? next.map((message) =>
+            message.id === targetId && !message.artifact ? { ...message, artifact: targetArtifact } : message
+          )
+        : next;
+    });
     setLoading(true);
     setStreamingId(targetId);
     setCurrentSteps(initialSteps);
 
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const { controller, seq } = beginRequest();
 
     try {
       const result = await streamChatResponse({
@@ -1157,85 +1288,52 @@ export default function ChatPage() {
         assistantMessageId: target.messageId,
         continuation: { messageId: target.messageId, ...(targetFile ? { targetFile } : {}) },
         onChunk: (chunk) => {
-          if (artifactContinuation) return;
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === targetId ? { ...message, content: message.content + chunk } : message
-            )
-          );
+          if (!isCurrentRequest(seq) || artifactContinuation) return;
+          setMessages((prev) => appendTurnChunk(prev, targetId, chunk));
         },
         onStep: (step) => {
-          setCurrentSteps((prev) => {
-            const next = prev.includes(step) ? prev : [...prev, step];
-            setMessages((all) =>
-              all.map((message) => (message.id === targetId ? { ...message, steps: next } : message))
-            );
-            return next;
-          });
+          if (!isCurrentRequest(seq)) return;
+          setCurrentSteps((prev) => (prev.includes(step) ? prev : [...prev, step]));
+          setMessages((prev) => appendTurnStep(prev, targetId, step));
         },
       });
+      if (!isCurrentRequest(seq)) return;
       setMessages((prev) =>
-        prev.map((message) => {
-          if (message.id !== targetId) return message;
-          if (result?.artifact) {
-            return {
-              ...message,
-              content: responseSummary(message.content, result.artifact.files),
-              artifact: result.artifact,
-              ...(result.messageId ? { messageId: result.messageId } : {}),
-              truncated:
-                result.finishReason === "length" || result.finishReason === "error"
-                  ? result.finishReason
-                  : null
-            };
-          }
-          return {
-            ...message,
-            ...(typeof result?.content === "string" ? { content: result.content } : {}),
-            ...(result?.messageId ? { messageId: result.messageId } : {}),
-            artifact: null,
-            truncated:
-              result?.finishReason === "length" || result?.finishReason === "error"
-                ? result.finishReason
-                : null
-          };
+        completeTurn(prev, targetId, {
+          content: result?.artifact ? "" : typeof result?.content === "string" ? result.content : "",
+          messageId: result?.messageId,
+          artifact: result?.artifact || null,
+          finishReason: result?.finishReason,
+          saveWarning: result?.saveWarning ? presentSaveWarning(result.saveWarning.code) : null
         })
       );
       await refreshConversations();
     } catch (error) {
-      if (error.name !== "AbortError") {
-        const partial = typeof error.partialContent === "string" ? error.partialContent : "";
-        const presentation = presentChatError(error, {
-          modelLabel: activeRow?.name || modelKey
-        });
-        if (error.conversationId) setActiveConvId(error.conversationId);
-        setMessages((prev) => [
-          ...prev.map((message) =>
-            message.id === targetId
-              ? {
-                  ...message,
-                  content:
-                    !artifactContinuation &&
-                    partial &&
-                    (!message.content || message.content.length < partial.length)
-                      ? partial
-                      : message.content,
-                  ...(error.messageId ? { messageId: error.messageId } : {}),
-                  ...(error.artifact ? { artifact: error.artifact } : {}),
-                  truncated: "error",
-                }
-              : message
-          ),
-          { id: generateId(), role: "error", content: presentation.message, presentation },
-        ]);
-      } else {
+      if (!isCurrentRequest(seq)) return;
+      if (error?.name === "AbortError") {
+        setMessages((prev) => cancelTurn(prev, targetId));
         await refreshConversations();
+        return;
       }
+      const partial = typeof error.partialContent === "string" ? error.partialContent : "";
+      if (error.conversationId) setActiveConvId(error.conversationId);
+      setMessages((prev) =>
+        settleTurnFromError(prev, targetId, {
+          error,
+          modelLabel: activeRow?.name || modelKey,
+          content: partial,
+          artifact: targetArtifact,
+          preferArtifact: artifactContinuation
+        }).messages
+      );
+      await refreshConversations();
     } finally {
-      sendingRef.current = false;
-      setLoading(false);
-      setStreamingId(null);
-      abortRef.current = null;
+      if (isCurrentRequest(seq)) {
+        sendingRef.current = false;
+        setLoading(false);
+        setStreamingId(null);
+        abortRef.current = null;
+      }
     }
   }
 
@@ -1347,6 +1445,12 @@ export default function ChatPage() {
               )}
             </section>
           )}
+          {composerWarning && (
+            <div className="vr-notice" role="alert">
+              <Warning size={15} weight="fill" aria-hidden="true" />
+              <span>{composerWarning}</span>
+            </div>
+          )}
           {notice && (
             <div className="vr-notice" role="alert">
               <Warning size={15} weight="fill" aria-hidden="true" />
@@ -1354,7 +1458,7 @@ export default function ChatPage() {
               <Link to="/settings">Open API settings</Link>
             </div>
           )}
-          {!canChat && !notice && (
+          {!canChat && !notice && !composerWarning && (
             <div className="vr-notice" role="alert">
               <Warning size={15} weight="fill" aria-hidden="true" />
               <span>{unavailableModelNotice(shared, omniroute)}</span>
@@ -1408,6 +1512,7 @@ export default function ChatPage() {
               busy={loading}
               generating={imageGenerating}
               onSend={(text, meta) => handleSend(text, null, meta)}
+              beforeSend={(text, attachments) => canSubmitComposer(text, attachments)}
               onStop={handleStop}
               onGenerateImage={handleGenerateImage}
               onAttach={pickAttachments}

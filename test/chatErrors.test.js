@@ -47,7 +47,7 @@ test("quota errors show the affected model and never invent a reset time", () =>
   );
   assert.equal(presentation.title, "Usage limit reached");
   assert.equal(presentation.model, "free-model-x");
-  assert.match(presentation.message, /No reliable reset time/i);
+  assert.match(presentation.message, /Reset time unavailable/i);
   assert.equal(presentation.resetAt, "");
   assert.equal(presentation.retry, false);
   assert.equal(presentation.canSwitchModel, true);
@@ -82,4 +82,26 @@ test("the presented copy is concise and does not echo provider internals", () =>
   assert.doesNotMatch(presentation.message, /internal-key-123|stack trace/);
   assert.ok(presentation.title.length < 40);
   assert.ok(presentation.message.length < 180);
+});
+
+test("backend size limits are explained without surfacing raw validation text", () => {
+  assert.equal(
+    classifyChatError(error({ message: "A single message cannot exceed 32000 characters.", status: 400 })),
+    "oversize"
+  );
+  assert.equal(
+    classifyChatError(error({ message: "The conversation is too large. Start a new chat or shorten your messages.", status: 400 })),
+    "context"
+  );
+  assert.equal(
+    classifyChatError(error({
+      message: "A single assistant message is too large to replay. Start a new chat or continue from the saved code artifact.",
+      status: 400
+    })),
+    "context"
+  );
+  assert.equal(
+    classifyChatError(error({ message: "A request can contain at most 60 messages.", status: 400 })),
+    "context"
+  );
 });

@@ -8,13 +8,14 @@ React 19 + Vite frontend for VupsRouter: the existing home, signup, and signin p
 npm ci
 ```
 
-Create `.env.local` for development:
+Create `.env.local` for development when you need a custom local backend:
 
 ```dotenv
-VITE_API_BASE_URL=http://localhost:4000/api
+# Optional: unset means http://localhost:4000/api
+# VITE_API_BASE_URL=http://localhost:4000/api
 ```
 
-In development this defaults to `http://localhost:4000/api` when unset. Production always uses the same-origin `/api` proxy, even if a stale absolute backend URL is configured; never put AI provider keys or server secrets in a `VITE_` variable.
+In development this defaults to `http://localhost:4000/api` when unset. Production always uses the same-origin `/api` proxy, even if a stale absolute backend URL is configured; never put AI provider keys or server secrets in a `VITE_` variable. `npm run build` runs `scripts/check-api-config.mjs`, which fails if `VITE_API_BASE_URL` points at localhost and warns when an absolute URL will be ignored.
 
 ## Run
 
@@ -70,10 +71,11 @@ Vercel project settings:
 **API requests go through a same-origin proxy** declared in `vercel.json`:
 
 ```json
+{ "source": "/api/(.*)", "destination": "https://vups-router-be.onrender.com/api/$1" }
 { "source": "/api/:path*", "destination": "https://vups-router-be.onrender.com/api/:path*" }
 ```
 
-The production client always calls `/api` on its own origin; absolute backend URLs are ignored in production. You may unset `VITE_API_BASE_URL` in Vercel or set it to `/api` for clarity, then redeploy. Vite bakes `VITE_` variables into the bundle at build time.
+The production client always calls `/api` on its own origin; absolute backend URLs are ignored in production. `npm run build` runs `scripts/check-api-config.mjs` first: it fails if `VITE_API_BASE_URL` points at localhost and warns that an absolute URL will be ignored. You may unset `VITE_API_BASE_URL` in Vercel or set it to `/api` for clarity, then redeploy. Vite bakes `VITE_` variables into the bundle at build time, but production request routing never uses them unless the value is relative.
 
 Why the proxy: the browser talks to `https://vups-router-three.vercel.app/api/...`, so the backend's HTTP-only `vr_session` cookie is **first-party** and survives page reloads in Chrome, Safari, Firefox, and privacy-focused browsers. Pointing `VITE_API_BASE_URL` at the Render URL directly makes the cookie third-party; browsers increasingly block those, which signs users out on every refresh.
 

@@ -13,6 +13,7 @@ import {
 import { artifactBytes } from "../chat/artifacts.js";
 import { fileSizeLabel } from "../chat/codeFiles.js";
 import { buildProjectZip, downloadBlob, downloadGeneratedFile, projectZipName } from "../chat/downloads.js";
+import { copyText } from "../chat/clipboard.js";
 import "./CodeArtifact.css";
 
 function baseName(path) {
@@ -38,23 +39,6 @@ function highlightedCode(content, language) {
   } catch {
     return escapeHtml(source);
   }
-}
-
-async function copyExact(text) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const area = document.createElement("textarea");
-  area.value = text;
-  area.setAttribute("readonly", "");
-  area.style.position = "fixed";
-  area.style.opacity = "0";
-  document.body.appendChild(area);
-  area.select();
-  const copied = document.execCommand("copy");
-  area.remove();
-  if (!copied) throw new Error("copy_failed");
 }
 
 export default function CodeArtifact({ artifact, streaming = false, className = "" }) {
@@ -109,7 +93,7 @@ export default function CodeArtifact({ artifact, streaming = false, className = 
     if (!active) return;
     setNotice(null);
     try {
-      await copyExact(active.content);
+      await copyText(active.content);
       markCopied(active.path);
     } catch {
       setNotice({ type: "error", text: `Could not copy ${baseName(active.path)}.` });
@@ -136,7 +120,7 @@ export default function CodeArtifact({ artifact, streaming = false, className = 
       .map(file => `FILE: ${file.path}\n\`\`\`${file.language || ""}\n${file.content}\`\`\``)
       .join("\n\n");
     try {
-      await copyExact(text);
+      await copyText(text);
       markCopied("*");
     } catch {
       setNotice({ type: "error", text: "Could not copy the generated files." });

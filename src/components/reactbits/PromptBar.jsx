@@ -102,6 +102,7 @@ export default function PromptBar({
   busy = false,
   generating = false,
   onSend,
+  beforeSend,
   onStop,
   onGenerateImage,
   onAttach,
@@ -133,7 +134,7 @@ export default function PromptBar({
   const lastOpen = useRef(null);
   const dictation = useRef(0);
   const latest = useRef({});
-  latest.current = { onSend, onStop, onGenerateImage, onAttach, onDictate, onEffortChange, onModelChange, onDeleteModel, onAddKey };
+  latest.current = { onSend, beforeSend, onStop, onGenerateImage, onAttach, onDictate, onEffortChange, onModelChange, onDeleteModel, onAddKey };
 
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState([]);
@@ -436,6 +437,7 @@ export default function PromptBar({
 
   const send = () => {
     if (!canSend || busy) return;
+    if (latest.current.beforeSend?.(draft.trim(), attachments) === false) return;
     latest.current.onSend?.(draft.trim(), { attachments, model, effort: level });
     setDraft('');
     setAttachments([]);

@@ -1,21 +1,17 @@
 import axios from "axios";
+import { resolveApiBaseURL } from "../config/apiBaseUrl.js";
+
+export {
+  assertProductionApiUrl,
+  isLocalhostApiUrl,
+  normalizeApiBaseUrl,
+  resolveApiBaseURL
+} from "../config/apiBaseUrl.js";
 
 const viteEnv = import.meta.env ?? {};
 
-export function resolveApiBaseURL(env = viteEnv) {
-  const configured = env.VITE_API_BASE_URL?.trim();
-  if (env.DEV) {
-    return configured ? configured.replace(/\/+$/, "") : "http://localhost:4000/api";
-  }
-  if (configured?.startsWith("/")) return configured.replace(/\/+$/, "");
-  // Production requests must stay on the Vercel origin so the HttpOnly
-  // session cookie is first-party. An absolute Render URL makes it a
-  // third-party cookie, which browsers can block on refresh or reopen.
-  return "/api";
-}
-
 export const apiClient = axios.create({
-  baseURL: resolveApiBaseURL() || undefined,
+  baseURL: resolveApiBaseURL(viteEnv) || undefined,
   timeout: 75000,
   withCredentials: true,
   headers: { Accept: "application/json", "Content-Type": "application/json" }

@@ -93,20 +93,21 @@ function cleanAddition(text, targetPath) {
   if (parsed.length > 0) {
     const match = parsed.find(file => file.path === targetPath);
     const file = match || parsed[parsed.length - 1];
-    return file.content.replace(/\r\n?/g, "\n");
+    const content = file.content.replace(/\r\n?/g, "\n");
+    return /\n```\s*$/.test(String(text || "")) ? content.replace(/\n$/, "") : content;
   }
   return String(text || "")
     .replace(/^\s*```[^\n]*\n/, "")
     .replace(/\n```\s*$/, "")
     .replace(/\r\n?/g, "\n")
-    .trim();
+    .replace(/^\n/, "");
 }
 
 export function mergeContinuation(base, addition, targetPath = "") {
   const original = String(base || "");
   let next = cleanAddition(addition, targetPath);
   if (!next) return original;
-  if (original && next.includes(original) && original.length > 40) return next;
+  if (original && (next.startsWith(original) || (next.includes(original) && original.length > 40))) return next;
 
   const maxOverlap = Math.min(4000, original.length, next.length);
   for (let size = maxOverlap; size >= 20; size -= 1) {
