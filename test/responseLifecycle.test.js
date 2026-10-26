@@ -10,6 +10,7 @@ import {
   createAssistantTurn,
   failTurn,
   interruptTurn,
+  recordTurnActivity,
   sanitizeHistoryMessages,
   TURN_STATUS
 } from "../src/chat/turnLifecycle.js";
@@ -135,7 +136,7 @@ test("an aborted request rejects with AbortError rather than a chat failure", as
 // ─── Turn state machine ─────────────────────────────────────────────────────
 
 function turnMessages(id = "t1") {
-  return [createAssistantTurn({ id, steps: ["Sending request"] })];
+  return [createAssistantTurn({ id })];
 }
 
 test("a completed turn cannot be turned into a failure by a stale callback", () => {
@@ -150,10 +151,12 @@ test("a completed turn cannot be turned into a failure by a stale callback", () 
   assert.equal(after[0].error, null);
 });
 
-test("chunks and steps after completion are ignored", () => {
+test("chunks and activity after completion are ignored", () => {
   let messages = completeTurn(turnMessages(), "t1", { content: "Final", finishReason: "stop" });
   const afterChunk = appendTurnChunk(messages, "t1", "more");
   assert.equal(afterChunk[0].content, "Final");
+  const afterActivity = recordTurnActivity(afterChunk, "t1", { phase: "request" }, { runId: "late" });
+  assert.equal(afterActivity[0].activity.length, 0);
 });
 
 test("finishReason error does not masquerade as a truncated response", () => {

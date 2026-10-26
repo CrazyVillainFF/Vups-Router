@@ -22,7 +22,9 @@ export function assertProductionApiUrl(value) {
 export function resolveApiBaseURL(env = {}) {
   const configured = normalizeApiBaseUrl(env.VITE_API_BASE_URL);
   if (env.DEV) {
-    return configured || "http://localhost:4000/api";
+    // Vite proxies /api to the backend declared in vite.config.js. Set
+    // VITE_API_BASE_URL to call a different backend directly from the browser.
+    return configured || "/api";
   }
   if (configured.startsWith("/")) return configured;
   // Production requests must stay on the Vercel origin so the HttpOnly

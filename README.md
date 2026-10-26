@@ -8,14 +8,20 @@ React 19 + Vite frontend for VupsRouter: the existing home, signup, and signin p
 npm ci
 ```
 
-Create `.env.local` for development when you need a custom local backend:
+`npm run dev` and `npm run preview` use the same-origin `/api` path and proxy it through Vite to the Render backend. To use a local backend instead, set the proxy target:
 
 ```dotenv
-# Optional: unset means http://localhost:4000/api
+# Optional: defaults to https://vups-router-be.onrender.com
+# VITE_API_PROXY_TARGET=http://localhost:4000
+```
+
+Or point the browser directly at a backend (it must allow the dev origin):
+
+```dotenv
 # VITE_API_BASE_URL=http://localhost:4000/api
 ```
 
-In development this defaults to `http://localhost:4000/api` when unset. Production always uses the same-origin `/api` proxy, even if a stale absolute backend URL is configured; never put AI provider keys or server secrets in a `VITE_` variable. `npm run build` runs `scripts/check-api-config.mjs`, which fails if `VITE_API_BASE_URL` points at localhost and warns when an absolute URL will be ignored.
+Production always uses the same-origin `/api` proxy, even if a stale absolute backend URL is configured; never put AI provider keys or server secrets in a `VITE_` variable. `npm run build` runs `scripts/check-api-config.mjs`, which fails if `VITE_API_BASE_URL` points at localhost and warns when an absolute URL will be ignored.
 
 ## Run
 

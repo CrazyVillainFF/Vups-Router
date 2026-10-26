@@ -44,6 +44,17 @@ test("production hosting configuration contains no localhost origin", () => {
   assert.doesNotMatch(JSON.stringify(vercel), /localhost|127\.0\.0\.1|\[::1\]/i);
 });
 
+test("Vite dev and preview proxy /api to the verified backend", async () => {
+  const { apiProxy, RENDER_API_ORIGIN, default: config } = await import("../vite.config.js");
+  assert.equal(apiProxy["/api"].target, RENDER_API_ORIGIN);
+  assert.equal(apiProxy["/api"].changeOrigin, true);
+  assert.equal(config.server.proxy, apiProxy, "dev server must proxy /api");
+  assert.equal(config.preview.proxy, apiProxy, "preview server must proxy /api");
+  if (!process.env.VITE_API_PROXY_TARGET) {
+    assert.equal(RENDER_API_ORIGIN, new URL(RENDER_API).origin);
+  }
+});
+
 test("the production CSP allows the proxy origin only for API connections", () => {
   const csp = vercel.headers
     .flatMap(entry => entry.headers)

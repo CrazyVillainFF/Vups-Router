@@ -218,7 +218,7 @@ test("Continue revives an interrupted answer without duplicating its notice", ()
       messageId: "m1"
     }
   ];
-  const revived = beginContinuation(interrupted, "a1", ["Continuing response"]);
+  const revived = beginContinuation(interrupted, "a1");
   assert.equal(revived[0].status, TURN_STATUS.STREAMING);
   assert.equal(revived[0].content, "First half");
   assert.equal(resolveTurnNotice(revived[0]), TURN_NOTICE.NONE);

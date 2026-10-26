@@ -7,9 +7,9 @@ import {
   resolveApiBaseURL
 } from "../src/config/apiBaseUrl.js";
 
-test("development defaults to the local backend when unset", () => {
-  assert.equal(resolveApiBaseURL({ DEV: true }), "http://localhost:4000/api");
-  assert.equal(resolveApiBaseURL({ DEV: true, VITE_API_BASE_URL: "   " }), "http://localhost:4000/api");
+test("development defaults to the same-origin proxy when unset", () => {
+  assert.equal(resolveApiBaseURL({ DEV: true }), "/api");
+  assert.equal(resolveApiBaseURL({ DEV: true, VITE_API_BASE_URL: "   " }), "/api");
 });
 
 test("development honors a configured backend and trims trailing slashes", () => {

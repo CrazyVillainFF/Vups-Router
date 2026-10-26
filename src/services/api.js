@@ -201,10 +201,32 @@ export async function listConversations() {
   return data.conversations;
 }
 
+export async function createConversation({ handoff, title }) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.post("/conversations", { handoff, title });
+  return data.conversation;
+}
+
+// Older deployments predate the create endpoint. Callers fall back to the
+// existing first-message persistence instead of losing the continuation.
+export function isConversationCreateUnavailable(error) {
+  const status = error?.response?.status;
+  return status === 404 || status === 405;
+}
+
 export async function getConversation(id) {
   ensureApiBaseURL();
   const { data } = await apiClient.get(`/conversations/${id}`);
   return data.conversation;
+}
+
+export async function saveMessageFeedback({ conversationId, messageId, value }) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.put(
+    `/conversations/${conversationId}/messages/${messageId}/feedback`,
+    { value }
+  );
+  return data.feedback ?? null;
 }
 
 export async function fetchConversationArtifacts(id) {
@@ -237,8 +259,7 @@ export function getApiErrorMessage(error) {
   if (axios.isAxiosError(error)) {
     if (typeof error.response?.data?.message === "string") return error.response.data.message;
     if (error.response) return `The backend request failed (HTTP ${error.response.status}).`;
-    const target = error.config?.baseURL ? ` at ${error.config.baseURL}` : "";
-    return `Could not reach the VupsRouter backend${target}. Check that it is running and the URL is correct. If it is on a free hosting tier (e.g. Render), it can take up to a minute to wake up — please try again.`;
+    return "Could not reach the VupsRouter backend. Check your connection and try again.";
   }
   return error instanceof Error ? error.message : "The request could not be completed.";
 }

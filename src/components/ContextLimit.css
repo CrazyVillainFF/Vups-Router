@@ -1,0 +1,460 @@
+/* Context-limit warning and carried-over context card. */
+
+.vr-context {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 100%;
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(224, 180, 108, 0.32);
+  border-radius: 11px;
+  background:
+    radial-gradient(ellipse at 0% 0%, rgba(224, 180, 108, 0.1), transparent 60%),
+    rgba(224, 180, 108, 0.045);
+  color: var(--muted);
+  font-family: "Outfit", sans-serif;
+}
+
+.vr-context--limit {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 11px 12px;
+}
+
+.vr-context--limit .vr-context__body {
+  flex: 1 1 260px;
+  gap: 4px;
+}
+
+.vr-context--limit .vr-context__body .vr-context__message {
+  flex: none;
+}
+
+.vr-context__message {
+  flex: 1 1 220px;
+  margin: 0;
+  color: #e6d6b6;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.vr-context--limit .vr-context__primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #081018;
+  font: 500 12px "Outfit", sans-serif;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.16s, border-color 0.16s, opacity 0.16s;
+}
+
+.vr-context--limit .vr-context__primary:hover:not(:disabled) {
+  background: #8bb2ff;
+  border-color: #8bb2ff;
+}
+
+.vr-context--limit .vr-context__primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.vr-context--limit .vr-context__error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.vr-context__icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  margin-top: 1px;
+  color: var(--warning);
+}
+
+.vr-context__body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vr-context h3 {
+  margin: 0;
+  color: #edd3a1;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.vr-context p {
+  margin: 0;
+  color: #c6cfe0;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.vr-context code {
+  padding: 1px 5px;
+  border: 1px solid rgba(224, 180, 108, 0.22);
+  border-radius: 5px;
+  background: rgba(8, 13, 23, 0.35);
+  color: #f0d6a8;
+  font: 11.5px var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.vr-context__error {
+  color: #e8b0b0 !important;
+}
+
+.vr-context__model {
+  color: var(--muted-soft) !important;
+  font-size: 11.5px !important;
+}
+
+.vr-context__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.vr-context__actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font: 500 12px "Outfit", sans-serif;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.16s, border-color 0.16s, color 0.16s, opacity 0.16s;
+}
+
+.vr-context__primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #081018;
+}
+
+.vr-context__primary:hover:not(:disabled) {
+  background: #8bb2ff;
+  border-color: #8bb2ff;
+}
+
+.vr-context__secondary {
+  background: rgba(148, 163, 184, 0.08);
+  border-color: rgba(148, 163, 184, 0.22);
+  color: #dbe4f2;
+}
+
+.vr-context__secondary:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.14);
+  border-color: rgba(148, 163, 184, 0.34);
+}
+
+.vr-context__dismiss {
+  margin-left: auto;
+  background: transparent;
+  color: var(--muted);
+}
+
+.vr-context__dismiss:hover:not(:disabled) {
+  color: var(--ink);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.vr-context__tertiary {
+  background: transparent;
+  border-color: rgba(148, 163, 184, 0.2) !important;
+  color: var(--muted);
+}
+
+.vr-context__tertiary:hover:not(:disabled) {
+  color: var(--ink);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+/* Firewall rejection: a server-side block, not a provider or credential error. */
+.vr-context--blocked {
+  border-color: rgba(224, 132, 132, 0.32);
+  background:
+    radial-gradient(ellipse at 0% 0%, rgba(224, 132, 132, 0.1), transparent 60%),
+    rgba(224, 132, 132, 0.045);
+}
+
+.vr-context--blocked h3 {
+  color: #f2d0d0;
+}
+
+.vr-context--blocked .vr-context__message {
+  color: #f0d3d3;
+}
+
+/* Missing provider key: informational rather than a length warning. */
+.vr-context--key {
+  border-color: rgba(108, 155, 255, 0.3);
+  background:
+    radial-gradient(ellipse at 0% 0%, rgba(108, 155, 255, 0.11), transparent 60%),
+    rgba(108, 155, 255, 0.045);
+}
+
+.vr-context--key .vr-context__icon {
+  color: var(--accent);
+}
+
+.vr-context--key h3 {
+  color: #cfdcf5;
+}
+
+.vr-context--key code {
+  border-color: rgba(108, 155, 255, 0.25);
+  color: #d7e3ff;
+}
+
+.vr-context__actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.vr-context__note {
+  color: var(--muted-soft) !important;
+  font-size: 11px !important;
+}
+
+.vr-context__spin {
+  animation: vr-context-spin 0.8s linear infinite;
+}
+
+/* The handoff is an ordinary user turn in the request history, but it reads
+   as a compact context card rather than a pasted wall of text. */
+.vr-handoff {
+  width: 100%;
+  max-width: 100%;
+  padding: 11px 13px;
+  border: 1px solid var(--accent-line);
+  border-radius: 12px 12px 5px 12px;
+  background:
+    radial-gradient(ellipse at 100% 0%, rgba(108, 155, 255, 0.09), transparent 55%),
+    rgba(108, 155, 255, 0.045);
+  color: var(--muted);
+  font-family: "Outfit", sans-serif;
+}
+
+.vr-handoff__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.vr-handoff:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.vr-handoff__head > svg {
+  flex: none;
+}
+
+.vr-handoff__model {
+  margin-left: auto;
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  color: var(--muted);
+  font: 10.5px var(--mono);
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.vr-handoff__goal {
+  margin: 6px 0 0;
+  color: #e2e9f5;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.vr-handoff__meta {
+  margin: 4px 0 0;
+  color: var(--muted-soft);
+  font-size: 11px;
+}
+
+.vr-handoff__details {
+  margin-top: 7px;
+}
+
+.vr-handoff__details summary {
+  width: fit-content;
+  color: var(--accent);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.vr-handoff__details summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.vr-handoff__details pre {
+  max-height: 240px;
+  margin: 7px 0 0;
+  padding: 9px 11px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(8, 13, 23, 0.45);
+  color: #cbd6e6;
+  font: 10.5px/1.65 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.vr-handoff__note {
+  margin: 7px 0 0;
+  color: var(--muted-soft);
+  font-size: 10.5px;
+}
+
+@keyframes vr-context-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 650px) {
+  .vr-context {
+    padding: 11px 12px;
+  }
+
+  .vr-context--limit .vr-context__primary {
+    min-height: 40px;
+  }
+
+  .vr-context__actions {
+    gap: 7px;
+  }
+
+  .vr-context__actions button {
+    min-height: 40px;
+    padding: 0 12px;
+  }
+
+  .vr-context__dismiss {
+    margin-left: 0;
+  }
+
+  .vr-handoff {
+    border-radius: 12px;
+  }
+}
+
+@media (max-width: 420px) {
+  .vr-context--limit {
+    align-items: stretch;
+  }
+
+  .vr-context--limit .vr-context__message {
+    flex-basis: 100%;
+  }
+
+  .vr-context--limit .vr-context__primary {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vr-context__spin {
+    animation: none;
+  }
+
+  .vr-context__actions button,
+  .vr-context--limit .vr-context__primary {
+    transition: none;
+  }
+}
+
+[data-theme="light"] .vr-context {
+  border-color: rgba(161, 111, 20, 0.32);
+  background: rgba(224, 180, 108, 0.12);
+}
+
+[data-theme="light"] .vr-context h3 {
+  color: #7a5210;
+}
+
+[data-theme="light"] .vr-context__message {
+  color: #5c4216;
+}
+
+[data-theme="light"] .vr-context p {
+  color: #3d4a5d;
+}
+
+[data-theme="light"] .vr-context code {
+  background: rgba(255, 255, 255, 0.65);
+  color: #7a5210;
+}
+
+[data-theme="light"] .vr-context--key {
+  border-color: rgba(37, 84, 168, 0.28);
+  background: rgba(108, 155, 255, 0.1);
+}
+[data-theme="light"] .vr-context--key h3 {
+  color: #24467f;
+}
+
+[data-theme="light"] .vr-context--key code {
+  color: #24467f;
+}
+
+[data-theme="light"] .vr-context--blocked {
+  border-color: rgba(176, 64, 64, 0.28);
+  background: rgba(214, 96, 96, 0.1);
+}
+
+[data-theme="light"] .vr-context--blocked h3 {
+  color: #7a2222;
+}
+
+[data-theme="light"] .vr-context--blocked .vr-context__message {
+  color: #7a2222;
+}
+
+[data-theme="light"] .vr-handoff {
+  background: rgba(108, 155, 255, 0.08);
+}
+
+[data-theme="light"] .vr-handoff__goal {
+  color: #1e2b3f;
+}
+
+[data-theme="light"] .vr-handoff__details pre {
+  background: rgba(255, 255, 255, 0.72);
+  color: #243247;
+}

@@ -10,6 +10,7 @@ export default function SiteFooter() {
     <div className="footer-links">
       <Link to="/features">Features</Link>
       <Link to="/about">About</Link>
+      <Link to="/motion">Motion lab</Link>
       <Link to="/chat">AI Chat</Link>
       <Link to="/settings">API settings</Link>
       <Link to="/privacy-policy">Privacy</Link>

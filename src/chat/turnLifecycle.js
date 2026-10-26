@@ -8,6 +8,8 @@
  *   continuation or a brand-new request.
  */
 
+import { ACTIVITY_STATUS, applyActivityProgress, settleActivity } from "./activity.js";
+
 export const TURN_STATUS = Object.freeze({
   PENDING: "pending",
   STREAMING: "streaming",
@@ -28,13 +30,15 @@ export function isTerminalTurn(status) {
   return !isActiveTurn(status);
 }
 
-export function createAssistantTurn({ id, steps = [], status = TURN_STATUS.PENDING } = {}) {
+export function createAssistantTurn({ id, status = TURN_STATUS.PENDING, at = Date.now() } = {}) {
   return {
     id,
     messageId: id,
     role: "assistant",
     content: "",
-    steps: [...steps],
+    activity: [],
+    startedAt: at,
+    completedAt: null,
     status,
     error: null,
     saveWarning: null,
@@ -72,12 +76,14 @@ export function appendTurnChunk(messages, id, chunk) {
   });
 }
 
-export function appendTurnStep(messages, id, step) {
-  if (!step) return messages;
+export function recordTurnActivity(messages, id, progress, { runId = "run", at = Date.now() } = {}) {
   return mapTurn(messages, id, (message) => {
     if (!isActiveTurn(message.status)) return message;
-    if (message.steps?.includes(step)) return message;
-    return { ...message, steps: [...(message.steps || []), step] };
+    return {
+      ...message,
+      status: message.status === TURN_STATUS.PENDING ? TURN_STATUS.STREAMING : message.status,
+      activity: applyActivityProgress(message.activity, progress, { runId, at })
+    };
   });
 }
 
@@ -96,7 +102,7 @@ export function markTurnMeta(messages, id, { messageId, conversationId } = {}) {
  * Finalizes a turn as completed. A completed turn is immutable: later
  * cleanup, duplicate done events, or post-stream errors cannot change it.
  */
-export function completeTurn(messages, id, { content, messageId, artifact, finishReason, saveWarning = null } = {}) {
+export function completeTurn(messages, id, { content, messageId, artifact, finishReason, saveWarning = null, at = Date.now() } = {}) {
   return mapTurn(messages, id, (message) => {
     if (LOCKED_STATUSES.has(message.status)) return message;
     return {
@@ -105,6 +111,8 @@ export function completeTurn(messages, id, { content, messageId, artifact, finis
       content: longerContent(message.content, content),
       ...(messageId ? { messageId } : {}),
       ...(artifact ? { artifact } : {}),
+      activity: settleActivity(message.activity, ACTIVITY_STATUS.COMPLETED, at),
+      completedAt: at,
       truncated: finishReason === "length" ? "length" : null,
       error: null,
       saveWarning
@@ -121,6 +129,8 @@ export function interruptTurn(messages, id, { content, messageId, artifact } = {
       content: longerContent(message.content, content),
       ...(messageId ? { messageId } : {}),
       ...(artifact ? { artifact } : {}),
+      activity: settleActivity(message.activity, ACTIVITY_STATUS.CANCELLED),
+      completedAt: Date.now(),
       truncated: null,
       error: null,
       saveWarning: message.saveWarning || null
@@ -137,6 +147,8 @@ export function failTurn(messages, id, { error, content, messageId, artifact } =
       content: longerContent(message.content, content),
       ...(messageId ? { messageId } : {}),
       ...(artifact ? { artifact } : {}),
+      activity: settleActivity(message.activity, ACTIVITY_STATUS.FAILED),
+      completedAt: Date.now(),
       truncated: null,
       error: error || message.error,
       saveWarning: null
@@ -169,6 +181,8 @@ export function cancelTurn(messages, id) {
     next.push({
       ...message,
       status: TURN_STATUS.CANCELLED,
+      activity: settleActivity(message.activity, ACTIVITY_STATUS.CANCELLED),
+      completedAt: Date.now(),
       truncated: null,
       error: null
     });
@@ -177,11 +191,13 @@ export function cancelTurn(messages, id) {
 }
 
 /** Explicit user action: a continuation may revive an interrupted turn. */
-export function beginContinuation(messages, id, steps = []) {
+export function beginContinuation(messages, id, { at = Date.now() } = {}) {
   return mapTurn(messages, id, (message) => ({
     ...message,
     status: TURN_STATUS.STREAMING,
-    steps: [...steps],
+    activity: settleActivity(message.activity, ACTIVITY_STATUS.COMPLETED, at),
+    startedAt: at,
+    completedAt: null,
     error: null,
     saveWarning: null,
     truncated: null

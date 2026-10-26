@@ -8,9 +8,14 @@ import "./styles.css";
 const theme = createTheme({
   palette: {
     mode: "dark",
-    primary: { main: "#d4ff3f", contrastText: "#11140a" },
-    background: { default: "#090b0d", paper: "#111416" },
-    text: { primary: "#f2f4ef", secondary: "#9ca39c" }
+    primary: { main: "#6c9bff", contrastText: "#081018" },
+    secondary: { main: "#9aa8bd" },
+    error: { main: "#e08585" },
+    warning: { main: "#e0b46c" },
+    success: { main: "#7dbf9a" },
+    divider: "rgba(148,163,184,.16)",
+    background: { default: "#070b14", paper: "#0d1524" },
+    text: { primary: "#e9eef7", secondary: "#9aa8bd" }
   },
   typography: { fontFamily: '"Outfit", "Avenir Next", system-ui, sans-serif', button: { textTransform: "none", fontWeight: 650 } },
   shape: { borderRadius: 14 },

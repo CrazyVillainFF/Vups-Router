@@ -1,0 +1,166 @@
+.vr-files {
+  max-width: 100%;
+  margin: 8px 0 2px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.035);
+  overflow: hidden;
+}
+
+.vr-files__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 3px 5px 3px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font: 11px "Outfit", sans-serif;
+}
+
+.vr-files__head > svg {
+  flex: none;
+  color: var(--muted-soft);
+}
+
+.vr-files__summary {
+  color: #c6d1e2;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.vr-files__size {
+  margin-left: auto;
+  color: var(--muted-soft);
+  font: 10px var(--mono);
+  white-space: nowrap;
+}
+
+.vr-files__list {
+  list-style: none;
+  margin: 0;
+  padding: 2px;
+}
+
+.vr-files__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 3px 3px 8px;
+  border-radius: 7px;
+}
+
+.vr-files__row:hover {
+  background: rgba(148, 163, 184, 0.06);
+}
+
+.vr-files__icon {
+  flex: none;
+  color: var(--muted-soft);
+}
+
+.vr-files__name {
+  min-width: 0;
+  overflow: hidden;
+  color: #c4d0e2;
+  font: 11.5px var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vr-files__row .vr-files__size {
+  margin-left: auto;
+}
+
+.vr-files__download,
+.vr-files__zip {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.vr-files__download:hover:not(:disabled),
+.vr-files__zip:hover:not(:disabled) {
+  border-color: rgba(108, 155, 255, 0.28);
+  background: rgba(108, 155, 255, 0.1);
+  color: var(--accent);
+}
+
+.vr-files__download:focus-visible,
+.vr-files__zip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.vr-files__download:disabled,
+.vr-files__zip:disabled {
+  color: #4e5b70;
+  cursor: not-allowed;
+}
+
+.vr-files__spin {
+  animation: vr-files-spin 0.8s linear infinite;
+}
+
+.vr-files__notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 2px 10px 7px;
+  color: #e0a5a5;
+  font: 11px "Outfit", sans-serif;
+}
+
+@keyframes vr-files-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vr-files__spin {
+    animation: none;
+  }
+  .vr-files__download,
+  .vr-files__zip {
+    transition: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .vr-files__download,
+  .vr-files__zip {
+    width: 40px;
+    height: 40px;
+  }
+  .vr-files__row {
+    min-height: 48px;
+    padding-left: 6px;
+  }
+  .vr-files__name {
+    font-size: 11px;
+  }
+}
+
+[data-theme="light"] .vr-files {
+  background: rgba(15, 23, 42, 0.025);
+}
+
+[data-theme="light"] .vr-files__name,
+[data-theme="light"] .vr-files__summary {
+  color: #243247;
+}
+
+[data-theme="light"] .vr-files__download:disabled,
+[data-theme="light"] .vr-files__zip:disabled {
+  color: #94a3b8;
+}

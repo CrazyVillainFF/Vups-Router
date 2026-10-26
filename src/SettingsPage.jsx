@@ -140,7 +140,7 @@ function GuideLinks({ entry }) {
   return (
     <div className="settings-guides-links">
       {links.map(link => (
-        <a key={link.href} href={link.href} target="_blank" rel="noopener noreferrer">
+        <a key={`${link.label}:${link.href}`} href={link.href} target="_blank" rel="noopener noreferrer">
           {link.label} <OpenInNewRoundedIcon fontSize="inherit" />
         </a>
       ))}

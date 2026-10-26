@@ -32,6 +32,8 @@ import {
   validateAuthField
 } from "./auth/authForm.js";
 
+const MotionLabPage = React.lazy(() => import("./pages/MotionLab.jsx"));
+
 function useReveal() {
   useEffect(() => {
     const nodes = document.querySelectorAll(".reveal:not(.is-visible)");
@@ -57,7 +59,7 @@ function HeroVisual() {
     <div className="visual-orbit orbit-one" /><div className="visual-orbit orbit-two" /><div className="visual-orbit orbit-three" />
     <div className="visual-grid" />
     <svg className="route-svg" viewBox="0 0 520 420" role="img" aria-label="A glowing path connecting model options">
-      <defs><linearGradient id="routeGradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#d4ff3f"/><stop offset="100%" stopColor="#7e9b31"/></linearGradient></defs>
+      <defs><linearGradient id="routeGradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#6c9bff"/><stop offset="100%" stopColor="#2f5fd0"/></linearGradient></defs>
       <path className="route-path-shadow" d="M96 302 C132 300 137 226 202 228 S267 306 320 236 S372 119 431 105"/>
       <path className="route-path" d="M96 302 C132 300 137 226 202 228 S267 306 320 236 S372 119 431 105"/>
       {[["96","302"],["202","228"],["320","236"],["431","105"]].map(([cx,cy],i)=><g key={cx} className={`route-node node-${i}`}><circle cx={cx} cy={cy} r={i===3?13:8}/><circle cx={cx} cy={cy} r={i===3?25:18} className="node-ring"/></g>)}
@@ -114,9 +116,9 @@ function PasswordToggle({ visible, fieldLabel, onToggle }) {
       aria-pressed={visible}
       onClick={onToggle}
       sx={{
-        color: "#9aa39a",
-        "&:hover": { color: "#d4ff3f" },
-        "&.Mui-focusVisible": { outline: "2px solid #d4ff3f", outlineOffset: "2px" }
+        color: "#9aa8bd",
+        "&:hover": { color: "#6c9bff" },
+        "&.Mui-focusVisible": { outline: "2px solid #6c9bff", outlineOffset: "2px" }
       }}
     >
       {visible ? <VisibilityOffRoundedIcon /> : <VisibilityRoundedIcon />}
@@ -180,7 +182,7 @@ function AuthPage({ mode }) {
       setError(getApiErrorMessage(err));
     } finally { setBusy(false); }
   }
-    return <div className="auth-layout"><div className="auth-art-panel"><Link to="/" className="brand auth-brand"><span className="brand-mark"><VupsLogo /></span><span>vups<span className="brand-light">router</span></span></Link><div className="auth-art-copy"><div className="eyebrow"><span className="eyebrow-line"/> FREE AI, MADE CLEAR</div><h1>Find your next<br/><span>AI model.</span></h1><p>Compare free access options and open models.</p><div className="auth-logo" aria-hidden="true"><VupsLogo className="auth-logo-image" /></div><div className="auth-art-lines"><span/><span/><span/><span/><span/></div></div><div className="auth-art-foot"><span>FREE AI / CLEAR CHOICES</span><span>VUPSROUTER / 2026</span></div></div>
+    return <div className="auth-layout"><div className="auth-art-panel"><Link to="/" className="brand auth-brand"><span className="brand-mark"><VupsLogo /></span><span>vups<span className="brand-light">router</span></span></Link><div className="auth-art-copy"><div className="eyebrow"><span className="eyebrow-line"/> FREE AI, MADE CLEAR</div><h1>Find your next<br/><span>AI model.</span></h1><p>Compare free access options and open models.</p><div className="auth-logo" aria-hidden="true"><VupsLogo className="auth-logo-image" sizes="220px" /></div><div className="auth-art-lines"><span/><span/><span/><span/><span/></div></div><div className="auth-art-foot"><span>FREE AI / CLEAR CHOICES</span><span>VUPSROUTER / 2026</span></div></div>
     <div className="auth-form-panel"><Link to="/" className="back-home">← Back to home</Link><div className="auth-form-wrap"><div className="auth-form-heading"><span className="auth-kicker">{isSignup ? "JOIN VUPSROUTER" : "GOOD TO HAVE YOU BACK"}</span><h2>{isSignup ? "Create your account" : "Welcome back"}</h2><p>{isSignup ? "Create an account to use your VupsRouter account features." : "Sign in to your VupsRouter account."}</p></div>
       {error && <Alert severity="error" sx={{mb:2}}>{error}</Alert>}{message && <Alert severity="success" sx={{mb:2}}>{message}</Alert>}
       <form className="auth-form" onSubmit={handleSubmit}>
@@ -247,6 +249,24 @@ export default function App() {
     <Route path="/" element={<Home />} />
     <Route path="/features" element={<FeaturesPage />} />
     <Route path="/about" element={<AboutPage />} />
+    <Route
+      path="/motion"
+      element={
+        <React.Suspense
+          fallback={
+            <div
+              role="status"
+              aria-label="Loading motion lab"
+              style={{ minHeight: "60svh", display: "grid", placeItems: "center" }}
+            >
+              <CircularProgress size={28} />
+            </div>
+          }
+        >
+          <MotionLabPage />
+        </React.Suspense>
+      }
+    />
     <Route path="/signup" element={<><PageMeta title="Create your account — VupsRouter" description="Create a VupsRouter account to chat with Vups v3 Galax and connect your own AI providers." noIndex /><AuthPage mode="signup" /></>} />
     <Route path="/signin" element={<><PageMeta title="Sign in — VupsRouter" description="Sign in to your VupsRouter account." noIndex /><AuthPage mode="signin" /></>} />
     <Route path="/forgot-password" element={<><PageMeta title="Forgot password — VupsRouter" noIndex /><ForgotPasswordPage /></>} />

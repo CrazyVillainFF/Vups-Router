@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { apiClient } from "../src/services/api.js";
 import { ChatNetworkError, streamChatResponse } from "../src/services/chat.js";
+import { REQUEST_BLOCKED_MESSAGE } from "../src/chat/chatErrors.js";
 
 const encoder = new TextEncoder();
 const originalFetch = globalThis.fetch;
@@ -99,7 +100,7 @@ test("EOF without a done event is treated as an interrupted stream", async () =>
   assert.ok(error instanceof ChatNetworkError);
   assert.equal(error.code, "stream_interrupted");
   assert.equal(error.partialContent, "unfinished code");
-  assert.match(error.message, /partial answer was kept/i);
+  assert.equal(error.message, "The response stopped early. Continue or retry.");
 });
 
 test("EOF before any output is an explicit empty-stream error", async () => {
@@ -142,6 +143,51 @@ test("non-OK JSON errors preserve the backend code and request ID", async () => 
   );
 });
 
+test("an HTML firewall 403 is reported as a blocked request, not an access denial", async () => {
+  apiClient.defaults.baseURL = "http://backend.test/api";
+  const wafPage =
+    "<!DOCTYPE html><html><head><title>403 - Forbidden</title></head><body>" +
+    "<h1>403 - Forbidden</h1>" +
+    "<p>Your request was blocked by this site's web application firewall (WAF).</p>" +
+    "<p>Request ID: a507fc25be148632</p><p>Powered by Render.</p>" +
+    "</body></html>";
+  globalThis.fetch = async () =>
+    new Response(wafPage, {
+      status: 403,
+      headers: { "Content-Type": "text/html; charset=UTF-8" }
+    });
+
+  await assert.rejects(
+    streamChatResponse({ messages: [{ role: "user", content: "Hi" }], vups: true }),
+    error => {
+      assert.ok(error instanceof ChatNetworkError);
+      assert.equal(error.status, 403);
+      assert.equal(error.code, "request_blocked");
+      assert.equal(error.message, REQUEST_BLOCKED_MESSAGE);
+      return true;
+    }
+  );
+});
+
+test("an HTML 403 without firewall evidence keeps the generic interrupted message", async () => {
+  apiClient.defaults.baseURL = "http://backend.test/api";
+  globalThis.fetch = async () =>
+    new Response("<html><body>403 - Forbidden</body></html>", {
+      status: 403,
+      headers: { "Content-Type": "text/html" }
+    });
+
+  await assert.rejects(
+    streamChatResponse({ messages: [{ role: "user", content: "Hi" }], vups: true }),
+    error => {
+      assert.equal(error.status, 403);
+      assert.equal(error.code, null);
+      assert.equal(error.message, "The response stopped early. Continue or retry.");
+      return true;
+    }
+  );
+});
+
 test("stream events carry truthful progress, stable message ids, and full artifacts", async () => {
   apiClient.defaults.baseURL = "http://backend.test/api";
   let requestBody = null;
@@ -172,6 +218,35 @@ test("stream events carry truthful progress, stable message ids, and full artifa
   assert.equal(result.messageId, "assistant-1");
   assert.equal(result.artifact.files[0].content, "<h1>Hello</h1>\n");
   assert.equal(result.artifact.status, "complete");
+});
+
+test("streamChatResponse emits structured activity for real stream phases", async () => {
+  apiClient.defaults.baseURL = "http://backend.test/api";
+  globalThis.fetch = async () =>
+    sseResponse([
+      'data: {"type":"meta","conversationId":"conv-activity"}\n\n',
+      'data: {"type":"progress","phase":"generating_code","message":"Generating your code…"}\n\n',
+      'data: {"type":"progress","phase":"generating_file","message":"Generating index.html…"}\n\n',
+      'data: {"type":"delta","content":"<h1>Hi</h1>"}\n\n',
+      'data: {"type":"done","conversationId":"conv-activity","finishReason":"stop"}\n\n'
+    ]);
+  const activity = [];
+  const steps = [];
+  await streamChatResponse({
+    messages: [{ role: "user", content: "Build a page" }],
+    vups: true,
+    onStep: step => steps.push(step),
+    onActivity: event => activity.push(event)
+  });
+  assert.deepEqual(activity.map(event => event.phase), [
+    "request",
+    "waiting",
+    "generating_code",
+    "generating_file",
+    "responding"
+  ]);
+  assert.equal(activity[3].message, "Generating index.html…");
+  assert.ok(steps.includes("Receiving response"));
 });
 
 test("continuation requests include the target message and preserve recovered artifacts on failure", async () => {

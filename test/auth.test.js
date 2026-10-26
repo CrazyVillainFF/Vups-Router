@@ -53,8 +53,8 @@ test("configured development API base URL is trimmed and normalized", () => {
   );
 });
 
-test("development defaults to localhost and production uses the same-origin /api proxy", () => {
-  assert.equal(resolveApiBaseURL({ DEV: true }), "http://localhost:4000/api");
+test("development and production both default to the same-origin /api proxy", () => {
+  assert.equal(resolveApiBaseURL({ DEV: true }), "/api");
   assert.equal(resolveApiBaseURL({ DEV: false }), "/api");
 });
 
@@ -341,7 +341,7 @@ test("streamChatResponse rejects a stream that ends without a done event but kee
       error => {
         assert.equal(error.code, "stream_interrupted");
         assert.equal(error.partialContent, "answer without done");
-        assert.match(error.message, /partial answer was kept/i);
+        assert.equal(error.message, "The response stopped early. Continue or retry.");
         return true;
       }
     );
@@ -410,7 +410,7 @@ test("streamChatResponse rejects empty completions instead of faking an answer",
   try {
     await assert.rejects(
       () => streamChatResponse({ messages: [{ role: "user", content: "hi" }], model: "m" }),
-      /empty response/i
+      /No answer received\. Please try again\./
     );
   } finally {
     globalThis.fetch = originalFetch;

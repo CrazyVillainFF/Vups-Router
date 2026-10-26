@@ -104,7 +104,8 @@
   background-position: 125% 0;
   -webkit-background-clip: text;
   background-clip: text;
-  color: transparent;
+  /* Keep `color` inherited: currentColor inside the gradient would otherwise
+     resolve to transparent and hide the label while the turn is running. */
   -webkit-text-fill-color: transparent;
   animation: thought-line-shimmer var(--tl-shimmer) linear infinite;
 }

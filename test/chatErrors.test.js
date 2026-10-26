@@ -1,6 +1,24 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyChatError, formatResetTime, presentChatError } from "../src/chat/chatErrors.js";
+import {
+  classifyChatError,
+  CONTINUE_NEW_CHAT_ACTION,
+  formatResetTime,
+  isFirewallBlockedResponse,
+  presentChatError,
+  REQUEST_BLOCKED_MESSAGE,
+  REQUEST_BLOCKED_TITLE
+} from "../src/chat/chatErrors.js";
+
+const RENDER_WAF_PAGE = [
+  "<!DOCTYPE html>",
+  "<html><head><title>403 - Forbidden</title></head><body>",
+  "<h1>403 - Forbidden</h1>",
+  "<p>Your request was blocked by this site's web application firewall (WAF).</p>",
+  "<p>Request ID: a507fc25be148632</p>",
+  "<p>Powered by Render.</p>",
+  "</body></html>"
+].join("");
 
 function error(overrides = {}) {
   return { message: "The provider could not complete the request.", ...overrides };
@@ -14,17 +32,17 @@ test("quota exhaustion is classified separately from a transient rate limit", ()
 });
 
 test("authentication, context, model, network, and empty failures get distinct types", () => {
-  assert.equal(classifyChatError(error({ code: "invalid_api_key", status: 401 })), "auth");
-  assert.equal(classifyChatError(error({ code: "context_length_exceeded" })), "context");
+  assert.equal(classifyChatError(error({ code: "invalid_api_key", status: 401 })), "invalid_api_key");
+  assert.equal(classifyChatError(error({ code: "context_length_exceeded" })), "context_limit");
   assert.equal(classifyChatError(error({ code: "invalid_model", message: "The model does not exist." })), "model");
-  assert.equal(classifyChatError(error({ code: "network_error", status: null })), "network");
+  assert.equal(classifyChatError(error({ code: "network_error", status: null })), "network_error");
   assert.equal(classifyChatError(error({ code: "empty_stream" })), "empty");
 });
 
 test("provider service outages are not mislabeled as a missing model", () => {
   assert.equal(
     classifyChatError(error({ code: "shared_unavailable", message: "The shared AI model is temporarily unavailable." })),
-    "unavailable"
+    "server_error"
   );
 });
 
@@ -91,17 +109,55 @@ test("backend size limits are explained without surfacing raw validation text", 
   );
   assert.equal(
     classifyChatError(error({ message: "The conversation is too large. Start a new chat or shorten your messages.", status: 400 })),
-    "context"
+    "context_limit"
   );
   assert.equal(
     classifyChatError(error({
       message: "A single assistant message is too large to replay. Start a new chat or continue from the saved code artifact.",
       status: 400
     })),
-    "context"
+    "context_limit"
   );
   assert.equal(
     classifyChatError(error({ message: "A request can contain at most 60 messages.", status: 400 })),
-    "context"
+    "context_limit"
+  );
+});
+
+test("an edge firewall rejection is its own outcome and never an access denial", () => {
+  assert.equal(isFirewallBlockedResponse("text/html; charset=UTF-8", RENDER_WAF_PAGE), true);
+  // Only HTML WAF pages qualify; JSON and generic HTML error pages do not.
+  assert.equal(
+    isFirewallBlockedResponse("application/json", '{"message":"blocked by this site\'s web application firewall (WAF)"}'),
+    false
+  );
+  assert.equal(isFirewallBlockedResponse("text/html", "<html><body>403 - Forbidden</body></html>"), false);
+  assert.equal(isFirewallBlockedResponse("text/html", ""), false);
+  assert.equal(isFirewallBlockedResponse("text/html", null), false);
+
+  assert.equal(
+    classifyChatError({ status: 403, code: "request_blocked", message: REQUEST_BLOCKED_MESSAGE }),
+    "request_blocked"
+  );
+
+  const presentation = presentChatError({
+    status: 403,
+    code: "request_blocked",
+    message: REQUEST_BLOCKED_MESSAGE,
+    model: "gpt-oss:120b"
+  });
+  assert.equal(presentation.title, REQUEST_BLOCKED_TITLE);
+  assert.equal(presentation.title, "Let's continue in a new chat");
+  assert.equal(presentation.message, REQUEST_BLOCKED_MESSAGE);
+  assert.equal(
+    presentation.message,
+    "This conversation can't continue in its current state. You can start a fresh chat and pick up where you left off."
+  );
+  assert.equal(CONTINUE_NEW_CHAT_ACTION, "Continue with New Chat");
+  assert.equal(presentation.retry, false);
+  assert.equal(presentation.canSwitchModel, false);
+  assert.doesNotMatch(
+    presentation.message,
+    /firewall|WAF|blocked|rejected|security|filter|request id|diagnostic|api key|another model|provider denied|Access denied/i
   );
 });

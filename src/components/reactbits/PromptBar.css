@@ -1,17 +1,19 @@
 .prompt-bar {
-  --pb-bg: #27272a;
-  --pb-ink: #f5f5f5;
-  --pb-menu: #323236;
+  --pb-bg: #111c2e;
+  --pb-ink: #e9eef7;
+  --pb-menu: #16233a;
   --pb-w: 400px;
   --pb-radius: 16px;
   --pb-press: 0.96;
-  --pb-spark: #b39dff;
+  --pb-spark: #6c9bff;
   --pb-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --pb-muted: color-mix(in srgb, var(--pb-ink) 55%, transparent);
   --pb-hover: color-mix(in srgb, var(--pb-ink) 8%, transparent);
 
   position: relative;
   width: min(var(--pb-w), 100%);
+  min-width: 0;
+  max-width: 100%;
   color: var(--pb-ink);
   font-family: inherit;
   font-size: 14px;
@@ -87,7 +89,7 @@
   overscroll-behavior: contain;
   padding: 6px 6px 8px;
   scrollbar-width: thin;
-  scrollbar-color: #3a3f2a transparent;
+  scrollbar-color: #243247 transparent;
 }
 
 .prompt-bar__menu[data-kind='model'] .prompt-bar__list::-webkit-scrollbar {
@@ -96,7 +98,7 @@
 
 .prompt-bar__menu[data-kind='model'] .prompt-bar__list::-webkit-scrollbar-thumb {
   border-radius: 6px;
-  background: #3a3f2a;
+  background: #243247;
 }
 
 .prompt-bar__menu[data-kind='model'] .prompt-bar__list::-webkit-scrollbar-track {
@@ -314,8 +316,8 @@
 
 .prompt-bar__model-delete:hover,
 .prompt-bar__model-delete:focus-visible {
-  background: color-mix(in srgb, #ff6b6b 16%, transparent);
-  color: #ff8f8f;
+  background: color-mix(in srgb, #e08585 16%, transparent);
+  color: #e89a9a;
   opacity: 1;
 }
 
@@ -501,6 +503,28 @@
 @media (pointer: coarse) {
   .prompt-bar__input {
     font-size: 16px;
+    line-height: 22px;
+  }
+
+  .prompt-bar__tool {
+    width: 36px;
+    height: 36px;
+  }
+
+  .prompt-bar__send {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+  }
+
+  .prompt-bar__pick {
+    height: 34px;
+    padding: 0 6px;
+  }
+
+  .prompt-bar__glyph {
+    width: 18px;
+    height: 18px;
   }
 }
 
@@ -508,6 +532,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
 }
 
 .prompt-bar__spacer {
@@ -565,10 +590,28 @@
 }
 
 .prompt-bar__pick span {
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 180px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.prompt-bar__pick > svg {
+  flex: none;
+}
+
+/* The model selector shrinks before any control does, while its dropdown
+   arrow stays visible. Only the visual label truncates; the selected model
+   id and onModelChange payload are unchanged. */
+.prompt-bar__pick--model {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.prompt-bar__pick--model span {
+  max-width: 100%;
 }
 
 .prompt-bar__tool[data-on],
@@ -785,7 +828,7 @@
 
 .prompt-bar__chip[data-error] {
   border-color: rgba(255, 107, 107, 0.55);
-  color: #ffb3b3;
+  color: #e8b0b0;
 }
 
 .prompt-bar__file {
@@ -795,6 +838,35 @@
 .prompt-bar[data-drag] .prompt-bar__field {
   outline: 2px dashed var(--pb-spark);
   outline-offset: -6px;
+}
+
+/* Phones keep the two-row shape: prompt input, then one control row. The
+   model label truncates instead of wrapping or pushing send off-screen. */
+@media (max-width: 650px) {
+  .prompt-bar__field {
+    padding: 8px 10px;
+    gap: 4px;
+    border-radius: 14px;
+  }
+
+  .prompt-bar__bar {
+    gap: 2px;
+  }
+
+  .prompt-bar__spacer {
+    flex: 1 1 8px;
+  }
+}
+
+@media (max-width: 380px) {
+  .prompt-bar__generate span,
+  .prompt-bar__pick:not(.prompt-bar__pick--model) span {
+    display: none;
+  }
+
+  .prompt-bar__pick {
+    padding: 0 5px;
+  }
 }
 
 @media (max-width: 480px) {

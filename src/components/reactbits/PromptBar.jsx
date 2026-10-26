@@ -107,10 +107,10 @@ export default function PromptBar({
   onGenerateImage,
   onAttach,
   onDictate,
-  background = '#27272a',
-  color = '#f5f5f5',
-  menuBackground = '#323236',
-  sparkColor = '#b39dff',
+  background = '#111c2e',
+  color = '#e9eef7',
+  menuBackground = '#16233a',
+  sparkColor = '#6c9bff',
   sparkBoost = 1,
   width = 400,
   radius = 16,
@@ -817,8 +817,9 @@ export default function PromptBar({
           {models.length > 0 ? (
             <button
               type="button"
-              className="prompt-bar__pick"
-              aria-label="Choose model"
+              className="prompt-bar__pick prompt-bar__pick--model"
+              aria-label={`Choose model, currently ${model.name}`}
+              title={model.name}
               aria-expanded={modelOpen}
               data-on={modelOpen ? '' : undefined}
               onMouseDown={e => e.preventDefault()}

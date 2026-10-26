@@ -1,6 +1,7 @@
 import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { Alert, Button, CircularProgress } from "@mui/material";
+import VupsLogo from "./VupsLogo.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 
 export default function RequireAuth({ children }) {
@@ -10,7 +11,10 @@ export default function RequireAuth({ children }) {
   if (status === "loading") {
     return (
       <div className="auth-loading" role="status" aria-label="Checking your session">
-        <CircularProgress size={30} />
+        <div className="auth-loading-inner">
+          <VupsLogo className="auth-loading-mark" sizes="56px" />
+          <CircularProgress size={28} />
+        </div>
       </div>
     );
   }

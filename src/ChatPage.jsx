@@ -4,6 +4,7 @@ import React, {
   useEffect,
   useCallback,
   useMemo,
+  useId,
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
@@ -24,15 +25,41 @@ import {
   Trash,
   Gear,
   SignOut,
+  ThumbsUp,
+  ThumbsDown,
+  ShareNetwork,
   Image as ImageIcon,
+  CaretDown,
+  CaretUp,
 } from "@phosphor-icons/react";
 import PromptBar from "./components/reactbits/PromptBar.jsx";
-import MessageDownloads from "./components/MessageDownloads.jsx";
-import CodeArtifact from "./components/CodeArtifact.jsx";
+import AgentActivity from "./components/AgentActivity.jsx";
+import GeneratedFiles from "./components/GeneratedFiles.jsx";
+import ContextLimitNotice, {
+  ApiKeyNotice,
+  ContextHandoffCard,
+  RequestBlockedNotice
+} from "./components/ContextLimitNotice.jsx";
 import VupsLogo from "./components/VupsLogo.jsx";
-import { artifactFromResponse, responseSummary, streamingArtifact } from "./chat/artifacts.js";
+import {
+  artifactForTurn,
+  artifactFromResponse,
+  codingIntent,
+  continueArtifact,
+  mergeTextContinuation,
+  responseSummary,
+  streamingArtifact,
+  wantsInlineCode
+} from "./chat/artifacts.js";
 import { copyText } from "./chat/clipboard.js";
 import { downloadBlob } from "./chat/downloads.js";
+import { collapseMessageText } from "./chat/messageText.js";
+import {
+  canPersistFeedback,
+  feedbackRequest,
+  nextFeedback,
+  sharePayload
+} from "./chat/messageActions.js";
 import {
   IMAGE_LIMITS,
   formatBytes,
@@ -42,19 +69,22 @@ import {
   toPayloadImages,
   validateImageFile,
 } from "./chat/attachments.js";
-import ThoughtLine from "./components/reactbits/ThoughtLine.jsx";
 import { streamChatResponse } from "./services/chat.js";
 import { presentSaveWarning, settleTurnFromError } from "./chat/turnOutcome.js";
 import { resolveTurnNotice, TURN_NOTICE } from "./chat/turnPresentation.js";
 import {
+  contextHandoffGoal,
+  isContextHandoffContent
+} from "./chat/contextLimit.js";
+import {
   appendTurnChunk,
-  appendTurnStep,
   beginContinuation,
   cancelTurn,
   completeTurn,
   createAssistantTurn,
   hasRecoverableOutput,
   markTurnMeta,
+  recordTurnActivity,
   sanitizeHistoryMessages,
   TURN_STATUS
 } from "./chat/turnLifecycle.js";
@@ -70,6 +100,7 @@ import {
   FREE_MODEL_TYPE,
 } from "./chat/modelCatalog.js";
 import {
+  createConversation,
   deleteConversation,
   fetchFreeModels,
   fetchProviderConfig,
@@ -80,9 +111,15 @@ import {
   generateImage,
   getApiErrorMessage,
   getConversation,
+  isConversationCreateUnavailable,
   listConversations,
   removeProvider,
+  saveMessageFeedback,
 } from "./services/api.js";
+import {
+  createContinuationGuard,
+  prepareContinuation
+} from "./chat/continuation.js";
 import { useAuth } from "./context/AuthContext.jsx";
 import "./chat.css";
 
@@ -144,7 +181,14 @@ function toLocalMessage(message, artifactMap = null) {
         bytes: attachment.bytes,
       }))
     : [];
-  const artifact = artifactMap?.get(message.messageId) || null;
+  const storedArtifact = artifactMap?.get(message.messageId) || null;
+  const artifact =
+    storedArtifact ||
+    (message.role === "assistant" && message.content ? artifactFromResponse(message.content) : null);
+  const handoff =
+    message.role === "user" && isContextHandoffContent(message.content)
+      ? { goal: contextHandoffGoal(message.content) }
+      : null;
   return {
     id: generateId(),
     role: message.role,
@@ -154,7 +198,11 @@ function toLocalMessage(message, artifactMap = null) {
     saveWarning: null,
     truncated: null,
     ...(message.messageId ? { messageId: message.messageId } : {}),
+    ...(message.feedback === "like" || message.feedback === "dislike"
+      ? { feedback: message.feedback }
+      : {}),
     ...(artifact ? { artifact } : {}),
+    ...(handoff ? { handoff } : {}),
     ...(images.length > 0 ? { images } : {}),
   };
 }
@@ -180,7 +228,7 @@ function imageExtension(mimeType) {
 }
 
 function sharedModelNotice(shared) {
-  if (!shared) return "Checking the shared model â€” try again in a moment.";
+  if (!shared) return "Checking the shared model \u2014 try again in a moment.";
   if (shared.status === "disabled") {
     return "The shared AI model has been disabled. Connect your own AI provider in API settings to keep chatting.";
   }
@@ -197,7 +245,7 @@ function sharedModelNotice(shared) {
 }
 
 function gatewayNotice(omniroute) {
-  if (!omniroute) return "Checking the OmniRoute gateway â€” try again in a moment.";
+  if (!omniroute) return "Checking the OmniRoute gateway \u2014 try again in a moment.";
   if (!omniroute.enabled) {
     return "The OmniRoute gateway is disabled on this server. Pick another model from the model menu.";
   }
@@ -231,12 +279,12 @@ function unavailableModelNotice(shared, omniroute) {
 
 // â”€â”€â”€ Code Block with Copy â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function CodeBlock({ children, className }) {
+function CodeBlock({ children }) {
   const [copied, setCopied] = useState(false);
-  const codeRef = useRef(null);
+  const preRef = useRef(null);
 
   const handleCopy = useCallback(async () => {
-    const text = codeRef.current?.textContent ?? "";
+    const text = preRef.current?.textContent ?? "";
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
@@ -244,7 +292,9 @@ function CodeBlock({ children, className }) {
     } catch {}
   }, []);
 
-  const lang = /language-(\w+)/.exec(className || "")?.[1] ?? "";
+  const codeChild = React.Children.toArray(children)[0];
+  const className = React.isValidElement(codeChild) ? codeChild.props.className || "" : "";
+  const lang = /language-([\w.+#-]+)/.exec(className)?.[1] ?? "";
 
   return (
     <div className="vr-code-block">
@@ -259,10 +309,8 @@ function CodeBlock({ children, className }) {
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <pre>
-        <code ref={codeRef} className={className}>
-          {children}
-        </code>
+      <pre ref={preRef} tabIndex={0} aria-label={lang ? `${lang} code` : "Code"}>
+        {children}
       </pre>
     </div>
   );
@@ -270,47 +318,188 @@ function CodeBlock({ children, className }) {
 
 // â”€â”€â”€ Markdown Components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+// react-markdown v10 no longer passes an `inline` flag to `code`. Detect block
+// code from its `pre` parent instead; everything else is inline.
 const MARKDOWN_COMPONENTS = {
-  code({ node, inline, className, children, ...props }) {
-    if (inline) {
-      return (
-        <code className="vr-inline-code" {...props}>
-          {children}
-        </code>
-      );
-    }
-    return <CodeBlock className={className}>{children}</CodeBlock>;
+  pre({ children }) {
+    return <CodeBlock>{children}</CodeBlock>;
+  },
+  code({ node, className, children, ...props }) {
+    return (
+      <code className={`vr-inline-code${className ? ` ${className}` : ""}`} {...props}>
+        {children}
+      </code>
+    );
+  },
+  table({ node, children, ...props }) {
+    return (
+      <div className="vr-table-wrap" role="region" aria-label="Scrollable table" tabIndex={0}>
+        <table {...props}>{children}</table>
+      </div>
+    );
   },
 };
 
 // â”€â”€â”€ Message Bubble â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function Message({ message, isStreaming, currentSteps, onRetry, onContinue, onSwitchModel }) {
+const MESSAGE_ACTION_STATUS = {
+  copied: "Copied.",
+  "copy-failed": "Clipboard is blocked. Select the text to copy it.",
+  "feedback-like": "Thanks for the feedback.",
+  "feedback-dislike": "Feedback recorded.",
+  "feedback-cleared": "Feedback cleared.",
+  "feedback-failed": "Feedback couldn't be saved. Try again.",
+  "feedback-unavailable": "Feedback isn't available for this message.",
+  shared: "Shared.",
+  "share-copied": "Sharing isn't available here, so the response was copied.",
+  "share-failed": "Couldn't share or copy the response."
+};
+
+const MESSAGE_ACTION_ERRORS = new Set([
+  "copy-failed",
+  "feedback-failed",
+  "feedback-unavailable",
+  "share-failed"
+]);
+
+function Message({
+  message,
+  isStreaming,
+  pinned = false,
+  prompt = "",
+  conversationId = "",
+  onRetry,
+  onContinue,
+  onSwitchModel,
+  onOpenSettings,
+  onContinueNewChat,
+  contextHandoffState
+}) {
   const isUser = message.role === "user";
   const status = message.status || (isStreaming ? TURN_STATUS.STREAMING : TURN_STATUS.COMPLETED);
+  const inlineRequested = wantsInlineCode(prompt);
   const streamedArtifact = useMemo(
-    () => (!isUser && isStreaming ? streamingArtifact(message.content) : null),
-    [isUser, isStreaming, message.content]
+    () =>
+      !isUser && isStreaming
+        ? message.artifact || (inlineRequested ? null : streamingArtifact(message.content))
+        : null,
+    [isUser, isStreaming, message.artifact, message.content, inlineRequested]
   );
-  const artifact = message.artifact || streamedArtifact;
+  const settledArtifact = useMemo(() => {
+    if (isUser || isStreaming) return null;
+    return artifactForTurn({
+      artifact: message.artifact,
+      content: inlineRequested && !message.artifact ? "" : message.content,
+      status: status === TURN_STATUS.COMPLETED ? "complete" : "partial"
+    });
+  }, [isUser, isStreaming, message.artifact, message.content, inlineRequested, status]);
+  const artifact = streamedArtifact || settledArtifact;
+  const streamingCode =
+    isStreaming &&
+    !artifact &&
+    !inlineRequested &&
+    Boolean(codingIntent(prompt)) &&
+    /```/.test(message.content || "");
   const displayContent = useMemo(
-    () => (artifact ? responseSummary(message.content, artifact.files) : message.content),
-    [artifact, message.content]
+    () =>
+      artifact || streamingCode
+        ? responseSummary(message.content, artifact?.files || [])
+        : message.content,
+    [artifact, streamingCode, message.content]
   );
   const notice = resolveTurnNotice(message, isStreaming);
   const presentation = notice === TURN_NOTICE.ERROR ? message.error : null;
   const saveWarning = notice === TURN_NOTICE.SAVE_WARNING ? message.saveWarning : null;
+  // Only the latest failed turn offers the recovery flow; an old context
+  // warning must not compete with the active request.
+  const contextFailure =
+    notice === TURN_NOTICE.ERROR && presentation?.category === "context_limit";
+  const apiKeyFailure =
+    notice === TURN_NOTICE.ERROR &&
+    (presentation?.category === "missing_api_key" ||
+      presentation?.category === "invalid_api_key");
+  const requestBlockedFailure =
+    notice === TURN_NOTICE.ERROR && presentation?.category === "request_blocked";
+  const contextLimit = Boolean(contextFailure && onContinueNewChat);
+  const apiKeyNotice = Boolean(apiKeyFailure && onOpenSettings);
+  const requestBlockedNotice = Boolean(requestBlockedFailure && onContinueNewChat);
+  const handoffTarget = contextLimit || apiKeyNotice || requestBlockedNotice;
+  const handoffBusy = Boolean(
+    handoffTarget &&
+    contextHandoffState?.sourceId === message.id &&
+    contextHandoffState.status === "preparing"
+  );
+  const handoffError = handoffTarget &&
+    contextHandoffState?.sourceId === message.id &&
+    contextHandoffState.status === "error"
+    ? contextHandoffState.error
+    : "";
   const canContinue = Boolean(onContinue && !isStreaming && hasRecoverableOutput(message));
   const [recovery, setRecovery] = useState("");
   const recoveryTimer = useRef(null);
 
-  useEffect(() => () => clearTimeout(recoveryTimer.current), []);
+  const [expanded, setExpanded] = useState(false);
+  const textId = useId();
+  const collapsedMessage = useMemo(
+    () => (isUser && !message.handoff ? collapseMessageText(message.content) : null),
+    [isUser, message.handoff, message.content]
+  );
+  const activityFiles = useMemo(() => {
+    if (isUser) return [];
+    if (Array.isArray(message.artifact?.files)) return message.artifact.files;
+    if (!isStreaming || inlineRequested) return [];
+    return streamingArtifact(message.content)?.files || [];
+  }, [isUser, message.artifact, message.content, isStreaming, inlineRequested]);
+  const showActivity =
+    !isUser &&
+    (isStreaming || (Array.isArray(message.activity) && message.activity.length > 0));
+
+  const [reaction, setReaction] = useState(
+    message.feedback === "like" || message.feedback === "dislike" ? message.feedback : null
+  );
+  const [feedbackPending, setFeedbackPending] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [actionStatus, setActionStatus] = useState("");
+  const actionTimer = useRef(null);
+  const copyTimer = useRef(null);
+
+  useEffect(() => {
+    setReaction(
+      message.feedback === "like" || message.feedback === "dislike" ? message.feedback : null
+    );
+  }, [message.feedback]);
+
+  useEffect(
+    () => () => {
+      clearTimeout(recoveryTimer.current);
+      clearTimeout(actionTimer.current);
+      clearTimeout(copyTimer.current);
+    },
+    []
+  );
 
   const markRecovery = useCallback((value) => {
     setRecovery(value);
     clearTimeout(recoveryTimer.current);
     recoveryTimer.current = setTimeout(() => setRecovery(""), 3000);
   }, []);
+
+  const markAction = useCallback((value) => {
+    setActionStatus(value);
+    clearTimeout(actionTimer.current);
+    actionTimer.current = setTimeout(() => setActionStatus(""), 3200);
+  }, []);
+
+  const feedbackTarget = {
+    conversationId: message.conversationId || conversationId,
+    messageId: message.messageId
+  };
+  const feedbackAvailable = canPersistFeedback(feedbackTarget);
+  const showActions =
+    !isUser &&
+    !isStreaming &&
+    status === TURN_STATUS.COMPLETED &&
+    Boolean(message.content?.trim());
 
   const handleCopyAnswer = useCallback(async () => {
     try {
@@ -333,8 +522,69 @@ function Message({ message, isStreaming, currentSteps, onRetry, onContinue, onSw
     }
   }, [message.content, markRecovery]);
 
-  const stepsToUse = isStreaming ? currentSteps : message.steps;
-  const showThoughtLine = !isUser && (isStreaming || (stepsToUse && stepsToUse.length > 0));
+  const handleCopyResponse = useCallback(async () => {
+    try {
+      await copyText(message.content);
+      setCopied(true);
+      markAction("copied");
+      clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 2000);
+    } catch {
+      markAction("copy-failed");
+    }
+  }, [message.content, markAction]);
+
+  const handleShareResponse = useCallback(async () => {
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share(sharePayload(message.content));
+        markAction("shared");
+        return;
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+      }
+    }
+    try {
+      await copyText(message.content);
+      markAction("share-copied");
+    } catch {
+      markAction("share-failed");
+    }
+  }, [message.content, markAction]);
+
+  const handleFeedback = useCallback(
+    async (value) => {
+      if (feedbackPending) return;
+      const next = nextFeedback(reaction, value);
+      const request = feedbackRequest({ ...feedbackTarget, value: next });
+      if (!request) {
+        markAction("feedback-unavailable");
+        return;
+      }
+      const previous = reaction;
+      setReaction(next);
+      setFeedbackPending(true);
+      try {
+        await saveMessageFeedback(request);
+        markAction(
+          next === "like" ? "feedback-like" : next === "dislike" ? "feedback-dislike" : "feedback-cleared"
+        );
+      } catch {
+        setReaction(previous);
+        markAction("feedback-failed");
+      } finally {
+        setFeedbackPending(false);
+      }
+    },
+    [
+      feedbackPending,
+      reaction,
+      message.conversationId,
+      message.messageId,
+      conversationId,
+      markAction
+    ]
+  );
 
   return (
     <div className={`vr-msg ${isUser ? "vr-msg--user" : `vr-msg--assistant vr-msg--${status}`}`}>
@@ -345,61 +595,76 @@ function Message({ message, isStreaming, currentSteps, onRetry, onContinue, onSw
       )}
       <div className="vr-msg-body">
         {isUser ? (
-          <>
-            {message.images?.length > 0 && (
-              <div className="vr-msg-images">
-                {message.images.map((image, index) => {
-                  const src = image.dataUrl || image.previewUrl;
-                  const label = image.name || "image";
-                  return src ? (
-                    <span key={image.id ?? index} className="vr-msg-image">
-                      <img src={src} alt={label} loading="lazy" />
-                    </span>
+          message.handoff ? (
+            <ContextHandoffCard message={message} />
+          ) : (
+            <>
+              {message.images?.length > 0 && (
+                <div className="vr-msg-images">
+                  {message.images.map((image, index) => {
+                    const src = image.dataUrl || image.previewUrl;
+                    const label = image.name || "image";
+                    return src ? (
+                      <span key={image.id ?? index} className="vr-msg-image">
+                        <img src={src} alt={label} loading="lazy" />
+                      </span>
+                    ) : (
+                      <span key={image.id ?? index} className="vr-msg-image vr-msg-image--file" title={label}>
+                        <ImageIcon size={14} aria-hidden="true" />
+                        <span>{label}</span>
+                        <em>{formatBytes(image.bytes || image.size)}</em>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+              {message.content ? (
+                <p
+                  id={textId}
+                  className={`vr-msg-text${collapsedMessage?.truncated && !expanded ? " vr-msg-text--collapsed" : ""}`}
+                >
+                  {collapsedMessage?.truncated && !expanded
+                    ? collapsedMessage.display
+                    : message.content}
+                </p>
+              ) : null}
+              {collapsedMessage?.truncated ? (
+                <button
+                  type="button"
+                  className="vr-msg-expand"
+                  aria-expanded={expanded}
+                  aria-controls={textId}
+                  onClick={() => setExpanded((value) => !value)}
+                >
+                  {expanded ? (
+                    <>
+                      <CaretUp size={11} weight="bold" aria-hidden="true" />
+                      Show less
+                    </>
                   ) : (
-                    <span key={image.id ?? index} className="vr-msg-image vr-msg-image--file" title={label}>
-                      <ImageIcon size={14} aria-hidden="true" />
-                      <span>{label}</span>
-                      <em>{formatBytes(image.bytes || image.size)}</em>
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-            {message.content ? <p className="vr-msg-text">{message.content}</p> : null}
-          </>
+                    <>
+                      <CaretDown size={11} weight="bold" aria-hidden="true" />
+                      Show more
+                    </>
+                  )}
+                </button>
+              ) : null}
+            </>
+          )
         ) : (
           <>
-            {showThoughtLine && (
-              <div className="vr-thoughtline-container">
-                <ThoughtLine
-                  working={isStreaming}
-                  steps={stepsToUse || []}
-                  label="Thinkingâ€¦"
-                  doneLabel="Thought for"
-                  glyph="sparkle"
-                  glyphColor="#d4ff3f"
-                  color="#9ca39c"
-                  fontSize={13}
-                  breathPeriod={1.6}
-                  collapsible
-                  collapseOnSettle
-                  showTimer
-                  className="vr-thought-line"
-                  renderLabel={(text, working) =>
-                    working ? (
-                      <>
-                        {text}
-                        <span className="vr-thinking vr-thinking--inline" aria-hidden="true">
-                          <span /><span /><span />
-                        </span>
-                      </>
-                    ) : (
-                      text
-                    )
-                  }
-                />
-              </div>
-            )}
+            {showActivity ? (
+              <AgentActivity
+                className="vr-activity--message"
+                events={message.activity || []}
+                files={activityFiles}
+                active={isStreaming}
+                status={status}
+                startedAt={message.startedAt}
+                completedAt={message.completedAt}
+                pinned={pinned}
+              />
+            ) : null}
             {displayContent ? (
               <div className={`vr-msg-md ${isStreaming ? "vr-streaming" : ""}`}>
                 <ReactMarkdown
@@ -412,12 +677,7 @@ function Message({ message, isStreaming, currentSteps, onRetry, onContinue, onSw
                 {isStreaming && <span className="vr-cursor" aria-hidden="true" />}
               </div>
             ) : null}
-            {artifact ? (
-              <CodeArtifact
-                artifact={artifact}
-                streaming={isStreaming}
-              />
-            ) : null}
+            {artifact && !isStreaming ? <GeneratedFiles artifact={artifact} /> : null}
             {notice === TURN_NOTICE.LENGTH ? (
               <div className="vr-truncated" role="status">
                 <Warning size={14} weight="fill" aria-hidden="true" />
@@ -485,7 +745,11 @@ function Message({ message, isStreaming, currentSteps, onRetry, onContinue, onSw
                 ) : null}
               </div>
             ) : null}
-            {notice === TURN_NOTICE.ERROR && presentation ? (
+            {notice === TURN_NOTICE.ERROR &&
+            presentation &&
+            !contextFailure &&
+            !apiKeyFailure &&
+            !requestBlockedFailure ? (
               <div className="vr-msg-error" role="alert">
                 <Warning size={16} weight="fill" aria-hidden="true" />
                 <div className="vr-msg-error-body">
@@ -516,8 +780,99 @@ function Message({ message, isStreaming, currentSteps, onRetry, onContinue, onSw
                 </div>
               </div>
             ) : null}
-            {!isStreaming && !artifact && message.content ? (
-              <MessageDownloads content={message.content} />
+            {contextLimit ? (
+              <ContextLimitNotice
+                busy={handoffBusy}
+                error={handoffError}
+                onContinue={() => onContinueNewChat(message.id)}
+              />
+            ) : null}
+            {requestBlockedNotice ? (
+              <RequestBlockedNotice
+                busy={handoffBusy}
+                error={handoffError}
+                onContinue={() => onContinueNewChat(message.id)}
+              />
+            ) : null}
+            {apiKeyNotice ? (
+              <ApiKeyNotice
+                model={presentation.model}
+                busy={handoffBusy}
+                error={handoffError}
+                onOpenSettings={onOpenSettings}
+                onChooseModel={onSwitchModel}
+                onContinueNewChat={
+                  onContinueNewChat ? () => onContinueNewChat(message.id) : undefined
+                }
+              />
+            ) : null}
+            {showActions ? (
+              <div className="vr-msg-actions" role="group" aria-label="Message actions">
+                <button
+                  type="button"
+                  className="vr-msg-action"
+                  onClick={handleCopyResponse}
+                  aria-label={copied ? "Copied" : "Copy response"}
+                  title={copied ? "Copied" : "Copy response"}
+                >
+                  {copied ? (
+                    <Check size={15} weight="bold" aria-hidden="true" />
+                  ) : (
+                    <Copy size={15} aria-hidden="true" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="vr-msg-action"
+                  aria-pressed={reaction === "like"}
+                  aria-label="Like response"
+                  title="Like response"
+                  disabled={!feedbackAvailable || feedbackPending}
+                  onClick={() => handleFeedback("like")}
+                >
+                  <ThumbsUp
+                    size={15}
+                    weight={reaction === "like" ? "fill" : "regular"}
+                    aria-hidden="true"
+                  />
+                </button>
+                <button
+                  type="button"
+                  className="vr-msg-action"
+                  aria-pressed={reaction === "dislike"}
+                  aria-label="Dislike response"
+                  title="Dislike response"
+                  disabled={!feedbackAvailable || feedbackPending}
+                  onClick={() => handleFeedback("dislike")}
+                >
+                  <ThumbsDown
+                    size={15}
+                    weight={reaction === "dislike" ? "fill" : "regular"}
+                    aria-hidden="true"
+                  />
+                </button>
+                <button
+                  type="button"
+                  className="vr-msg-action"
+                  onClick={handleShareResponse}
+                  aria-label="Share response"
+                  title="Share response"
+                >
+                  <ShareNetwork size={15} aria-hidden="true" />
+                </button>
+                {actionStatus && MESSAGE_ACTION_STATUS[actionStatus] ? (
+                  <span
+                    className={`vr-msg-action-status${
+                      MESSAGE_ACTION_ERRORS.has(actionStatus)
+                        ? " vr-msg-action-status--error"
+                        : ""
+                    }`}
+                    role="status"
+                  >
+                    {MESSAGE_ACTION_STATUS[actionStatus]}
+                  </span>
+                ) : null}
+              </div>
             ) : null}
           </>
         )}
@@ -583,6 +938,7 @@ function Sidebar({
         />
       )}
       <aside
+        id="vr-sidebar"
         className={`vr-sidebar${collapsed ? " vr-sidebar--collapsed" : ""}${
           mobileOpen ? " vr-sidebar--mobile-open" : ""
         }`}
@@ -693,7 +1049,18 @@ function Sidebar({
 
 // â”€â”€â”€ Message List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function MessageList({ messages, streamingId, loading, onRetry, onContinue, onSwitchModel, currentSteps }) {
+function MessageList({
+  messages,
+  streamingId,
+  loading,
+  conversationId = "",
+  onRetry,
+  onContinue,
+  onSwitchModel,
+  onOpenSettings,
+  onContinueNewChat,
+  contextHandoffState
+}) {
   const bottomRef = useRef(null);
   const listRef = useRef(null);
   const isNearBottom = useRef(true);
@@ -721,30 +1088,44 @@ function MessageList({ messages, streamingId, loading, onRetry, onContinue, onSw
       className="vr-message-list"
       ref={listRef}
       role="log"
-      aria-live="polite"
+      aria-live={loading ? "off" : "polite"}
       aria-label="Conversation"
     >
-      {messages.map((msg, i) => (
-        <Message
-          key={msg.id}
-          message={msg}
-          isStreaming={msg.id === streamingId}
-          currentSteps={msg.id === streamingId ? currentSteps : msg.steps || []}
-          onRetry={msg.status === TURN_STATUS.FAILED && i === messages.length - 1 ? onRetry : undefined}
-          onSwitchModel={msg.status === TURN_STATUS.FAILED && i === messages.length - 1 ? onSwitchModel : undefined}
-          onContinue={
-            msg.role === "assistant" &&
-            !loading &&
-            i === lastAssistantIndex &&
-            (msg.status === TURN_STATUS.INTERRUPTED ||
-              msg.status === TURN_STATUS.CANCELLED ||
-              msg.status === TURN_STATUS.FAILED ||
-              msg.truncated === "length")
-              ? () => onContinue?.(msg.id)
-              : undefined
-          }
-        />
-      ))}
+      {messages.map((msg, i) => {
+        const prompt =
+          msg.role === "assistant" && i > 0 && messages[i - 1].role === "user"
+            ? messages[i - 1].content || ""
+            : "";
+        const isLatestTurn = i === messages.length - 1;
+        return (
+          <Message
+            key={msg.id}
+            message={msg}
+            prompt={prompt}
+            pinned={isLatestTurn}
+            conversationId={conversationId}
+            isStreaming={msg.id === streamingId}
+            onRetry={msg.status === TURN_STATUS.FAILED && isLatestTurn ? onRetry : undefined}
+            onSwitchModel={msg.status === TURN_STATUS.FAILED && isLatestTurn ? onSwitchModel : undefined}
+            onOpenSettings={
+              msg.status === TURN_STATUS.FAILED && isLatestTurn ? onOpenSettings : undefined
+            }
+            onContinueNewChat={isLatestTurn ? onContinueNewChat : undefined}
+            contextHandoffState={contextHandoffState}
+            onContinue={
+              msg.role === "assistant" &&
+              !loading &&
+              i === lastAssistantIndex &&
+              (msg.status === TURN_STATUS.INTERRUPTED ||
+                msg.status === TURN_STATUS.CANCELLED ||
+                msg.status === TURN_STATUS.FAILED ||
+                msg.truncated === "length")
+                ? () => onContinue?.(msg.id)
+                : undefined
+            }
+          />
+        );
+      })}
       <div ref={bottomRef} aria-hidden="true" />
     </div>
   );
@@ -761,7 +1142,6 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [streamingId, setStreamingId] = useState(null);
-  const [currentSteps, setCurrentSteps] = useState([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [config, setConfig] = useState(null);
@@ -785,6 +1165,51 @@ export default function ChatPage() {
   const sendingRef = useRef(false);
   const initializedRef = useRef(false);
   const requestSeqRef = useRef(0);
+  const menuButtonRef = useRef(null);
+  const continuationGuardRef = useRef(null);
+  if (!continuationGuardRef.current) continuationGuardRef.current = createContinuationGuard();
+  const [handoffState, setHandoffState] = useState({
+    status: "idle",
+    sourceId: null,
+    error: ""
+  });
+  // A failed turn that never reached the server has no conversation document.
+  // Keep its transcript reachable from the sidebar before switching away.
+  const localChatsRef = useRef(new Map());
+  const [localChats, setLocalChats] = useState([]);
+  const sidebarConversations = useMemo(() => {
+    const known = new Set(conversations.map(conversation => conversation.id));
+    const local = localChats.filter(conversation => !known.has(conversation.id));
+    return local.length > 0 ? [...local, ...conversations] : conversations;
+  }, [conversations, localChats]);
+
+  useEffect(() => {
+    if (!mobileSidebarOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setMobileSidebarOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    const frame = requestAnimationFrame(() => {
+      document
+        .querySelector("#vr-sidebar a, #vr-sidebar button")
+        ?.focus({ preventScroll: true });
+    });
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      cancelAnimationFrame(frame);
+      const button = menuButtonRef.current;
+      if (button && document.contains(button)) button.focus({ preventScroll: true });
+    };
+  }, [mobileSidebarOpen]);
+
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 651px)");
+    const onChange = (event) => {
+      if (event.matches) setMobileSidebarOpen(false);
+    };
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
 
   function beginRequest() {
     const controller = new AbortController();
@@ -898,8 +1323,98 @@ export default function ChatPage() {
     }
   }
 
-  async function handleDeleteModel(row) {
-    if (!row?.configId) return;
+  // Starts a fresh conversation locally with a bounded handoff. The existing
+  // API creates conversations on the first chat request, so this workspace is
+  // persisted together with that first message; the old chat is never touched.
+  function preserveUnsyncedChat(sourceMessages) {
+    if (!Array.isArray(sourceMessages) || sourceMessages.length === 0) return "";
+    if (activeConvId) return "";
+    const id = `local-${generateId()}`;
+    const firstUser = sourceMessages.find(
+      message => message.role === "user" && !message.handoff && String(message.content || "").trim()
+    );
+    const title =
+      (firstUser?.content || "").replace(/\s+/g, " ").trim().slice(0, 60) || "Previous chat";
+    const entry = { id, title, updatedAt: new Date().toISOString() };
+    localChatsRef.current.set(id, { entry, messages: sourceMessages });
+    setLocalChats(previous => [entry, ...previous.filter(chat => chat.id !== id)]);
+    return id;
+  }
+
+  // Builds a bounded handoff, persists it as the first turn of a new
+  // conversation, and only then switches the workspace. A failure leaves the
+  // current conversation and its messages untouched so the action can retry.
+  async function handleContinueInNewChat(sourceId) {
+    if (sendingRef.current || loading) return;
+    const sourceIndex = messages.findIndex(message => message.id === sourceId);
+    if (sourceIndex === -1) return;
+
+    const sourceMessages = messages.slice(0, sourceIndex + 1);
+    const sourceError = messages[sourceIndex]?.error || null;
+    const modelLabel = activeRow?.name || activeRow?.model || "";
+
+    // The guard is set synchronously, so a double click cannot create two chats.
+    await continuationGuardRef.current.run(async () => {
+      setHandoffState({ status: "preparing", sourceId, error: "" });
+      try {
+        // Let the busy state paint before the summary is assembled.
+        await new Promise(resolve => setTimeout(resolve, 120));
+        const { handoff, conversation } = await prepareContinuation({
+          messages: sourceMessages,
+          sourceId,
+          modelLabel,
+          error: sourceError,
+          createConversation,
+          isUnavailable: isConversationCreateUnavailable
+        });
+
+        invalidateInFlight();
+        preserveUnsyncedChat(sourceMessages);
+        if (conversation) {
+          setConversations(previous => [
+            {
+              id: conversation.id,
+              title: conversation.title || "Continued chat",
+              messageCount: conversation.messages?.length ?? 1,
+              updatedAt: conversation.updatedAt || new Date().toISOString()
+            },
+            ...previous.filter(item => item.id !== conversation.id)
+          ]);
+        }
+        setActiveConvId(conversation?.id ?? null);
+        setMessages([
+          {
+            id: generateId(),
+            role: "user",
+            content: handoff.content,
+            handoff: {
+              goal: handoff.goal,
+              model: handoff.model,
+              files: handoff.files,
+              createdAt: Date.now()
+            }
+          }
+        ]);
+        setHandoffState({ status: "idle", sourceId: null, error: "" });
+        setNotice("");
+        setComposerWarning("");
+        setGeneratedImage(null);
+        setImageError("");
+        setMobileSidebarOpen(false);
+        requestAnimationFrame(() => {
+          document.querySelector(".vr-handoff")?.focus({ preventScroll: true });
+        });
+      } catch {
+        setHandoffState({
+          status: "error",
+          sourceId,
+          error: "Could not prepare the new chat. Your current conversation is unchanged."
+        });
+      }
+    });
+  }
+
+  async function handleDeleteModel(row) {    if (!row?.configId) return;
     const label = row.apiKeyMasked ? `${row.provider} (${row.apiKeyMasked})` : row.provider;
     if (!window.confirm(`Delete the saved configuration for ${label}? Its key and saved models are removed. Your other saved keys are not affected.`)) {
       return;
@@ -952,10 +1467,16 @@ export default function ChatPage() {
     setMobileSidebarOpen(false);
     setNotice("");
     setComposerWarning("");
-    setActiveConvId(id);
-    setMessages([]);
     setGeneratedImage(null);
     setImageError("");
+    if (String(id).startsWith("local-")) {
+      const local = localChatsRef.current.get(id);
+      setActiveConvId(id);
+      setMessages(local ? local.messages : []);
+      return;
+    }
+    setActiveConvId(id);
+    setMessages([]);
     try {
       const [conversation, artifacts] = await Promise.all([
         getConversation(id),
@@ -982,8 +1503,16 @@ export default function ChatPage() {
   }
 
   async function removeConversation(id) {
-    const title = conversations.find((conversation) => conversation.id === id)?.title;
-    if (!window.confirm(`Delete â€œ${title || "this conversation"}â€? This cannot be undone.`)) return;
+    const title =
+      conversations.find((conversation) => conversation.id === id)?.title ||
+      localChats.find((conversation) => conversation.id === id)?.title;
+    if (!window.confirm(`Delete \u201c${title || "this conversation"}\u201d? This cannot be undone.`)) return;
+    if (String(id).startsWith("local-")) {
+      localChatsRef.current.delete(id);
+      setLocalChats((prev) => prev.filter((conversation) => conversation.id !== id));
+      if (id === activeConvId) startNewConversation();
+      return;
+    }
     try {
       await deleteConversation(id);
       setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
@@ -1127,17 +1656,18 @@ export default function ChatPage() {
     const baseMessages = retryHistory ?? [...messages, userMsg];
     const history = requestHistory(baseMessages).slice(-40);
     const assistantId = generateId();
-    const initialSteps = ["Sending request"];
+    const activityRunId = generateId();
 
     setMessages([
       ...baseMessages,
-      createAssistantTurn({ id: assistantId, steps: initialSteps })
+      createAssistantTurn({ id: assistantId })
     ]);
     setLoading(true);
     setStreamingId(assistantId);
-    setCurrentSteps(initialSteps);
 
     const { controller, seq } = beginRequest();
+    const inlineRequested = wantsInlineCode(text);
+    let streamedContent = "";
 
     try {
       const result = await streamChatResponse({
@@ -1154,6 +1684,10 @@ export default function ChatPage() {
         assistantMessageId: assistantId,
         onMeta: ({ conversationId, messageId }) => {
           if (!isCurrentRequest(seq)) return;
+          if (String(activeConvId || "").startsWith("local-")) {
+            localChatsRef.current.delete(activeConvId);
+            setLocalChats((prev) => prev.filter((chat) => chat.id !== activeConvId));
+          }
           setActiveConvId(conversationId);
           setMessages((prev) => markTurnMeta(prev, assistantId, { messageId, conversationId }));
           setConversations((prev) =>
@@ -1173,20 +1707,27 @@ export default function ChatPage() {
         },
         onChunk: (chunk) => {
           if (!isCurrentRequest(seq)) return;
+          streamedContent += chunk;
           setMessages((prev) => appendTurnChunk(prev, assistantId, chunk));
         },
-        onStep: (step) => {
+        onActivity: (activity) => {
           if (!isCurrentRequest(seq)) return;
-          setCurrentSteps((prev) => (prev.includes(step) ? prev : [...prev, step]));
-          setMessages((prev) => appendTurnStep(prev, assistantId, step));
+          setMessages((prev) =>
+            recordTurnActivity(prev, assistantId, activity, { runId: activityRunId })
+          );
         },
       });
       if (!isCurrentRequest(seq)) return;
+      const finalContent =
+        typeof result?.content === "string" && result.content.trim() ? result.content : streamedContent;
+      const committedArtifact =
+        result?.artifact ||
+        (inlineRequested ? null : artifactForTurn({ content: finalContent, status: "complete" }));
       setMessages((prev) =>
         completeTurn(prev, assistantId, {
-          content: typeof result?.content === "string" ? result.content : "",
+          content: finalContent,
           messageId: result?.messageId,
-          artifact: result?.artifact || null,
+          artifact: committedArtifact,
           finishReason: result?.finishReason,
           saveWarning: result?.saveWarning ? presentSaveWarning(result.saveWarning.code) : null
         })
@@ -1206,7 +1747,8 @@ export default function ChatPage() {
           error,
           modelLabel: selectedRow?.name || modelKey,
           content: partial,
-          recoverArtifact: (status) => (partial ? artifactFromResponse(partial, { status }) : null)
+          recoverArtifact: (status) =>
+            partial && !inlineRequested ? artifactFromResponse(partial, { status }) : null
         }).messages
       );
       await refreshConversations();
@@ -1225,7 +1767,7 @@ export default function ChatPage() {
   }
 
   const CONTINUE_INSTRUCTION =
-    "Continue from exactly where you stopped. Do not repeat any previously generated text â€” output only the continuation.";
+    "Continue from exactly where you stopped. Do not repeat any previously generated text — output only the continuation.";
 
   async function handleContinue(targetId) {
     if (sendingRef.current || loading) return;
@@ -1254,13 +1796,13 @@ export default function ChatPage() {
     if (history.length === 0 || history[history.length - 1].role !== "assistant") return;
     if (sendingRef.current) return;
     sendingRef.current = true;
-    const initialSteps = ["Continuing response"];
+    const activityRunId = generateId();
     const targetArtifact = target.artifact || streamingArtifact(target.content);
     const artifactContinuation = Boolean(targetArtifact);
     const targetFile = targetArtifact?.files?.find(file => file.complete === false)?.path || "";
 
     setMessages((prev) => {
-      const next = beginContinuation(prev, targetId, initialSteps);
+      const next = beginContinuation(prev, targetId);
       return targetArtifact
         ? next.map((message) =>
             message.id === targetId && !message.artifact ? { ...message, artifact: targetArtifact } : message
@@ -1269,9 +1811,9 @@ export default function ChatPage() {
     });
     setLoading(true);
     setStreamingId(targetId);
-    setCurrentSteps(initialSteps);
 
     const { controller, seq } = beginRequest();
+    let continuationText = "";
 
     try {
       const result = await streamChatResponse({
@@ -1288,21 +1830,41 @@ export default function ChatPage() {
         assistantMessageId: target.messageId,
         continuation: { messageId: target.messageId, ...(targetFile ? { targetFile } : {}) },
         onChunk: (chunk) => {
-          if (!isCurrentRequest(seq) || artifactContinuation) return;
+          if (!isCurrentRequest(seq)) return;
+          continuationText += chunk;
+          if (artifactContinuation) return;
           setMessages((prev) => appendTurnChunk(prev, targetId, chunk));
         },
-        onStep: (step) => {
+        onActivity: (activity) => {
           if (!isCurrentRequest(seq)) return;
-          setCurrentSteps((prev) => (prev.includes(step) ? prev : [...prev, step]));
-          setMessages((prev) => appendTurnStep(prev, targetId, step));
+          setMessages((prev) =>
+            recordTurnActivity(prev, targetId, activity, { runId: activityRunId })
+          );
         },
       });
       if (!isCurrentRequest(seq)) return;
+      const backendContent = typeof result?.content === "string" ? result.content : "";
+      const mergedContent = artifactContinuation
+        ? target.content
+        : backendContent
+          ? backendContent.length >= target.content.length
+            ? backendContent
+            : mergeTextContinuation(target.content, backendContent)
+          : mergeTextContinuation(target.content, continuationText);
+      let committedArtifact = result?.artifact || null;
+      if (!committedArtifact && artifactContinuation) {
+        committedArtifact = continueArtifact(targetArtifact, continuationText || backendContent, targetFile, {
+          status: "complete"
+        });
+      }
+      if (!committedArtifact) {
+        committedArtifact = artifactForTurn({ content: backendContent || continuationText, status: "complete" });
+      }
       setMessages((prev) =>
         completeTurn(prev, targetId, {
-          content: result?.artifact ? "" : typeof result?.content === "string" ? result.content : "",
+          content: mergedContent,
           messageId: result?.messageId,
-          artifact: result?.artifact || null,
+          artifact: committedArtifact,
           finishReason: result?.finishReason,
           saveWarning: result?.saveWarning ? presentSaveWarning(result.saveWarning.code) : null
         })
@@ -1311,7 +1873,22 @@ export default function ChatPage() {
     } catch (error) {
       if (!isCurrentRequest(seq)) return;
       if (error?.name === "AbortError") {
-        setMessages((prev) => cancelTurn(prev, targetId));
+        setMessages((prev) => {
+          const withTail =
+            artifactContinuation && continuationText.trim()
+              ? prev.map((message) =>
+                  message.id === targetId
+                    ? {
+                        ...message,
+                        artifact: continueArtifact(targetArtifact, continuationText, targetFile, {
+                          status: "partial"
+                        })
+                      }
+                    : message
+                )
+              : prev;
+          return cancelTurn(withTail, targetId);
+        });
         await refreshConversations();
         return;
       }
@@ -1321,8 +1898,12 @@ export default function ChatPage() {
         settleTurnFromError(prev, targetId, {
           error,
           modelLabel: activeRow?.name || modelKey,
-          content: partial,
-          artifact: targetArtifact,
+          content: artifactContinuation ? "" : mergeTextContinuation(target.content, partial || continuationText),
+          artifact: error?.artifact || null,
+          recoverArtifact: (status) =>
+            artifactContinuation
+              ? continueArtifact(targetArtifact, continuationText || partial, targetFile, { status })
+              : null,
           preferArtifact: artifactContinuation
         }).messages
       );
@@ -1357,29 +1938,40 @@ export default function ChatPage() {
   return (
     <div className="vr-chat-layout">
       <button
+        ref={menuButtonRef}
         className="vr-mobile-menu-btn"
-        onClick={() => setMobileSidebarOpen(true)}
+        onClick={() => {
+          setSidebarCollapsed(false);
+          setMobileSidebarOpen(true);
+        }}
         aria-label="Open sidebar"
+        aria-controls="vr-sidebar"
         aria-expanded={mobileSidebarOpen}
       >
         <SidebarIcon size={20} />
       </button>
 
       <Sidebar
-        conversations={conversations}
+        conversations={sidebarConversations}
         activeId={activeConvId}
         onNew={startNewConversation}
         onSelect={selectConversation}
         onDelete={removeConversation}
         collapsed={sidebarCollapsed}
-        onToggle={() => setSidebarCollapsed((v) => !v)}
+        onToggle={() => {
+          if (window.matchMedia("(max-width: 650px)").matches) {
+            setMobileSidebarOpen(false);
+            return;
+          }
+          setSidebarCollapsed((v) => !v);
+        }}
         mobileOpen={mobileSidebarOpen}
         onMobileClose={() => setMobileSidebarOpen(false)}
         user={user}
         onSignOut={handleSignOut}
       />
 
-      <main className="vr-chat-main" id="main-content">
+      <main className="vr-chat-main" id="main-content" inert={mobileSidebarOpen || undefined}>
         <header className="vr-chat-header" aria-live="polite">
           <span className="vr-chat-header__dot" aria-hidden="true" />
           <span className="vr-chat-header__label">Chatting with</span>
@@ -1402,10 +1994,13 @@ export default function ChatPage() {
             messages={messages}
             streamingId={streamingId}
             loading={loading}
+            conversationId={activeConvId || ""}
             onRetry={handleRetry}
             onContinue={handleContinue}
             onSwitchModel={() => setOpenModelSignal((value) => value + 1)}
-            currentSteps={currentSteps}
+            onOpenSettings={() => navigate("/settings")}
+            onContinueNewChat={handleContinueInNewChat}
+            contextHandoffState={handoffState}
           />
         )}
 
@@ -1517,17 +2112,17 @@ export default function ChatPage() {
               onGenerateImage={handleGenerateImage}
               onAttach={pickAttachments}
               onDictate={handleDictate}
-              background="#111416"
-              color="#f2f4ef"
-              menuBackground="#181c20"
-              sparkColor="#d4ff3f"
+              background="#0d1524"
+              color="#e9eef7"
+              menuBackground="#111c2e"
+              sparkColor="#6c9bff"
               width="100%"
               radius={16}
               maxRows={6}
               className="vr-prompt-bar"
             />
             <p className="vr-composer-hint">
-              Enter to send Â· Shift+Enter for newline Â· Attach images with the paperclip
+              Enter to send {"\u00b7"} Shift+Enter for newline {"\u00b7"} Attach images with the paperclip
             </p>
           </div>
         </footer>

@@ -11,7 +11,11 @@
 
 import { apiClient } from "./api.js";
 import { toPayloadImages } from "../chat/attachments.js";
-import { isPersistenceFailureCode } from "../chat/chatErrors.js";
+import {
+  isFirewallBlockedResponse,
+  isPersistenceFailureCode,
+  REQUEST_BLOCKED_MESSAGE
+} from "../chat/chatErrors.js";
 import { sanitizeHistoryMessages } from "../chat/turnLifecycle.js";
 
 export class ChatConfigError extends Error {
@@ -35,7 +39,10 @@ export class ChatNetworkError extends Error {
     messageId = null,
     artifact = null,
     artifacts = [],
-    continuedFile = null
+    continuedFile = null,
+    deadline = null,
+    requestChars = null,
+    messageCount = null
   } = {}) {
     super(message);
     this.name = "ChatNetworkError";
@@ -45,6 +52,8 @@ export class ChatNetworkError extends Error {
     this.partialContent = partialContent;
     this.diagnostic = diagnostic;
     this.model = model;
+    this.requestChars = requestChars;
+    this.messageCount = messageCount;
     this.resetAt = resetAt;
     this.retryAfterSeconds = retryAfterSeconds;
     this.resetSource = resetSource;
@@ -53,6 +62,7 @@ export class ChatNetworkError extends Error {
     this.artifact = artifact;
     this.artifacts = Array.isArray(artifacts) ? artifacts : [];
     this.continuedFile = continuedFile;
+    this.deadline = deadline;
   }
 }
 
@@ -62,6 +72,35 @@ export class ChatPersistenceError extends ChatNetworkError {
     this.name = "ChatPersistenceError";
     this.stage = "persist";
   }
+}
+
+export const DEFAULT_CHAT_TIMEOUTS = Object.freeze({
+  connect: 30000,
+  idle: 120000,
+  overall: 600000
+});
+
+export const CHAT_MESSAGES = Object.freeze({
+  connection: "Can't connect to Vups Router. Try again shortly.",
+  timeout: "This is taking too long. Try again.",
+  interrupted: "The response stopped early. Continue or retry.",
+  unavailable: "This model is unavailable. Try another model.",
+  empty: "No answer received. Please try again."
+});
+
+function resolveTimeouts(overrides) {
+  const result = { ...DEFAULT_CHAT_TIMEOUTS };
+  for (const key of Object.keys(result)) {
+    const value = Number(overrides?.[key]);
+    if (Number.isFinite(value) && value > 0) result[key] = value;
+  }
+  return result;
+}
+
+function cancelledError() {
+  const error = new Error("The request was cancelled.");
+  error.name = "AbortError";
+  return error;
 }
 
 function chatEndpoint(vups = false) {
@@ -99,14 +138,34 @@ export function toRequestMessages(messages) {
  * @param {"general"|"motion"} [options.mode] Assistant behavior mode. Defaults to general.
  * @param {number} [options.temperature]
  * @param {AbortSignal} [options.signal]
+ * @param {{connect?: number, idle?: number, overall?: number}} [options.timeouts] Test override for deadlines.
  * @param {(payload: {conversationId: string}) => void} [options.onMeta] Called once with the conversation id.
  * @param {(chunk: string) => void} [options.onChunk] Called with each streamed text chunk.
  * @param {(step: string) => void} [options.onStep] Called with truthful progress steps.
+ * @param {(activity: {phase: string, message?: string}) => void} [options.onActivity] Called with structured progress events.
  * @param {string} [options.assistantMessageId] Stable client id for the assistant turn.
  * @param {{messageId: string, targetFile?: string}} [options.continuation] Continue an incomplete saved response.
  * @returns {Promise<{content: string, conversationId: string|null, messageId: string|null, finishReason: string|null, saveWarning: object|null, artifact: object|null, artifacts: object[], continuedFile: object|null}>}
  */
-export async function streamChatResponse({ conversationId, messages, model, configId, providerId, source, vups, mode, temperature, signal, onMeta, onChunk, onStep, assistantMessageId, continuation } = {}) {
+export async function streamChatResponse({
+  conversationId,
+  messages,
+  model,
+  configId,
+  providerId,
+  source,
+  vups,
+  mode,
+  temperature,
+  signal,
+  timeouts: timeoutOverrides,
+  onMeta,
+  onChunk,
+  onStep,
+  onActivity,
+  assistantMessageId,
+  continuation
+} = {}) {
   const body = {
     conversationId: conversationId || undefined,
     messages: toRequestMessages(messages),
@@ -121,261 +180,441 @@ export async function streamChatResponse({ conversationId, messages, model, conf
   if (mode === "motion" || mode === "general") body.mode = mode;
   if (typeof temperature === "number") body.temperature = temperature;
 
+  const requestChars = body.messages.reduce(
+    (total, message) => total + (message.content?.length || 0),
+    0
+  );
+  const messageCount = body.messages.length;
+
+  const timeouts = resolveTimeouts(timeoutOverrides);
+  const controller = new AbortController();
+  let deadline = null;
+  let userCancelled = false;
+
+  const onExternalAbort = () => {
+    userCancelled = true;
+    controller.abort();
+  };
+  if (signal) {
+    if (signal.aborted) onExternalAbort();
+    else signal.addEventListener("abort", onExternalAbort, { once: true });
+  }
+
+  let connectTimer = null;
+  let idleTimer = null;
+  let overallTimer = null;
+  let drainTimer = null;
+  const clearTimers = () => {
+    if (connectTimer) clearTimeout(connectTimer);
+    if (idleTimer) clearTimeout(idleTimer);
+    if (overallTimer) clearTimeout(overallTimer);
+    if (drainTimer) clearTimeout(drainTimer);
+    connectTimer = null;
+    idleTimer = null;
+    overallTimer = null;
+    drainTimer = null;
+  };
+  const trip = (kind) => {
+    if (deadline) return;
+    deadline = kind;
+    clearTimers();
+    controller.abort();
+  };
+  const armConnect = () => {
+    clearConnect();
+    connectTimer = setTimeout(() => trip("connect"), timeouts.connect);
+  };
+  const clearConnect = () => {
+    if (connectTimer) {
+      clearTimeout(connectTimer);
+      connectTimer = null;
+    }
+  };
+  const clearIdle = () => {
+    if (idleTimer) {
+      clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+  };
+  const armIdle = () => {
+    clearIdle();
+    idleTimer = setTimeout(() => trip("idle"), timeouts.idle);
+  };
+
+  const timeoutError = (partialContent = "", extra = {}) => new ChatNetworkError(
+    partialContent ? CHAT_MESSAGES.interrupted : CHAT_MESSAGES.timeout,
+    null,
+    {
+      code: partialContent ? "stream_interrupted" : "timeout",
+      deadline,
+      partialContent,
+      requestId: extra.requestId ?? null,
+      conversationId: extra.conversationId ?? null,
+      messageId: extra.messageId ?? null,
+      artifact: extra.artifact ?? null,
+      artifacts: extra.artifacts ?? [],
+      continuedFile: extra.continuedFile ?? null
+    }
+  );
+
+  const readingTimeout = (partialContent, extra) => {
+    // A timeout is a distinct outcome from a dropped connection, but a timeout
+    // after partial output is reported as an interruption so Continue stays useful.
+    if (partialContent) return timeoutError(partialContent, extra);
+    return new ChatNetworkError(CHAT_MESSAGES.timeout, null, {
+      code: "timeout",
+      deadline,
+      conversationId: extra?.conversationId ?? null,
+      messageId: extra?.messageId ?? null
+    });
+  };
+
+  if (userCancelled) throw cancelledError();
+
   onStep?.("Sending request");
+  onActivity?.({ phase: "request", message: "Sending request" });
+  armConnect();
+  overallTimer = setTimeout(() => trip("overall"), timeouts.overall);
 
-  let response;
   try {
-    response = await fetch(chatEndpoint(vups === true), {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify(body),
-      signal
-    });
-  } catch (error) {
-    if (error.name === "AbortError") throw error;
-    throw new ChatNetworkError("Could not reach the VupsRouter backend. Check your connection and try again.", null);
-  }
-
-  const responseRequestId = response.headers.get("x-request-id");
-
-  if (!response.ok) {
-    let message = `Chat request failed (HTTP ${response.status}).`;
-    let code = null;
-    let requestId = responseRequestId;
-    let diagnostic = null;
-    let model = null;
-    let resetAt = null;
-    let retryAfterSeconds = null;
-    let resetSource = null;
+    let response;
     try {
-      const data = await response.json();
-      if (typeof data?.message === "string") message = data.message;
-      if (typeof data?.code === "string") code = data.code;
-      if (typeof data?.requestId === "string") requestId = data.requestId;
-      if (data?.diagnostic && typeof data.diagnostic === "object") diagnostic = data.diagnostic;
-      if (typeof data?.model === "string") model = data.model;
-      if (typeof data?.resetAt === "string") resetAt = data.resetAt;
-      if (Number.isFinite(data?.retryAfterSeconds)) retryAfterSeconds = data.retryAfterSeconds;
-      if (typeof data?.resetSource === "string") resetSource = data.resetSource;
-    } catch {
-      /* non-JSON error body */
+      response = await fetch(chatEndpoint(vups === true), {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (deadline) throw readingTimeout("", null);
+      if (userCancelled) throw cancelledError();
+      if (error?.name === "AbortError") throw cancelledError();
+      throw new ChatNetworkError(CHAT_MESSAGES.connection, null, {
+        code: "connection_unavailable"
+      });
+    } finally {
+      clearConnect();
     }
-    throw new ChatNetworkError(message, response.status, { code, requestId, diagnostic, model, resetAt, retryAfterSeconds, resetSource });
-  }
 
-  if (!response.body) {
-    throw new ChatNetworkError("The backend returned no response stream.", null);
-  }
+    if (deadline) throw readingTimeout("", null);
 
-  onStep?.("Waiting for model");
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let fullText = "";
-  let resolvedConversationId = conversationId || null;
-  let resolvedMessageId = assistantMessageId || continuation?.messageId || null;
-  let savedMessage = null;
-  let artifact = null;
-  let artifacts = [];
-  let continuedFile = null;
-  let streamError = null;
-  let finishReason = null;
-  let saveWarning = null;
-  let sawDone = false;
-  let terminalEvent = null;
+    const responseRequestId = response.headers.get("x-request-id");
 
-  const handleLine = (line) => {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith(":") || !trimmed.startsWith("data:")) return;
-    const raw = trimmed.slice(5).trim();
-    if (!raw) return;
-    let event;
-    try {
-      event = JSON.parse(raw);
-    } catch {
-      return;
+    if (!response.ok) {
+      let message = CHAT_MESSAGES.interrupted;
+      let code = null;
+      let requestId = responseRequestId;
+      let diagnostic = null;
+      let model = null;
+      let resetAt = null;
+      let retryAfterSeconds = null;
+      let resetSource = null;
+      let bodyText = "";
+      try {
+        bodyText = await response.text();
+      } catch {
+        /* body unavailable */
+      }
+      let data = null;
+      if (bodyText) {
+        try {
+          data = JSON.parse(bodyText);
+        } catch {
+          data = null;
+        }
+      }
+      if (data && typeof data === "object") {
+        if (typeof data?.message === "string") message = data.message;
+        if (typeof data?.code === "string") code = data.code;
+        if (typeof data?.requestId === "string") requestId = data.requestId;
+        if (data?.diagnostic && typeof data.diagnostic === "object") diagnostic = data.diagnostic;
+        if (typeof data?.model === "string") model = data.model;
+        if (typeof data?.resetAt === "string") resetAt = data.resetAt;
+        if (Number.isFinite(data?.retryAfterSeconds)) retryAfterSeconds = data.retryAfterSeconds;
+        if (typeof data?.resetSource === "string") resetSource = data.resetSource;
+        if (data?.retryAfterSeconds && Number.isFinite(data.retryAfterSeconds)) {
+          const retryAt = new Date(Date.now() + data.retryAfterSeconds * 1000).toISOString();
+          if (!resetAt) resetAt = retryAt;
+        }
+      } else if (
+        isFirewallBlockedResponse(response.headers.get("content-type"), bodyText)
+      ) {
+        // An edge WAF rejection never reaches the backend, so it carries no
+        // provider evidence. Report the real cause instead of inferring one
+        // from the HTTP status.
+        message = REQUEST_BLOCKED_MESSAGE;
+        code = "request_blocked";
+      }
+      throw new ChatNetworkError(message, response.status, {
+        code,
+        requestId,
+        diagnostic,
+        model,
+        resetAt,
+        retryAfterSeconds,
+        resetSource,
+        deadline,
+        requestChars,
+        messageCount
+      });
     }
-    // Ignore every event after the turn reached a terminal stream state.
-    // A done event is authoritative: a later cleanup/error event must never
-    // turn a completed, persisted response into a failure.
-    if (terminalEvent === "done") return;
-    if (terminalEvent === "error" && event.type !== "done") return;
-    if (event.type === "meta") {
-      if (event.conversationId) {
-        resolvedConversationId = event.conversationId;
-        onMeta?.({
-          conversationId: event.conversationId,
-          ...(event.messageId ? { messageId: event.messageId } : {})
+
+    if (!response.body) {
+      throw new ChatNetworkError(CHAT_MESSAGES.empty, null, { code: "empty_stream" });
+    }
+
+    onStep?.("Waiting for model");
+    onActivity?.({ phase: "waiting", message: "Waiting for model" });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let fullText = "";
+    let resolvedConversationId = conversationId || null;
+    let resolvedMessageId = assistantMessageId || continuation?.messageId || null;
+    let savedMessage = null;
+    let artifact = null;
+    let artifacts = [];
+    let continuedFile = null;
+    let streamError = null;
+    let finishReason = null;
+    let saveWarning = null;
+    let sawDone = false;
+    let terminalEvent = null;
+
+    const handleLine = (line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith(":") || !trimmed.startsWith("data:")) return;
+      const raw = trimmed.slice(5).trim();
+      if (!raw) return;
+      let event;
+      try {
+        event = JSON.parse(raw);
+      } catch {
+        return;
+      }
+      // Ignore every event after the turn reached a terminal stream state.
+      // A done event is authoritative: a later cleanup/error event must never
+      // turn a completed, persisted response into a failure.
+      if (terminalEvent === "done") return;
+      if (terminalEvent === "error" && event.type !== "done") return;
+      if (event.type === "meta") {
+        if (event.conversationId) {
+          resolvedConversationId = event.conversationId;
+          onMeta?.({
+            conversationId: event.conversationId,
+            ...(event.messageId ? { messageId: event.messageId } : {})
+          });
+        }
+        if (event.messageId) resolvedMessageId = event.messageId;
+        return;
+      }
+      if (event.type === "progress") {
+        if (typeof event.message === "string" && event.message.trim()) onStep?.(event.message.trim());
+        onActivity?.({
+          phase: typeof event.phase === "string" && event.phase ? event.phase : "progress",
+          ...(typeof event.message === "string" ? { message: event.message } : {})
         });
+        return;
       }
-      if (event.messageId) resolvedMessageId = event.messageId;
-      return;
-    }
-    if (event.type === "progress") {
-      if (typeof event.message === "string" && event.message.trim()) onStep?.(event.message.trim());
-      return;
-    }
-    if (event.type === "delta") {
-      if (event.content) {
-        if (!fullText) onStep?.("Receiving response");
-        fullText += event.content;
-        onChunk?.(event.content);
+      if (event.type === "delta") {
+        if (event.content) {
+          if (!fullText) {
+            onStep?.("Receiving response");
+            onActivity?.({ phase: "responding", message: "Receiving response" });
+          }
+          fullText += event.content;
+          onChunk?.(event.content);
+        }
+        return;
       }
-      return;
-    }
-    if (event.type === "done") {
-      terminalEvent = "done";
-      streamError = null;
-      sawDone = true;
-      if (event.conversationId) resolvedConversationId = event.conversationId;
-      if (event.messageId) resolvedMessageId = event.messageId;
-      if (event.message?.content) savedMessage = event.message;
-      if (event.artifact) artifact = event.artifact;
-      if (Array.isArray(event.artifacts)) artifacts = event.artifacts;
-      if (event.continuedFile) continuedFile = event.continuedFile;
-      if (typeof event.finishReason === "string" && event.finishReason) {
-        finishReason = event.finishReason;
+      if (event.type === "done") {
+        terminalEvent = "done";
+        // The answer is complete; transport deadlines no longer apply.
+        clearTimers();
+        streamError = null;
+        sawDone = true;
+        if (event.conversationId) resolvedConversationId = event.conversationId;
+        if (event.messageId) resolvedMessageId = event.messageId;
+        if (event.message?.content) savedMessage = event.message;
+        if (event.artifact) artifact = event.artifact;
+        if (Array.isArray(event.artifacts)) artifacts = event.artifacts;
+        if (event.continuedFile) continuedFile = event.continuedFile;
+        if (typeof event.finishReason === "string" && event.finishReason) {
+          finishReason = event.finishReason;
+        }
+        if (event.saveWarning && typeof event.saveWarning === "object") {
+          saveWarning = {
+            code: typeof event.saveWarning.code === "string" ? event.saveWarning.code : "save_failed",
+            message: typeof event.saveWarning.message === "string" ? event.saveWarning.message : ""
+          };
+        } else if (typeof event.saveWarning === "string" && event.saveWarning.trim()) {
+          saveWarning = { code: "save_failed", message: event.saveWarning.trim() };
+        }
+        onStep?.("Response complete");
+        return;
       }
-      if (event.saveWarning && typeof event.saveWarning === "object") {
-        saveWarning = {
-          code: typeof event.saveWarning.code === "string" ? event.saveWarning.code : "save_failed",
-          message: typeof event.saveWarning.message === "string" ? event.saveWarning.message : ""
+      if (event.type === "error") {
+        terminalEvent = "error";
+        clearTimers();
+        // Keep a short drain window so a done event already in flight can
+        // still win, then close the socket ourselves.
+        drainTimer = setTimeout(() => {
+          drainTimer = null;
+          reader.cancel().catch(() => {});
+        }, 2000);
+        if (event.conversationId) resolvedConversationId = event.conversationId;
+        if (event.messageId) resolvedMessageId = event.messageId;
+        if (event.artifact) artifact = event.artifact;
+        if (Array.isArray(event.artifacts)) artifacts = event.artifacts;
+        if (event.continuedFile) continuedFile = event.continuedFile;
+        streamError = {
+          message: event.message || CHAT_MESSAGES.interrupted,
+          code: typeof event.code === "string" ? event.code : null,
+          requestId:
+            typeof event.requestId === "string" ? event.requestId : responseRequestId,
+          diagnostic: event.diagnostic && typeof event.diagnostic === "object" ? event.diagnostic : null,
+          model: typeof event.model === "string" ? event.model : null,
+          resetAt: typeof event.resetAt === "string" ? event.resetAt : null,
+          retryAfterSeconds: Number.isFinite(event.retryAfterSeconds) ? event.retryAfterSeconds : null,
+          resetSource: typeof event.resetSource === "string" ? event.resetSource : null,
+          conversationId: event.conversationId || resolvedConversationId,
+          messageId: event.messageId || resolvedMessageId,
+          artifact,
+          artifacts,
+          continuedFile
         };
-      } else if (typeof event.saveWarning === "string" && event.saveWarning.trim()) {
-        saveWarning = { code: "save_failed", message: event.saveWarning.trim() };
       }
-      onStep?.("Response complete");
-      return;
-    }
-    if (event.type === "error") {
-      terminalEvent = "error";
-      if (event.conversationId) resolvedConversationId = event.conversationId;
-      if (event.messageId) resolvedMessageId = event.messageId;
-      if (event.artifact) artifact = event.artifact;
-      if (Array.isArray(event.artifacts)) artifacts = event.artifacts;
-      if (event.continuedFile) continuedFile = event.continuedFile;
-      streamError = {
-        message: event.message || "The provider reported an error.",
-        code: typeof event.code === "string" ? event.code : null,
-        requestId:
-          typeof event.requestId === "string" ? event.requestId : responseRequestId,
-        diagnostic: event.diagnostic && typeof event.diagnostic === "object" ? event.diagnostic : null,
-        model: typeof event.model === "string" ? event.model : null,
-        resetAt: typeof event.resetAt === "string" ? event.resetAt : null,
-        retryAfterSeconds: Number.isFinite(event.retryAfterSeconds) ? event.retryAfterSeconds : null,
-        resetSource: typeof event.resetSource === "string" ? event.resetSource : null,
-        conversationId: event.conversationId || resolvedConversationId,
-        messageId: event.messageId || resolvedMessageId,
-        artifact,
-        artifacts,
-        continuedFile
-      };
-    }
-  };
-
-  const consume = (text) => {
-    buffer += text;
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) handleLine(line);
-  };
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      consume(decoder.decode(value, { stream: true }));
-    }
-    buffer += decoder.decode();
-    for (const line of buffer.split("\n")) handleLine(line);
-  } catch (error) {
-    if (error.name === "AbortError" || signal?.aborted) throw error;
-    // A confirmed done event wins over a later transport hiccup.
-    if (!sawDone) {
-      throw new ChatNetworkError(
-        fullText
-          ? "The response stream was interrupted. The partial answer was kept — use Continue generating to finish it."
-          : "The response stream was interrupted. Please try again.",
-        null,
-        {
-          code: "stream_interrupted",
-          requestId: responseRequestId,
-          partialContent: fullText,
-          conversationId: resolvedConversationId,
-          messageId: resolvedMessageId,
-          artifact,
-          artifacts,
-          continuedFile
-        }
-      );
-    }
-  }
-
-  if (streamError) {
-    const options = {
-      code: streamError.code,
-      requestId: streamError.requestId,
-      partialContent: fullText,
-      diagnostic: streamError.diagnostic,
-      model: streamError.model,
-      resetAt: streamError.resetAt,
-      retryAfterSeconds: streamError.retryAfterSeconds,
-      resetSource: streamError.resetSource,
-      conversationId: streamError.conversationId,
-      messageId: streamError.messageId,
-      artifact: streamError.artifact,
-      artifacts: streamError.artifacts,
-      continuedFile: streamError.continuedFile
     };
-    if (isPersistenceFailureCode(streamError.code)) {
-      throw new ChatPersistenceError(streamError.message, options);
-    }
-    throw new ChatNetworkError(streamError.message, null, options);
-  }
-  if (!sawDone) {
-    if (fullText) {
-      throw new ChatNetworkError(
-        "The response ended before the model signalled completion. The partial answer was kept — use Continue generating to finish it.",
-        null,
-        {
-          code: "stream_interrupted",
-          requestId: responseRequestId,
-          partialContent: fullText,
-          conversationId: resolvedConversationId,
-          messageId: resolvedMessageId,
-          artifact,
-          artifacts,
-          continuedFile
-        }
-      );
-    }
-    throw new ChatNetworkError("The provider returned an empty response. Check the model ID in Settings.", null, {
-      code: "empty_stream",
-      requestId: responseRequestId,
-      conversationId: resolvedConversationId,
-      messageId: resolvedMessageId
-    });
-  }
-  if (!fullText.trim() && !savedMessage?.content?.trim() && !artifact) {
-    throw new ChatNetworkError("The provider returned an empty response. Check the model ID in Settings.", null, {
-      code: "empty_stream",
-      requestId: responseRequestId,
-      conversationId: resolvedConversationId,
-      messageId: resolvedMessageId
-    });
-  }
 
-  return {
-    content: savedMessage?.content ?? fullText,
-    rawContent: fullText,
-    message: savedMessage,
-    conversationId: resolvedConversationId,
-    messageId: resolvedMessageId,
-    finishReason,
-    saveWarning,
-    artifact,
-    artifacts,
-    continuedFile
-  };
+    const consume = (text) => {
+      buffer += text;
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) handleLine(line);
+    };
+
+    const streamContext = () => ({
+      requestId: responseRequestId,
+      conversationId: resolvedConversationId,
+      messageId: resolvedMessageId,
+      artifact,
+      artifacts,
+      continuedFile
+    });
+
+    try {
+      armIdle();
+      while (true) {
+        const { done, value } = await reader.read();
+        armIdle();
+        if (done) break;
+        consume(decoder.decode(value, { stream: true }));
+        // A done event closes the turn even if the server holds the
+        // connection open; do not wait on a socket that may never end.
+        // An error event may still be superseded by a later done event.
+        if (terminalEvent === "done") {
+          await reader.cancel().catch(() => {});
+          break;
+        }
+      }
+      buffer += decoder.decode();
+      for (const line of buffer.split("\n")) handleLine(line);
+    } catch (error) {
+      if (deadline) throw readingTimeout(fullText, streamContext());
+      if (userCancelled) throw cancelledError();
+      if (error?.name === "AbortError" || signal?.aborted) throw cancelledError();
+      // A confirmed done event wins over a later transport hiccup.
+      if (!sawDone) {
+        throw new ChatNetworkError(
+          CHAT_MESSAGES.interrupted,
+          null,
+          {
+            code: "stream_interrupted",
+            requestId: responseRequestId,
+            partialContent: fullText,
+            conversationId: resolvedConversationId,
+            messageId: resolvedMessageId,
+            artifact,
+            artifacts,
+            continuedFile
+          }
+        );
+      }
+    } finally {
+      clearIdle();
+    }
+
+    if (streamError) {
+      const options = {
+        code: streamError.code,
+        requestId: streamError.requestId,
+        partialContent: fullText,
+        diagnostic: streamError.diagnostic,
+        model: streamError.model,
+        resetAt: streamError.resetAt,
+        retryAfterSeconds: streamError.retryAfterSeconds,
+        resetSource: streamError.resetSource,
+        conversationId: streamError.conversationId,
+        messageId: streamError.messageId,
+        artifact: streamError.artifact,
+        artifacts: streamError.artifacts,
+        continuedFile: streamError.continuedFile,
+        requestChars,
+        messageCount
+      };
+      if (isPersistenceFailureCode(streamError.code)) {
+        throw new ChatPersistenceError(streamError.message, options);
+      }
+      throw new ChatNetworkError(streamError.message, null, options);
+    }
+    if (!sawDone) {
+      if (fullText) {
+        throw new ChatNetworkError(
+          CHAT_MESSAGES.interrupted,
+          null,
+          {
+            code: "stream_interrupted",
+            requestId: responseRequestId,
+            partialContent: fullText,
+            conversationId: resolvedConversationId,
+            messageId: resolvedMessageId,
+            artifact,
+            artifacts,
+            continuedFile
+          }
+        );
+      }
+      throw new ChatNetworkError(CHAT_MESSAGES.empty, null, {
+        code: "empty_stream",
+        requestId: responseRequestId,
+        conversationId: resolvedConversationId,
+        messageId: resolvedMessageId
+      });
+    }
+    if (!fullText.trim() && !savedMessage?.content?.trim() && !artifact) {
+      throw new ChatNetworkError(CHAT_MESSAGES.empty, null, {
+        code: "empty_stream",
+        requestId: responseRequestId,
+        conversationId: resolvedConversationId,
+        messageId: resolvedMessageId
+      });
+    }
+
+    return {
+      content: savedMessage?.content ?? fullText,
+      rawContent: fullText,
+      message: savedMessage,
+      conversationId: resolvedConversationId,
+      messageId: resolvedMessageId,
+      finishReason,
+      saveWarning,
+      artifact,
+      artifacts,
+      continuedFile
+    };
+  } finally {
+    clearTimers();
+    signal?.removeEventListener("abort", onExternalAbort);
+  }
 }
