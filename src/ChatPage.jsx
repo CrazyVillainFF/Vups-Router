@@ -365,7 +365,6 @@ const MESSAGE_ACTION_ERRORS = new Set([
 function Message({
   message,
   isStreaming,
-  pinned = false,
   prompt = "",
   conversationId = "",
   onRetry,
@@ -662,7 +661,6 @@ function Message({
                 status={status}
                 startedAt={message.startedAt}
                 completedAt={message.completedAt}
-                pinned={pinned}
               />
             ) : null}
             {displayContent ? (
@@ -1102,7 +1100,6 @@ function MessageList({
             key={msg.id}
             message={msg}
             prompt={prompt}
-            pinned={isLatestTurn}
             conversationId={conversationId}
             isStreaming={msg.id === streamingId}
             onRetry={msg.status === TURN_STATUS.FAILED && isLatestTurn ? onRetry : undefined}

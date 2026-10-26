@@ -29,6 +29,27 @@ export function isActiveActivity(turnStatus) {
   return ACTIVE_TURN_STATUSES.has(turnStatus);
 }
 
+/** How long a settled turn keeps its steps on screen so they tick green first. */
+export const ACTIVITY_COLLAPSE_HOLD_MS = 700;
+
+/**
+ * Whether a finished turn should fold its step list away by itself.
+ *
+ * A turn the reader never watched run (loaded from history) is already folded,
+ * so it must not animate, and a reader who opened the steps themselves keeps
+ * them open. A failed turn stays expanded because the failing step is the
+ * answer to "what went wrong".
+ */
+export function shouldAutoCollapseActivity({
+  active = false,
+  status = ACTIVITY_STATUS.COMPLETED,
+  userToggled = false,
+  ranLive = false
+} = {}) {
+  if (active || !ranLive || userToggled) return false;
+  return status !== ACTIVITY_STATUS.FAILED;
+}
+
 function cleanProgress(message) {
   return String(message || "")
     .replace(/(?:\uFFFD|â€¦|\u2026)[\s\S]*$/u, "")

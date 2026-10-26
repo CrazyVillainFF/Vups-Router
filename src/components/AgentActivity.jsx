@@ -7,10 +7,12 @@ import {
   WarningCircle
 } from "@phosphor-icons/react";
 import {
+  ACTIVITY_COLLAPSE_HOLD_MS,
   ACTIVITY_STATUS,
   formatElapsed,
   measuredSeconds,
-  mergeActivityFiles
+  mergeActivityFiles,
+  shouldAutoCollapseActivity
 } from "../chat/activity.js";
 import { generationProgress } from "../chat/progress.js";
 import ThoughtLine from "./reactbits/ThoughtLine.jsx";
@@ -47,24 +49,35 @@ export default function AgentActivity({
   status = ACTIVITY_STATUS.COMPLETED,
   startedAt = null,
   completedAt = null,
-  pinned = false,
   className = ""
 }) {
   const rows = useMemo(() => mergeActivityFiles(events, files), [events, files]);
-  // The live timeline opens itself so the thoughts are visible while the turn
-  // runs, then stays readable until a newer turn takes over.
+  // A live turn is expanded while it works; a turn loaded from history mounts
+  // folded so reopening the transcript never flashes a wall of steps.
   const [open, setOpen] = useState(active);
+  const [userToggled, setUserToggled] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const panelRef = useRef(null);
+  const ranLiveRef = useRef(active);
   const panelId = useId();
 
   useEffect(() => {
-    if (active) setOpen(true);
+    if (!active) return undefined;
+    ranLiveRef.current = true;
+    setOpen(true);
   }, [active]);
 
   useEffect(() => {
-    if (!pinned) setOpen(false);
-  }, [pinned]);
+    const fold = shouldAutoCollapseActivity({
+      active,
+      status,
+      userToggled,
+      ranLive: ranLiveRef.current
+    });
+    if (!fold) return undefined;
+    const timer = setTimeout(() => setOpen(false), ACTIVITY_COLLAPSE_HOLD_MS);
+    return () => clearTimeout(timer);
+  }, [active, status, userToggled]);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -94,12 +107,6 @@ export default function AgentActivity({
     [events, files, active, startedAt, now]
   );
 
-  const elapsed =
-    active
-      ? progress?.elapsed || ""
-      : firstStartedAt != null
-        ? formatElapsed((lastEndedAt ?? now) - firstStartedAt)
-        : "";
   const stateLabel = active
     ? progress?.label || "Thinking\u2026"
     : STATUS_TEXT[status] || "Completed";
@@ -127,9 +134,50 @@ export default function AgentActivity({
           : "Thought for";
   const countLabel = `${rows.length} ${rows.length === 1 ? "step" : "steps"}`;
   const detail = active ? progress?.detail || "" : "";
-  const statusBits = [stateLabel, elapsed, detail, rows.length > 0 ? countLabel : ""].filter(Boolean);
+  const hasTrace = rows.length > 0;
 
   if (rows.length === 0 && !active) return null;
+
+  const toggle = () => {
+    setUserToggled(true);
+    setOpen(value => !value);
+  };
+
+  const head = (
+    <>
+      <span className="vr-activity__chevron" aria-hidden="true">
+        <CaretDown size={12} weight="bold" />
+      </span>
+      <ThoughtLine
+        className="vr-activity__thought"
+        working={active}
+        label={stateLabel}
+        doneLabel={doneLabel}
+        glyph="sparkle"
+        // A concrete color keeps the shimmer gradient readable; currentColor
+        // would resolve against the transparent text fill.
+        color={active ? "var(--accent)" : "#c7d2e3"}
+        fontSize={13}
+        breathPeriod={1.6}
+        breathDepth={0.45}
+        settleDuration={350}
+        settleBlur={2}
+        collapsible={false}
+        collapseOnSettle={false}
+        showTimer={active || elapsedSeconds != null}
+        elapsed={elapsedSeconds}
+      />
+      {detail ? (
+        <>
+          <span className="vr-activity__dot vr-activity__dot--optional" aria-hidden="true">·</span>
+          <span className="vr-activity__meta" title={detail} aria-hidden="true">{detail}</span>
+        </>
+      ) : null}
+      {hasTrace ? (
+        <span className="vr-activity__count" aria-hidden="true">{countLabel}</span>
+      ) : null}
+    </>
+  );
 
   return (
     <section
@@ -138,82 +186,61 @@ export default function AgentActivity({
       data-open={open ? "" : undefined}
       aria-label="Agent activity"
     >
-      <div className="vr-activity__head">
-        {rows.length > 0 ? (
-          <button
-            type="button"
-            className="vr-activity__toggle"
-            aria-expanded={open}
-            aria-controls={panelId}
-            aria-label={`${statusBits.join(" \u00b7 ")}. ${open ? "Collapse" : "Expand"} activity details`}
-            onClick={() => setOpen(value => !value)}
-          >
-            <span className="vr-activity__chevron" aria-hidden="true">
-              <CaretDown size={12} weight="bold" />
-            </span>
-          </button>
-        ) : null}
-        <ThoughtLine
-          className="vr-activity__thought"
-          working={active}
-          label={stateLabel}
-          doneLabel={doneLabel}
-          glyph="sparkle"
-          // A concrete color keeps the shimmer gradient readable; currentColor
-          // would resolve against the transparent text fill.
-          color={active ? "var(--accent)" : "#c7d2e3"}
-          fontSize={13}
-          breathPeriod={1.6}
-          breathDepth={0.45}
-          settleDuration={350}
-          settleBlur={2}
-          collapsible={false}
-          collapseOnSettle={false}
-          showTimer={active || elapsedSeconds != null}
-          elapsed={elapsedSeconds}
-        />
-        {detail ? (
-          <>
-            <span className="vr-activity__dot vr-activity__dot--optional" aria-hidden="true">·</span>
-            <span className="vr-activity__meta" title={detail} aria-hidden="true">{detail}</span>
-          </>
-        ) : null}
-        {rows.length > 0 ? (
-          <span className="vr-activity__count" aria-hidden="true">{countLabel}</span>
-        ) : null}
-      </div>
+      {hasTrace ? (
+        <button
+          type="button"
+          className="vr-activity__head"
+          aria-expanded={open}
+          aria-controls={panelId}
+          onClick={toggle}
+        >
+          {head}
+        </button>
+      ) : (
+        <div className="vr-activity__head">{head}</div>
+      )}
 
-      <div className="vr-activity__panel" id={panelId} hidden={!open} ref={panelRef}>
-        <ul className="vr-activity__list">
-          {rows.map((event, index) => {
-            const duration = rowDuration(event);
-            return (
-              <li
-                key={event.id || `${event.phase}-${index}`}
-                className="vr-activity__row"
-                data-status={event.status}
-              >
-                <span className="vr-activity__mark" aria-hidden="true">
-                  {rowIcon(event.status)}
-                </span>
-                <span className="vr-activity__label">
-                  <span className="vr-activity__text">{event.label}</span>
-                  {event.filePath ? (
-                    <code className="vr-activity__file" title={event.filePath}>
-                      {baseName(event.filePath)}
-                    </code>
-                  ) : null}
-                  {event.summary ? (
-                    <span className="vr-activity__summary">{event.summary}</span>
-                  ) : null}
-                </span>
-                {duration ? (
-                  <span className="vr-activity__duration" aria-hidden="true">{duration}</span>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
+      <div className="vr-activity__trace" data-open={open ? "" : undefined}>
+        <div className="vr-activity__fold">
+          <div
+            className="vr-activity__panel"
+            id={panelId}
+            ref={panelRef}
+            aria-hidden={open ? undefined : "true"}
+            inert={open ? undefined : true}
+          >
+            <ul className="vr-activity__list">
+              {rows.map((event, index) => {
+                const duration = rowDuration(event);
+                return (
+                  <li
+                    key={event.id || `${event.phase}-${index}`}
+                    className="vr-activity__row"
+                    data-status={event.status}
+                  >
+                    <span className="vr-activity__mark" aria-hidden="true">
+                      {rowIcon(event.status)}
+                    </span>
+                    <span className="vr-activity__label">
+                      <span className="vr-activity__text">{event.label}</span>
+                      {event.filePath ? (
+                        <code className="vr-activity__file" title={event.filePath}>
+                          {baseName(event.filePath)}
+                        </code>
+                      ) : null}
+                      {event.summary ? (
+                        <span className="vr-activity__summary">{event.summary}</span>
+                      ) : null}
+                    </span>
+                    {duration ? (
+                      <span className="vr-activity__duration" aria-hidden="true">{duration}</span>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
       </div>
 
       <span className="sr-only" role="status">

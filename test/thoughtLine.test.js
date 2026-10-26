@@ -68,12 +68,19 @@ test("the shimmer gradient keeps the working label visible", () => {
   assert.match(rule, /currentColor|var\(--tl-color\)/);
 });
 
-test("the live timeline opens itself and settles with the latest turn", () => {
+test("the live timeline opens while the turn runs and folds after it settles", () => {
   const agent = read("src/components/AgentActivity.jsx");
   assert.match(agent, /const \[open, setOpen\] = useState\(active\)/);
-  assert.match(agent, /if \(active\) setOpen\(true\)/);
-  assert.match(agent, /if \(!pinned\) setOpen\(false\)/);
-  assert.doesNotMatch(agent, /setTimeout\(\(\) => setOpen\(false\), 600\)/);
+  assert.match(agent, /const \[userToggled, setUserToggled\] = useState\(false\)/);
+  assert.match(agent, /const ranLiveRef = useRef\(active\)/);
+  assert.match(agent, /ranLiveRef\.current = true;\s*setOpen\(true\)/);
+  assert.match(
+    agent,
+    /shouldAutoCollapseActivity\(\{\s*active,\s*status,\s*userToggled,\s*ranLive: ranLiveRef\.current\s*\}\)/
+  );
+  assert.match(agent, /setTimeout\(\(\) => setOpen\(false\), ACTIVITY_COLLAPSE_HOLD_MS\)/);
+  assert.match(agent, /return \(\) => clearTimeout\(timer\)/);
+  assert.doesNotMatch(agent, /pinned/);
 });
 
 test("thinking labels come from the real stream phase", () => {

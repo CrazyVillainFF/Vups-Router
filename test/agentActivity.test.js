@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  ACTIVITY_COLLAPSE_HOLD_MS,
   ACTIVITY_STATUS,
   activityFromArtifact,
   applyActivityProgress,
@@ -11,7 +12,8 @@ import {
   progressEvent,
   progressFilePath,
   progressLabel,
-  settleActivity
+  settleActivity,
+  shouldAutoCollapseActivity
 } from "../src/chat/activity.js";
 import {
   TURN_STATUS,
@@ -170,12 +172,81 @@ test("the activity timeline uses real events, accessible controls, and no fake r
   assert.match(agent, /mergeActivityFiles\(events, files\)/);
   assert.match(agent, /aria-expanded=\{open\}/);
   assert.match(agent, /aria-controls=\{panelId\}/);
-  assert.match(agent, /hidden=\{!open\}/);
+  assert.match(agent, /inert=\{open \? undefined : true\}/);
+  assert.match(agent, /aria-hidden=\{open \? undefined : "true"\}/);
+  assert.doesNotMatch(agent, /hidden=\{!open\}/, "display:none would skip the collapse animation");
   assert.match(agent, /role="status"/);
   assert.match(agent, /formatElapsed/);
-  assert.match(agent, /if \(active\) setOpen\(true\)/);
-  assert.match(agent, /if \(!pinned\) setOpen\(false\)/);
   assert.doesNotMatch(agent, /chain of thought|tool_calls|internal prompt/i);
+});
+
+test("a settled turn folds its steps, a failure keeps them open", () => {
+  assert.equal(ACTIVITY_COLLAPSE_HOLD_MS, 700);
+
+  // Still streaming: expanded with live progress.
+  assert.equal(shouldAutoCollapseActivity({ active: true, ranLive: true }), false);
+  // The generating -> complete transition is what triggers the fold.
+  assert.equal(
+    shouldAutoCollapseActivity({ active: false, status: "completed", ranLive: true }),
+    true
+  );
+  assert.equal(
+    shouldAutoCollapseActivity({ active: false, status: TURN_STATUS.CANCELLED, ranLive: true }),
+    true
+  );
+  // A turn the reader never watched run is history: already folded, never animated.
+  assert.equal(
+    shouldAutoCollapseActivity({ active: false, status: "completed", ranLive: false }),
+    false
+  );
+  // A manual open wins for the rest of the message.
+  assert.equal(
+    shouldAutoCollapseActivity({
+      active: false,
+      status: "completed",
+      ranLive: true,
+      userToggled: true
+    }),
+    false
+  );
+  // Failure keeps the steps visible so the red row can be read.
+  for (const status of [TURN_STATUS.FAILED, ACTIVITY_STATUS.FAILED]) {
+    assert.equal(
+      shouldAutoCollapseActivity({ active: false, status, ranLive: true }),
+      false,
+      `failed turns stay expanded (${status})`
+    );
+  }
+});
+
+test("the fold animates height and opacity instead of toggling display", () => {
+  const agent = read("src/components/AgentActivity.jsx");
+  const css = read("src/components/AgentActivity.css");
+  assert.match(agent, /className="vr-activity__trace" data-open=\{open \? "" : undefined\}/);
+  assert.match(agent, /className="vr-activity__fold"/);
+  assert.match(
+    css,
+    /\.vr-activity__trace\s*\{[^}]*grid-template-rows:\s*0fr[^}]*transition:\s*grid-template-rows 250ms ease/s
+  );
+  assert.match(css, /\.vr-activity__trace\[data-open\]\s*\{[^}]*grid-template-rows:\s*1fr/s);
+  assert.match(css, /\.vr-activity__fold\s*\{[^}]*min-height:\s*0[^}]*overflow:\s*hidden/s);
+  assert.match(css, /\.vr-activity__panel\s*\{[^}]*opacity:\s*0[^}]*transition:\s*opacity 250ms ease/s);
+  assert.match(
+    css,
+    /\.vr-activity__trace\[data-open\] \.vr-activity__panel\s*\{[^}]*opacity:\s*1/s
+  );
+  assert.doesNotMatch(css, /\.vr-activity__panel\[hidden\]/);
+  const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/)?.[1] || "";
+  assert.match(reduced, /\.vr-activity__trace,[\s\S]*?transition:\s*none/);
+});
+
+test("the whole header row toggles the timeline", () => {
+  const agent = read("src/components/AgentActivity.jsx");
+  const css = read("src/components/AgentActivity.css");
+  assert.match(agent, /className="vr-activity__head"[\s\S]*?aria-expanded=\{open\}/);
+  assert.match(agent, /const toggle = \(\) => \{\s*setUserToggled\(true\);\s*setOpen\(value => !value\);/);
+  assert.match(css, /\.vr-activity__head\s*\{[^}]*cursor:\s*pointer/s);
+  assert.doesNotMatch(css, /\.vr-activity__toggle/);
 });
 
 test("chat forwards real activity into the assistant turn that produced it", () => {
@@ -186,7 +257,7 @@ test("chat forwards real activity into the assistant turn that produced it", () 
   assert.match(page, /<AgentActivity[\s\S]*?events=\{message\.activity \|\| \[\]\}/);
   assert.match(page, /files=\{activityFiles\}/);
   assert.match(page, /active=\{isStreaming\}/);
-  assert.match(page, /pinned=\{pinned\}/);
+  assert.doesNotMatch(page, /pinned/);
   assert.doesNotMatch(page, /progressTurn|progressFiles|showProgress/);
   assert.doesNotMatch(page, /initialSteps|appendTurnStep/);
 });

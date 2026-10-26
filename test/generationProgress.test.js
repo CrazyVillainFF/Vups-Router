@@ -143,7 +143,6 @@ test("the thinking line rises with the assistant message instead of the composer
   assert.match(page, /events=\{message\.activity \|\| \[\]\}/);
   assert.match(page, /files=\{activityFiles\}/);
   assert.match(page, /active=\{isStreaming\}/);
-  assert.match(page, /pinned=\{pinned\}/);
   assert.match(page, /const showActivity =\s*!isUser &&\s*\(isStreaming \|\| \(Array\.isArray\(message\.activity\)/);
   assert.doesNotMatch(page, /progressTurn|progressFiles|showProgress/);
   const css = read("src/components/AgentActivity.css");
@@ -151,7 +150,7 @@ test("the thinking line rises with the assistant message instead of the composer
   assert.match(css, /\.vr-activity--message \.vr-activity__thought\s*\{[^}]*max-width:\s*100%/s);
   assert.doesNotMatch(read("src/chat.css"), /\.vr-activity--composer/);
   assert.match(agentSource(), /if \(rows\.length === 0 && !active\) return null/);
-  assert.match(agentSource(), /hidden=\{!open\}/);
+  assert.match(agentSource(), /className="vr-activity__trace"/);
 });
 
 test("downloads stay hidden until a complete artifact is committed", () => {

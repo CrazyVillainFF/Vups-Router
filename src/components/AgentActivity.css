@@ -21,6 +21,8 @@
   background: rgba(148, 163, 184, 0.055);
 }
 
+/* The whole header row is the toggle, so the steps can be reopened from the
+   label as easily as from the chevron. */
 .vr-activity__head {
   display: flex;
   align-items: center;
@@ -29,42 +31,31 @@
   min-width: 0;
   min-height: 28px;
   padding: 3px 4px;
+  border: 0;
   border-radius: 6px;
+  background: none;
   color: inherit;
   font: 400 12.5px/1.2 "Outfit", sans-serif;
   text-align: left;
-}
-
-.vr-activity__toggle {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  flex: none;
-  border: 0;
-  border-radius: 4px;
-  background: none;
-  color: var(--muted-soft);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
-.vr-activity__toggle:hover {
-  background: rgba(148, 163, 184, 0.1);
-  color: var(--ink);
-}
-
-.vr-activity__toggle:focus-visible {
+.vr-activity__head:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+.vr-activity__head:hover .vr-activity__chevron {
+  color: var(--ink);
 }
 
 .vr-activity__chevron {
   display: grid;
   place-items: center;
+  width: 18px;
   flex: none;
-  color: inherit;
+  color: var(--muted-soft);
   transition: transform 0.18s ease;
 }
 
@@ -114,15 +105,34 @@
   flex: none;
 }
 
+/* Height is animated with the grid 1fr -> 0fr trick: display:none would skip
+   the transition, and a fixed max-height would snap past short step lists. */
+.vr-activity__trace {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 250ms ease;
+}
+
+.vr-activity__trace[data-open] {
+  grid-template-rows: 1fr;
+}
+
+.vr-activity__fold {
+  min-height: 0;
+  overflow: hidden;
+}
+
 .vr-activity__panel {
   max-height: min(320px, 45vh);
   overflow-y: auto;
   padding: 3px 0 0 2px;
   scrollbar-width: thin;
+  opacity: 0;
+  transition: opacity 250ms ease;
 }
 
-.vr-activity__panel[hidden] {
-  display: none;
+.vr-activity__trace[data-open] .vr-activity__panel {
+  opacity: 1;
 }
 
 .vr-activity__list {
@@ -255,6 +265,10 @@
     animation: none;
   }
   .vr-activity__chevron {
+    transition: none;
+  }
+  .vr-activity__trace,
+  .vr-activity__panel {
     transition: none;
   }
 }
