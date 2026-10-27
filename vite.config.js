@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 // Same backend as the production Vercel proxy. Override for a local backend:
 // VITE_API_PROXY_TARGET=http://localhost:4000 npm run dev
@@ -15,7 +16,7 @@ export const apiProxy = {
 };
 
 export default defineConfig({
-	plugins: [react()],
+	plugins: [react(), tailwindcss()],
 	server: { port: 5173, proxy: apiProxy },
 	preview: { port: 4173, proxy: apiProxy }
 });

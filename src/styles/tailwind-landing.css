@@ -1,0 +1,78 @@
+/* Tailwind layer for the VupsRouter landing page.
+ *
+ * The Lightswind UI components vendored in src/components/lightswind are
+ * written as Tailwind utilities, so Tailwind is compiled for this page only.
+ * Preflight (tailwindcss/base) is deliberately NOT imported: the rest of the
+ * app is styled by src/styles.css and src/chat.css, and a global reset would
+ * change the chat, settings and auth surfaces.
+ *
+ * `dark` is redefined as "inside .landing" because the product is dark-only;
+ * that makes every `dark:` variant in the vendored components apply.
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+/* Automatic detection is turned off above and replaced with the three sources
+   that actually carry Tailwind utilities. Without this the scanner walks every
+   chat/settings component and inflates the stylesheet by several times. */
+@source "../pages/LandingPage.jsx";
+@source "../components/lightswind";
+@source "../components/lib";
+
+@custom-variant dark (&:where(.landing, .landing *));
+
+/* Brand mapping: the VupsRouter tokens expressed as the HSL channels the
+   Lightswind components expect. Declared on :root as well as .landing so
+   portalled surfaces (dialog, tooltip, popover) keep the same palette. */
+:root,
+.landing {
+  color-scheme: dark;
+  --background: 228 50% 5%;
+  --foreground: 216 44% 94%;
+  --card: 220 47% 10%;
+  --card-foreground: 216 44% 94%;
+  --popover: 219 45% 13%;
+  --popover-foreground: 216 44% 94%;
+  --primary: 221 100% 71%;
+  --primary-foreground: 210 60% 6%;
+  --secondary: 218 42% 16%;
+  --secondary-foreground: 216 44% 94%;
+  --muted: 219 45% 13%;
+  --muted-foreground: 217 21% 67%;
+  --accent: 218 42% 16%;
+  --accent-foreground: 216 44% 94%;
+  --destructive: 0 55% 64%;
+  --destructive-foreground: 210 60% 6%;
+  --border: 217 22% 30%;
+  --input: 217 24% 38%;
+  --ring: 221 100% 71%;
+  --radius: 14px;
+  --primarylw: #6c9bff;
+  --primarylw-2: #3f6fe8;
+  --darklw: #0d1524;
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-primarylw: var(--primarylw);
+  --color-primarylw-2: var(--primarylw-2);
+}
