@@ -1,13 +1,18 @@
-/* Tailwind layer for the VupsRouter landing page.
+/* Tailwind layer for the vendored Lightswind UI components.
  *
  * The Lightswind UI components vendored in src/components/lightswind are
  * written as Tailwind utilities, so Tailwind is compiled for this page only.
  * Preflight (tailwindcss/base) is deliberately NOT imported: the rest of the
  * app is styled by src/styles.css and src/chat.css, and a global reset would
- * change the chat, settings and auth surfaces.
+ * change the chat, settings and auth surfaces. Where a vendored component is
+ * used outside .landing, the page that uses it supplies the few resets
+ * preflight would otherwise have provided — see the vendored-component block
+ * in src/settings.css.
  *
- * `dark` is redefined as "inside .landing" because the product is dark-only;
- * that makes every `dark:` variant in the vendored components apply.
+ * `dark` is redefined as "inside .landing or .settings-page" because the
+ * product is dark-only; that makes every `dark:` variant in the vendored
+ * components apply on both surfaces. No utility is emitted for a page that
+ * does not use one, so this costs nothing on the other screens.
  */
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
@@ -20,7 +25,7 @@
 @source "../components/lightswind";
 @source "../components/lib";
 
-@custom-variant dark (&:where(.landing, .landing *));
+@custom-variant dark (&:where(.landing, .landing *, .settings-page, .settings-page *));
 
 /* Brand mapping: the VupsRouter tokens expressed as the HSL channels the
    Lightswind components expect. Declared on :root as well as .landing so

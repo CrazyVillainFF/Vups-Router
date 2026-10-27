@@ -143,6 +143,25 @@ export const PROVIDERS = [
     note: "OpenCode's pay-as-you-go gateway, also called OpenCode Console. Create a paid key in the Console, then use Load models or paste any model ID. VupsRouter routes each model to its documented OpenAI Chat Completions, OpenAI Responses, or Anthropic Messages endpoint automatically. OpenCode restricts models whose IDs end in -free to its official client; VupsRouter shows them as unavailable and will not bypass that restriction. Gemini and Jev models use native APIs that are not supported yet.",
     cost: "Pay-as-you-go; add credits in the OpenCode Console. Free-tier Zen models only work inside the official OpenCode client."
   },
+  // Qoder's public API is a session/event agent protocol, not chat
+  // completions; the server adapter creates the environment, agent and
+  // session and reads the reply from the session's SSE stream.
+  {
+    id: "qoder",
+    name: "Qoder Cloud Agents",
+    aliases: ["qoder", "cloud agents", "qoder cloud", "qoder api"],
+    category: "aggregator",
+    deployment: "hosted",
+    compatibility: "qoder",
+    status: "supported",
+    baseUrl: "https://api.qoder.com/api/v1/cloud",
+    website: "https://qoder.com/",
+    keysUrl: "",
+    docsUrl: "https://docs.qoder.com/cloud-agents/api/conventions/overview",
+    pricingUrl: "",
+    note: "Official Cloud Agents API. Paste a Personal Access Token from your Qoder console (Settings → Personal Access Tokens); VupsRouter creates the session's environment and agent and streams the reply back.",
+    cost: "Billed in credits on your Qoder account; no VupsRouter fee."
+  },
 
   // ─── Direct model providers ─────────────────────────────────────────────
   {

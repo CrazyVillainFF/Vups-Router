@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  Alert,
   Button,
   CircularProgress,
   IconButton,
@@ -19,6 +18,11 @@ import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import SiteHeader from "./components/SiteHeader.jsx";
+import { Alert as LwAlert } from "./components/lightswind/alert";
+import { Badge as LwBadge } from "./components/lightswind/badge";
+import { Skeleton } from "./components/lightswind/skeleton";
+import AnimatedContent from "./components/reactbits/AnimatedContent/AnimatedContent.jsx";
+import SpotlightCard from "./components/reactbits/SpotlightCard/SpotlightCard.jsx";
 import { capabilityLabels } from "./chat/modelCatalog.js";
 import { PROVIDER_CATEGORIES, filterProviders, providerById } from "./providers/registry.js";
 import {
@@ -44,6 +48,23 @@ function capabilityTitle(model) {
   return labels.length > 0 ? `Supported: ${labels.join(", ")}` : "Capabilities not reported by this provider";
 }
 
+/** MUI severities used across this page mapped onto the Lightwind Alert variants. */
+const ALERT_VARIANTS = { error: "destructive", warning: "warning", info: "info", success: "success" };
+
+function StatusBadge({ tone = "neutral", dot = false, children }) {
+  return (
+    <LwBadge
+      variant="unstyled"
+      size="unstyled"
+      shape="unstyled"
+      withDot={dot}
+      className={`settings-badge settings-badge--${tone}`}
+    >
+      {children}
+    </LwBadge>
+  );
+}
+
 const EMPTY_FORM = {
   configId: "",
   providerId: "",
@@ -63,17 +84,20 @@ const PROTOCOL_OPTIONS = [
   { value: "anthropic_compatible", label: "Anthropic — Messages API" },
   { value: "azure_openai", label: "Azure OpenAI — api-key header" },
   { value: "watsonx", label: "IBM watsonx — IAM token exchange" },
+  { value: "qoder_cloud_agents", label: "Qoder Cloud Agents — session/event API" },
   { value: "local_gateway", label: "Local gateway — OpenAI-compatible" },
   { value: "native", label: "Other native API (unsupported)" }
 ];
 
-const SAVEABLE_COMPATIBILITY = new Set(["openai", "anthropic", "azure", "watsonx"]);
+const SAVEABLE_COMPATIBILITY = new Set(["openai", "anthropic", "azure", "watsonx", "qoder"]);
 
 const COMPATIBILITY_PROTOCOL = {
   openai: "openai_compatible",
   anthropic: "anthropic_compatible",
   azure: "azure_openai",
-  watsonx: "watsonx"
+  watsonx: "watsonx",
+  qoder: "qoder_cloud_agents",
+  other: "native"
 };
 
 function protocolHelp(type) {
@@ -81,6 +105,7 @@ function protocolHelp(type) {
   if (type === "openai_responses") return "OpenAI Responses API. Use the base URL before /responses, e.g. https://api.openai.com/v1.";
   if (type === "azure_openai") return "Azure OpenAI v1 endpoint, e.g. https://{resource}.openai.azure.com/openai/v1. The key is sent in the api-key header and the model ID is your deployment name.";
   if (type === "watsonx") return "IBM watsonx: use your regional cluster URL plus ?project_id=YOUR_PROJECT_ID. The IBM Cloud API key is exchanged for an IAM token automatically.";
+  if (type === "qoder_cloud_agents") return "Qoder Cloud Agents: keep the base URL https://api.qoder.com/api/v1/cloud and paste a Personal Access Token from the Qoder console (Settings → Personal Access Tokens). Model IDs come from Qoder's own model list, for example \"ultimate\". Each message starts a new Qoder session — earlier turns are sent along with it, so Qoder's session memory is not carried over.";
   if (type === "local_gateway") return "Ollama, LM Studio, vLLM, or another local OpenAI-compatible gateway. The deployed backend cannot reach localhost.";
   if (type === "native") return "A provider-specific API that is not one of the implemented adapters. Saving and chat are disabled for this option.";
   return "OpenAI Chat Completions API. Use the base URL before /chat/completions, e.g. https://api.example.com/v1.";
@@ -267,7 +292,13 @@ export default function SettingsPage() {
       setDefaultModel("");
     }
     setModels([]);
-    setAlert({ severity: "info", message: existingProvider ? `Editing ${existingProvider.provider}.` : `Configuring ${entry.name}. Paste your key, then Save and Test.` });
+    if (existingProvider) {
+      setAlert({ severity: "info", message: `Editing ${existingProvider.provider}.` });
+    } else if (entry.status === "listed") {
+      setAlert({ severity: "warning", message: `${entry.name} speaks an API that VupsRouter has no adapter for yet. Its official request shape is quoted in the form below, and saving stays disabled until an adapter exists.` });
+    } else {
+      setAlert({ severity: "info", message: `Configuring ${entry.name}. Paste your key, then Save and Test.` });
+    }
     window.requestAnimationFrame(() => {
       const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       document.getElementById("provider-form")?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
@@ -533,9 +564,26 @@ export default function SettingsPage() {
     return (
       <>
         <SiteHeader />
-        <div className="auth-loading" role="status" aria-label="Loading settings">
-          <CircularProgress size={30} />
-        </div>
+        <main className="settings-page">
+          <div className="settings-shell">
+            <div className="settings-heading">
+              <span className="auth-kicker">PROVIDERS &amp; MODELS</span>
+              <Typography component="h1">Provider settings</Typography>
+            </div>
+            <div className="settings-skeleton-list" role="status" aria-label="Loading settings">
+              {[0, 1, 2].map(key => (
+                <div key={key} className="settings-skeleton-card">
+                  <Skeleton animation="pulse" height={16} width="45%" />
+                  <Skeleton animation="pulse" height={12} width="70%" />
+                  <div className="settings-skeleton-row">
+                    <Skeleton animation="pulse" height={34} width={132} />
+                    <Skeleton animation="pulse" height={34} width={104} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </main>
       </>
     );
   }
@@ -565,9 +613,16 @@ export default function SettingsPage() {
           </div>
 
           {alert && (
-            <Alert severity={alert.severity} sx={{ mb: 3 }} onClose={() => setAlert(null)}>
-              {alert.message}
-            </Alert>
+            <LwAlert
+              variant={ALERT_VARIANTS[alert.severity] || "info"}
+              size="sm"
+              withIcon
+              dismissible
+              onDismiss={() => setAlert(null)}
+              className={`settings-alert settings-alert--${ALERT_VARIANTS[alert.severity] || "info"}`}
+            >
+              <p>{alert.message}</p>
+            </LwAlert>
           )}
 
           <section className="settings-card" aria-labelledby="model-type-heading">
@@ -633,10 +688,10 @@ export default function SettingsPage() {
               </div>
               {freeUpdatedLabel && <span className="settings-provider-url">Updated {freeUpdatedLabel}</span>}
               {freeCatalog?.stale && (
-                <span className="settings-badge settings-badge--warn">STALE — showing the last verified list</span>
+                <StatusBadge tone="warn" dot>STALE — showing the last verified list</StatusBadge>
               )}
               {freeCatalog?.partial && (
-                <span className="settings-badge settings-badge--warn">Some providers could not be checked</span>
+                <StatusBadge tone="warn" dot>Some providers could not be checked</StatusBadge>
               )}
             </div>
           </section>
@@ -661,8 +716,8 @@ export default function SettingsPage() {
                     <div className="settings-saved-card-main">
                       <div className="settings-provider-name">
                         {provider.provider}
-                        {isActive && <span className="settings-badge settings-badge--ok">ACTIVE</span>}
-                        <span className={`settings-badge settings-badge--${status.tone}`}>{status.label}</span>
+                        {isActive && <StatusBadge tone="ok">ACTIVE</StatusBadge>}
+                        <StatusBadge tone={status.tone} dot>{status.label}</StatusBadge>
                       </div>
                       <div className="settings-provider-meta">
                         <span className="settings-provider-url">{provider.baseUrl}</span>
@@ -757,35 +812,49 @@ export default function SettingsPage() {
                 const savedConfigs = providers.filter(provider => provider.providerId === entry.id);
                 const saved = savedConfigs[0];
                 return (
-                  <article key={entry.id} className="settings-provider-card">
-                    <div className="settings-provider-name">
-                      {entry.name}
-                      {saved && (
-                        <span className="settings-badge settings-badge--ok">
-                          SAVED{savedConfigs.length > 1 ? ` ×${savedConfigs.length}` : ""}
-                        </span>
-                      )}
-                      <span className={`settings-badge settings-badge--${entry.status === "supported" ? "neutral" : "warn"}`}>
-                        {entry.status !== "supported"
-                          ? "ADAPTER PENDING"
-                          : entry.compatibility === "anthropic"
-                            ? "ANTHROPIC MESSAGES"
-                            : entry.compatibility === "azure"
-                              ? "AZURE OPENAI"
-                              : entry.compatibility === "watsonx"
-                                ? "IBM WATSONX"
-                                : entry.deployment === "local" ? "LOCAL GATEWAY" : "OPENAI-COMPATIBLE"}
-                      </span>
-                    </div>
-                    <p className="settings-provider-note">{entry.note}</p>
-                    <p className="settings-provider-cost">{entry.cost}</p>
-                    <GuideLinks entry={entry} />
-                    <div className="settings-provider-actions">
-                      <Button size="small" variant="outlined" onClick={() => startConfigure(entry, saved)}>
-                        {saved ? "Edit configuration" : "Configure"}
-                      </Button>
-                    </div>
-                  </article>
+                  <SpotlightCard
+                    key={entry.id}
+                    className="settings-provider-spot"
+                    spotlightColor="rgba(108,155,255,.28)"
+                    intensity={0.16}
+                    spotlightSize={220}
+                    proximity={0}
+                    borderGlow={0.4}
+                    flare={false}
+                    style={{ "--spotlight-card-border": "#243247", display: "block" }}
+                  >
+                    <article className="settings-provider-card settings-provider-card--bare">
+                      <div className="settings-provider-name">
+                        {entry.name}
+                        {saved && (
+                          <StatusBadge tone="ok">
+                            SAVED{savedConfigs.length > 1 ? ` ×${savedConfigs.length}` : ""}
+                          </StatusBadge>
+                        )}
+                        <StatusBadge tone={entry.status === "supported" ? "neutral" : "warn"}>
+                          {entry.status !== "supported"
+                            ? "ADAPTER PENDING"
+                            : entry.compatibility === "anthropic"
+                              ? "ANTHROPIC MESSAGES"
+                              : entry.compatibility === "azure"
+                                ? "AZURE OPENAI"
+                                : entry.compatibility === "watsonx"
+                                  ? "IBM WATSONX"
+                                  : entry.compatibility === "qoder"
+                                    ? "QODER SESSIONS"
+                                    : entry.deployment === "local" ? "LOCAL GATEWAY" : "OPENAI-COMPATIBLE"}
+                        </StatusBadge>
+                      </div>
+                      <p className="settings-provider-note">{entry.note}</p>
+                      <p className="settings-provider-cost">{entry.cost}</p>
+                      <GuideLinks entry={entry} />
+                      <div className="settings-provider-actions">
+                        <Button size="small" variant="outlined" onClick={() => startConfigure(entry, saved)}>
+                          {saved ? "Edit configuration" : "Configure"}
+                        </Button>
+                      </div>
+                    </article>
+                  </SpotlightCard>
                 );
               })}
               {visibleProviders.length === 0 && <p className="settings-empty">No providers match this search.</p>}
@@ -794,6 +863,7 @@ export default function SettingsPage() {
 
           {/* ─── Setup form ──────────────────────────────────────────────── */}
           {form && (
+            <AnimatedContent trigger="mount" distance={14} duration={0.45} ease="power2.out" once>
             <form className="settings-card" id="provider-form" onSubmit={handleSave} aria-labelledby="provider-form-heading">
               <div className="settings-presets">
                 <span className="settings-models-label" id="provider-form-heading">
@@ -801,10 +871,15 @@ export default function SettingsPage() {
                 </span>
               </div>
               {(!SAVEABLE_COMPATIBILITY.has(form.compatibility) || form.providerType === "native") && (
-                <Alert severity="warning" sx={{ mb: 2 }}>
-                  {form.provider} uses an API shape that does not have a dedicated adapter yet. Choose OpenAI-compatible,
-                  OpenAI Responses, Anthropic Messages, Azure OpenAI, or IBM watsonx, or add an adapter before saving.
-                </Alert>
+                <LwAlert variant="warning" size="sm" withIcon className="settings-alert settings-alert--warning">
+                  <p>
+                    {form.provider} uses an API shape that does not have a dedicated adapter yet. Choose OpenAI-compatible,
+                    OpenAI Responses, Anthropic Messages, Azure OpenAI, or IBM watsonx, or add an adapter before saving.
+                  </p>
+                  {registryEntry?.status === "listed" && registryEntry.note && (
+                    <p className="settings-alert-note">{registryEntry.note}</p>
+                  )}
+                </LwAlert>
               )}
               <div className="settings-form-grid">
                 <TextField
@@ -902,6 +977,7 @@ export default function SettingsPage() {
                 </Button>
               </div>
             </form>
+            </AnimatedContent>
           )}
 
           {/* ─── Models management ───────────────────────────────────────── */}
@@ -914,9 +990,11 @@ export default function SettingsPage() {
                 </Button>
               </div>
               {modelsWarning && (
-                <Alert severity="info" sx={{ mb: 2 }}>
-                  Live discovery failed ({modelsWarning}). Your saved model list is unchanged — fix the connection and press Load models to refresh.
-                </Alert>
+                <LwAlert variant="info" size="sm" withIcon className="settings-alert settings-alert--info">
+                  <p>
+                    Live discovery failed ({modelsWarning}). Your saved model list is unchanged — fix the connection and press Load models to refresh.
+                  </p>
+                </LwAlert>
               )}
               {models.length > 0 && (
                 <div className="settings-models">

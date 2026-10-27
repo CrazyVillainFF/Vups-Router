@@ -40,7 +40,7 @@ test("every provider entry carries the fields the settings UI renders", () => {
     assert.ok(entry.name && entry.name.length >= 2, `name missing for ${entry.id}`);
     assert.ok(CATEGORY_IDS.has(entry.category), `unknown category for ${entry.id}`);
     assert.ok(["hosted", "gateway", "local", "custom"].includes(entry.deployment), `deployment for ${entry.id}`);
-    assert.ok(["openai", "anthropic", "azure", "watsonx", "other"].includes(entry.compatibility), `compatibility for ${entry.id}`);
+    assert.ok(["openai", "anthropic", "azure", "watsonx", "qoder", "other"].includes(entry.compatibility), `compatibility for ${entry.id}`);
     assert.ok(["supported", "listed"].includes(entry.status), `status for ${entry.id}`);
     assert.ok(entry.note && entry.note.length > 20, `note too short for ${entry.id}`);
     assert.ok(entry.cost && entry.cost.length > 5, `cost missing for ${entry.id}`);
@@ -49,7 +49,7 @@ test("every provider entry carries the fields the settings UI renders", () => {
 
 test("supported entries only promise adapters that exist", () => {
   for (const entry of PROVIDERS.filter(item => item.status === "supported")) {
-    assert.ok(["openai", "anthropic", "azure", "watsonx"].includes(entry.compatibility), `${entry.id} is marked supported but needs a different adapter`);
+    assert.ok(["openai", "anthropic", "azure", "watsonx", "qoder"].includes(entry.compatibility), `${entry.id} is marked supported but needs a different adapter`);
   }
 });
 
@@ -70,7 +70,29 @@ test("previously pending providers now resolve to a working adapter", () => {
     assert.equal(entry.compatibility, compatibility, `${id} compatibility`);
     assert.equal(entry.baseUrl, baseUrl, `${id} baseUrl`);
   }
-  assert.equal(PROVIDERS.filter(entry => entry.status !== "supported").length, 0);
+  assert.deepEqual(
+    PROVIDERS.filter(entry => entry.status !== "supported").map(entry => entry.id),
+    [],
+    "every directory entry has a working adapter"
+  );
+});
+
+test("Qoder Cloud Agents is supported through its documented session protocol", () => {
+  const entry = providerById("qoder");
+  assert.ok(entry, "qoder entry missing");
+  assert.equal(entry.name, "Qoder Cloud Agents");
+  assert.equal(entry.category, "aggregator");
+  assert.equal(entry.deployment, "hosted");
+  assert.equal(entry.status, "supported");
+  assert.equal(entry.compatibility, "qoder");
+  assert.equal(entry.baseUrl, "https://api.qoder.com/api/v1/cloud");
+  assert.equal(entry.docsUrl, "https://docs.qoder.com/cloud-agents/api/conventions/overview");
+  assert.equal(entry.keysUrl, "", "the console path is documented, its URL is not — nothing is guessed");
+  assert.match(entry.note, /Personal Access Token/);
+  assert.match(entry.note, /Qoder console/);
+  assert.match(entry.note, /streams the reply/i);
+  assert.ok(matchesProvider(entry, "qoder"));
+  assert.ok(filterProviders({ search: "cloud agents", category: "aggregator" }).some(item => item.id === "qoder"));
 });
 
 test("external links are https, and base URLs are https or local http", () => {

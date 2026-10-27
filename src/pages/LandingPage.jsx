@@ -95,7 +95,11 @@ const VUPS_EFFORTS = ["Precise", "Balanced", "Creative"];
 
 const PROVIDER_COUNT = PROVIDERS.length;
 const CATEGORY_COUNT = PROVIDER_CATEGORIES.length;
-const PROTOCOL_FAMILIES = [...new Set(PROVIDERS.map(p => p.compatibility))].length;
+// "Protocol families implemented" claims a working server-side adapter, so this
+// list must track the provider types the backend can actually speak; an entry
+// without one (compatibility "other") must not inflate the count.
+const IMPLEMENTED_PROTOCOLS = ["openai", "anthropic", "azure", "watsonx", "qoder"];
+const PROTOCOL_FAMILIES = [...new Set(PROVIDERS.map(p => p.compatibility).filter(c => IMPLEMENTED_PROTOCOLS.includes(c)))].length;
 
 const providerCategories = PROVIDER_CATEGORIES.map(category => ({
   id: category.id,
@@ -264,7 +268,7 @@ function Chip({ children, tone }) {
 const specs = [
   { label: "Built-in model", value: "Vups v3 Galax", note: `${CHAT_MODES.length} prompt modes · ${VUPS_EFFORTS.length} reasoning levels` },
   { label: "Provider registry", value: `${PROVIDER_COUNT} entries`, note: `${CATEGORY_COUNT} categories, counted from the app` },
-  { label: "Protocol families", value: `${PROTOCOL_FAMILIES}`, note: "OpenAI-compatible, Anthropic, Azure, watsonx" },
+  { label: "Protocol families", value: `${PROTOCOL_FAMILIES}`, note: "OpenAI-compatible, Anthropic, Azure, watsonx, Qoder" },
   { label: "Account setup", value: "Email + password", note: "No key required for the built-in model" }
 ];
 
@@ -1500,7 +1504,7 @@ const faq = [
   },
   {
     q: "Which providers can I connect with my own key?",
-    a: `The registry ships ${PROVIDER_COUNT} entries across ${CATEGORY_COUNT} categories — aggregators, direct model providers, local gateways such as Ollama, vLLM, LocalAI and LM Studio, and custom compatible endpoints. They speak ${PROTOCOL_FAMILIES} protocol families: OpenAI-compatible, Anthropic Messages, Azure OpenAI and IBM watsonx.`
+    a: `The registry ships ${PROVIDER_COUNT} entries across ${CATEGORY_COUNT} categories — aggregators, direct model providers, local gateways such as Ollama, vLLM, LocalAI and LM Studio, and custom compatible endpoints. They speak ${PROTOCOL_FAMILIES} protocol families: OpenAI-compatible, Anthropic Messages, Azure OpenAI, IBM watsonx and Qoder Cloud Agents.`
   },
   {
     q: "How does model selection work?",
