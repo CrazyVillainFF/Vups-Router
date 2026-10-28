@@ -4,14 +4,16 @@ React 19 + Vite frontend for VupsRouter: the existing home, signup, and signin p
 
 ## Download VupsRouter
 
-| Platform | Status | Get it |
+| | Download | Notes |
 | --- | --- | --- |
-| **Web / PWA** | Available now | <https://vups-router-three.vercel.app/> |
-| **Windows desktop** | Builds in CI; not published as a release asset yet | [Releases](https://github.com/CrazyVillainFF/Vups-Router/releases) |
-| **Android** | Capacitor project exists; CI produces a debug-signed test APK, no signed release APK or Play listing | see [Android](#android) below |
-| **iOS** | No iOS app exists — nothing to download | — |
+| **Download for Windows** | <https://github.com/CrazyVillainFF/Vups-Router/releases/latest/download/VupsRouter-windows-x64-setup.exe> | 64-bit installer (NSIS). Unsigned: SmartScreen shows *Windows protected your PC* → **More info → Run anyway**. |
+| **Download for Android** | <https://github.com/CrazyVillainFF/Vups-Router/releases/latest/download/VupsRouter-android-test-debug.apk> | **Test build** — debug-signed APK for sideloading. Not a Play Store release; no signed APK yet (see [Android](#android)). |
+| **Use the Web App** | <https://vups-router-three.vercel.app/> | Works today on any browser; install it with *Install app* / *Add to Home Screen*. |
+| **All Releases** | <https://github.com/CrazyVillainFF/Vups-Router/releases/> | Every published build, the MSI, checksums (`SHA256SUMS.txt`) and release notes. |
 
-This table lists only what actually exists. `src/download/releases.js` (the in-app `/download` page) keeps the same rule: no installer or APK URL is advertised until that exact artifact is built, tested, and published.
+Also available in the release: `VupsRouter-windows-x64.msi` (same app, for managed installs). **There is no iOS app** — nothing is downloaded for iPhone or iPad; use the web app there.
+
+The two *latest/download* links above always resolve to the newest release, because CI publishes assets with version-free names. `src/download/releases.js` (the in-app `/download` page) reads the same GitHub Release at runtime, so this table and the website cannot disagree. If an asset is missing from the release, the page shows *Not published yet* instead of a dead button.
 
 ### Web app (works today)
 
@@ -36,20 +38,22 @@ That produces, under `src-tauri/target/release/bundle/`:
 - `nsis/VupsRouter_<version>_x64-setup.exe` — the usual one-click installer
 - `msi/VupsRouter_<version>_x64_en-US.msi` — the same app as an MSI for managed installs
 
-Pushing a `v*` tag runs `.github/workflows/native-builds.yml`, which builds the tests, the web bundle, and both installer formats, then attaches them to a GitHub Release with checksums. Until that release exists, the Releases page is empty by design — do not link a local `target/` folder, a source archive, or a `localhost` URL as an installer.
+CI renames both to version-free asset names when publishing, so the links above stay valid across releases.
+
+Pushing a `v*` tag runs `.github/workflows/native-builds.yml`: it runs the tests, builds the web bundle, builds both installer formats, and publishes a GitHub Release with the installers plus `SHA256SUMS.txt`. The release notes are generated from the assets that actually attached, so nothing is claimed about a build that failed. Never advertise a local `target/` folder, a source archive, or a dev-server URL as an installer.
 
 Installing a published build:
 
-1. Download `VupsRouter_<version>_x64-setup.exe` from the release.
+1. Download **Download for Windows** above (the same file is listed on the release page as `VupsRouter-windows-x64-setup.exe`).
 2. Run it; the app appears in **Start → VupsRouter** and signs in on first launch.
 3. The installers are **not code-signed yet**, so Windows SmartScreen shows "Windows protected your PC" — choose **More info → Run anyway** only if you trust the download source. Signing (`AZURE_TRUSTED_CERT_*` or a EV/OV certificate) is a separate step and is not claimed here.
 4. Uninstall from **Settings → Apps → VupsRouter**.
 
 ### Android
 
-`android/` is a real Capacitor 7 project (`com.vupsrouter.app`) that loads the same production site with `?native=android`, and CI builds a **debug** APK (`app-debug.apk`) — attached to the tag's Release as a testing artifact. A debug APK is signed with the Android debug key, is not Play-Store eligible, and is not advertised as the product download.
+`android/` is a real Capacitor 7 project (`com.vupsrouter.app`) that loads the same production site with `?native=android`. CI builds a **debug** APK and publishes it as `VupsRouter-android-test-debug.apk`, and the build is checked with `apksigner verify` before upload. A debug APK is signed with the Android debug key, is not Play-Store eligible, and is labelled a test build everywhere it appears — it is not advertised as the production download. Use it if you want the app in its own window on a real device; use *Add to Home Screen* if you would rather not sideload.
 
-A release APK needs a keystore that this repository does not have. The workflow reads these secrets and only runs the signed build when they are present — leave them unset and the release job is skipped rather than producing a broken package:
+A release APK needs a keystore that this repository does not have. The workflow reads these secrets and only runs the signed build when all four are present — leave them unset and the signed job is skipped rather than producing a broken package:
 
 | Secret | Purpose |
 | --- | --- |
@@ -58,7 +62,7 @@ A release APK needs a keystore that this repository does not have. The workflow 
 | `ANDROID_KEY_ALIAS` | Key alias inside the keystore |
 | `ANDROID_KEY_PASSWORD` | Key password |
 
-Never commit a keystore, password, or Play credential. Until a signed APK or a Play listing exists, install VupsRouter on Android with **Add to Home Screen** (see the web section).
+Never commit a keystore, password, or Play credential. Until a signed APK or a Play listing exists, the downloadable package is the labelled test build above, and **Add to Home Screen** (see the web section) stays the option that needs no sideloading.
 
 ### Localhost is development only
 

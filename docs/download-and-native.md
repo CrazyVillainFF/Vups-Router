@@ -35,14 +35,17 @@ These modes currently control attached file contents only. This repository has n
 
 ## Release truthfulness
 
-`DOWNLOADS.windows` and `DOWNLOADS.android` remain `coming-soon` with `downloadUrl: null` until a tested package is published. Do not add an installer or APK URL before the artifact exists. The Download page and tests enforce this state.
+`DOWNLOADS.windows` and `DOWNLOADS.android` are the honest "nothing verified yet" defaults: `downloadUrl: null`, pending status. The Download page overlays them with the live response from `https://api.github.com/repos/CrazyVillainFF/Vups-Router/releases/latest`, and a download button appears only when that release actually carries the expected asset. A 404 (no release) or a missing asset renders as "Not published yet"; a failed lookup offers a retry instead of inventing state. Asset URLs are only accepted when they are `https://github.com/CrazyVillainFF/Vups-Router/releases/download/...`, so a foreign URL in that payload can never become a link.
+
+Release assets are named without the version — `VupsRouter-windows-x64-setup.exe`, `VupsRouter-windows-x64.msi`, `VupsRouter-android-test-debug.apk`, `VupsRouter-android-release.apk` — so `https://github.com/CrazyVillainFF/Vups-Router/releases/latest/download/<name>` stays a permanent link and the README, the app, and CI reference the same strings (a test compares all three).
 
 To publish a release:
 
-1. Land the change on `main`, then push a `v<version>` tag. `native-builds.yml` runs the tests, builds the web bundle, builds the Windows NSIS + MSI installers and the Android debug APK, and publishes them as a GitHub Release with `SHA256SUMS.txt`.
-2. Open the release, download each asset, and install it on a real machine (Windows: run the installer and sign in; Android: install the APK and launch `MainActivity`). Only the download page may change after this verification passes.
-3. Put the real HTTPS URL and verified version, architecture, format, size, and release-notes URL in `src/download/releases.js`. Unsigned installers must say so in the UI, exactly as the README does.
-4. Update the manifest screenshots or preview assets if the interface changed.
+1. Commit the change, then push a `v<version>` tag at that commit. `native-builds.yml` runs the tests, builds the web bundle, builds the Windows NSIS + MSI installers and the Android debug APK, and publishes them as a GitHub Release with `SHA256SUMS.txt`. The notes are generated from the assets that actually attached, and a job that fails does not stop the other platform's artifact from being published.
+2. `github-release` needs write access on the build token. If it fails with "Resource not accessible by integration", set **Settings → Actions → General → Workflow permissions → Read and write permissions**, then re-run the workflow from **Actions → Native builds → Run workflow** with the tag filled in (that input exists precisely so a release can be republished without a new tag).
+3. Open the release, download each asset, and install it on a real machine (Windows: run the installer and sign in; Android: install the APK and launch `MainActivity`). Only the download page may change after this verification passes.
+4. `src/download/releases.js` needs no per-release edits: it derives version, size, publish date, notes link, and download URL from the release. Unsigned installers must still say so in the UI, exactly as the README does.
+5. Update the manifest screenshots or preview assets if the interface changed.
 5. Run `npm test` and `npm run build`.
 
 ## Windows / Tauri
@@ -94,9 +97,13 @@ Debug APK:
 android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+CI publishes this file as `VupsRouter-android-test-debug.apk` and runs `apksigner verify --print-certs` on it first, so an unpublished or corrupt package cannot reach the release.
+
 For a Play Store release, create a private keystore outside the repository and sign with it. `android/app/build.gradle` reads the release signing configuration from the `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` environment variables and stays unsigned when they are absent, so no build ever silently falls back to the debug key. Never commit a keystore, signing key, or password.
 
-Release artifacts are published by `.github/workflows/native-builds.yml`: pushing a `v*` tag builds the Windows NSIS + MSI installers and the Android debug APK, then `github-release` creates the tag's Release with those assets and a `SHA256SUMS.txt`. A signed `app-release.apk` is added only when the repository secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` are set; the `signing-available` job skips that build when they are not.
+Release artifacts are published by `.github/workflows/native-builds.yml`: pushing a `v*` tag builds the Windows NSIS + MSI installers and the Android debug APK, then `github-release` creates the tag's Release with those assets under their version-free names plus a `SHA256SUMS.txt`. A signed `VupsRouter-android-release.apk` is added only when all four repository secrets — `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` — are set; the `signing-available` job reports presence without echoing any value and skips that build when they are not.
+
+The Android jobs use the Android SDK that ships with the GitHub-hosted ubuntu image and install `platforms;android-35` / `build-tools;35.0.0` through the image's own `sdkmanager`, and the step prints `ANDROID_HOME`, the Java version, and the installed packages on failure. The third-party `android-actions/setup-android` step was removed after it failed the job before Gradle ever ran.
 
 Current environment status: the debug APK builds with Gradle 8.11.1 and JDK 21. The emulator's DNS now resolves the production host, the APK installs, and `MainActivity` launches. Rendered in-app UI verification remains incomplete because qemu crashed during `adb screencap` and a system UI ANR overlay obscured the last captured state. Accessibility-based verification and a physical-device pass remain required.
 
@@ -110,4 +117,4 @@ Current environment status: the debug APK builds with Gradle 8.11.1 and JDK 21. 
 ## Update flow
 
 - Web: service-worker cache version is in `public/sw.js`; bump it when cache semantics change. Hashed Vite assets are cached at runtime; navigation is network-first, so a new deployment is picked up online.
-- Windows/Android: update `tauri.conf.json` and `android/app/build.gradle` versions, rebuild, test, and publish the new signed artifact. The Download page should only change `releases.js` after the artifact is available.
+- Windows/Android: bump `package.json`, `src-tauri/tauri.conf.json`, and `android/app/build.gradle` (`versionName` and `versionCode`, which must increase or existing installs cannot upgrade), then push the matching `v*` tag. The published asset names do not change, so every `releases/latest/download/...` link starts serving the new build on its own; the README and the Download page need no edit per release.

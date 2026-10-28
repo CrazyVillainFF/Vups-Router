@@ -22,7 +22,16 @@ import LandingFooter from "../components/LandingFooter.jsx";
 import { Reveal, StaggerGroup, StaggerItem } from "../components/motion/primitives.jsx";
 import PreviewVisual from "../download/PreviewVisual.jsx";
 import usePwaInstall from "../download/usePwaInstall.js";
-import { DOWNLOADS, PREVIEWS, WEBSITE_URL, statusFor } from "../download/releases.js";
+import useGitHubRelease from "../download/useGitHubRelease.js";
+import {
+  DOWNLOADS,
+  PREVIEWS,
+  RELEASES_PAGE_URL,
+  WEBSITE_URL,
+  mergeLiveReleases,
+  releasePublishedDate,
+  statusFor
+} from "../download/releases.js";
 import "../styles/download.css";
 
 function StatusPill({ release }) {
@@ -36,7 +45,7 @@ function PlatformIcon({ platform }) {
   return <Globe2 size={22} />;
 }
 
-function DownloadCard({ id, platform, release, installButton }) {
+function DownloadCard({ id, platform, release, installButton, checking }) {
   const hasArtifact = Boolean(release.downloadUrl);
   return (
     <StaggerItem as="article" className="dl-card" id={id}>
@@ -52,6 +61,7 @@ function DownloadCard({ id, platform, release, installButton }) {
         <div><dt>Architecture</dt><dd>{release.architecture || "Pending build"}</dd></div>
         <div><dt>Format</dt><dd>{release.format || "Not published"}</dd></div>
         <div><dt>Size</dt><dd>{release.fileSize || "Not published"}</dd></div>
+        {release.publishedAt ? <div><dt>Published</dt><dd>{release.publishedAt}</dd></div> : null}
       </dl>
 
       <div className="dl-card__action">
@@ -62,7 +72,7 @@ function DownloadCard({ id, platform, release, installButton }) {
             </a>
           ) : (
             <button className="dl-btn dl-btn--disabled" type="button" disabled>
-              <X size={15} /> {release.status === "coming-soon" ? "Build not published yet" : "Unavailable"}
+              <X size={15} /> {checking ? "Checking release…" : "Not published yet"}
             </button>
           )
         )}
@@ -86,9 +96,19 @@ export default function DownloadPage() {
   const [activePreview, setActivePreview] = useState(null);
   const [installMessage, setInstallMessage] = useState("");
   const { canInstall, installed, busy, install } = usePwaInstall();
-  const windows = DOWNLOADS.windows;
-  const android = DOWNLOADS.android;
-  const web = DOWNLOADS.web;
+  const live = useGitHubRelease();
+  const { windows, android, web } = useMemo(
+    () => mergeLiveReleases(DOWNLOADS, live.release),
+    [live.release]
+  );
+  const checking = live.status === "loading";
+  const releaseLine = checking
+    ? "Checking the latest GitHub Release…"
+    : live.status === "error"
+      ? `The release check failed (${live.error}).`
+      : live.release
+        ? `Latest published release: ${live.release.tag_name}${releasePublishedDate(live.release) ? `, ${releasePublishedDate(live.release)}` : ""}.`
+        : "No GitHub Release has been published yet, so nothing is linked as a download.";
 
   const installCopy = useMemo(() => {
     if (installed) return "VupsRouter is already installed on this device.";
@@ -147,8 +167,18 @@ export default function DownloadPage() {
               </div>
               <div className="dl-hero__meta" aria-label="Download availability">
                 <span><i className="dl-dot dl-dot--ready" /> Web app available</span>
-                <span><i className="dl-dot dl-dot--pending" /> Windows build pending</span>
-                <span><i className="dl-dot dl-dot--pending" /> Android build pending</span>
+                <span>
+                  <i className={`dl-dot dl-dot--${statusFor(windows).tone}`} />{" "}
+                  {windows.downloadUrl
+                    ? `Windows ${windows.version} ready to download`
+                    : checking ? "Checking the Windows release…" : "Windows installer not published yet"}
+                </span>
+                <span>
+                  <i className={`dl-dot dl-dot--${statusFor(android).tone}`} />{" "}
+                  {android.downloadUrl
+                    ? `Android ${android.format} ready to download`
+                    : checking ? "Checking the Android release…" : "Android APK not published yet"}
+                </span>
               </div>
               <p className="dl-install-note" role="status" aria-live="polite">
                 {installMessage || installCopy}
@@ -158,13 +188,16 @@ export default function DownloadPage() {
             <Reveal className="dl-hero__signal" delay={0.08}>
               <div className="dl-signal-card">
                 <span className="dl-mono">VUPSROUTER / RELEASE CHANNEL</span>
-                <strong>Web first. Desktop next.</strong>
-                <p>No fake installer links. A platform is marked available only when its artifact or install path exists.</p>
+                <strong>{live.release ? `${live.release.tag_name} is published.` : "Web first. Desktop next."}</strong>
+                <p>No fake installer links. This page reads the published GitHub Release for this repository, and a platform shows a download only when its artifact is actually attached to it.</p>
                 <div className="dl-signal-card__rows">
                   <span><Check size={13} /> Same backend and account</span>
                   <span><LockKeyhole size={13} /> No keys in app bundles</span>
                   <span><ShieldCheck size={13} /> Verified artifacts only</span>
                 </div>
+                <a className="dl-inline-link" href={RELEASES_PAGE_URL} target="_blank" rel="noreferrer">
+                  All GitHub releases <ExternalLink size={13} />
+                </a>
               </div>
             </Reveal>
           </div>
@@ -211,12 +244,15 @@ export default function DownloadPage() {
                 <span className="dl-mono dl-eyebrow">03 / INSTALL</span>
                 <h2 id="downloads-title">Choose your <em>surface.</em></h2>
               </div>
-              <p>Three paths, one account. Web is available now. Windows and Android are configured, but no package is published from this page yet.</p>
+              <p>
+                Three paths, one account. Web is available now; Windows and Android come straight from the published
+                GitHub Release for this repository. {releaseLine}
+              </p>
             </Reveal>
 
             <StaggerGroup className="dl-card-grid" trigger="view" stagger={0.08}>
-              <DownloadCard id="windows" platform="windows" release={windows} />
-              <DownloadCard id="android" platform="android" release={android} />
+              <DownloadCard id="windows" platform="windows" release={windows} checking={checking} />
+              <DownloadCard id="android" platform="android" release={android} checking={checking} />
               <DownloadCard
                 id="web"
                 platform="web"
@@ -238,7 +274,15 @@ export default function DownloadPage() {
               <ShieldCheck size={18} />
               <div>
                 <strong>No placeholder downloads.</strong>
-                <p>Windows and Android will stay in a pending state until a real, tested package exists. The web app remains available and does not require an installer.</p>
+                <p>
+                  {releaseLine} A button appears only once CI attaches that artifact to a release. The web app needs no
+                  installer and always runs the current UI.
+                </p>
+                {live.status === "error" ? (
+                  <button className="dl-btn dl-btn--quiet" type="button" onClick={live.retry}>
+                    Retry the release check
+                  </button>
+                ) : null}
               </div>
             </Reveal>
           </div>
