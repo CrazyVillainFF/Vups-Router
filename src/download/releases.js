@@ -62,7 +62,7 @@ export const DOWNLOADS = {
     status: "available",
     title: "VupsRouter Web App",
     description: "Install the web experience on supported devices.",
-    version: "1.0.0",
+    version: "1.0.1",
     architecture: "Web",
     format: "PWA",
     fileSize: null,
@@ -201,7 +201,7 @@ export function windowsRelease(release, base = DOWNLOADS.windows) {
     downloadUrl: asset.downloadUrl,
     releaseNotesUrl: releasePageUrl(release),
     publishedAt: releasePublishedDate(release),
-    target: `One-click installer for 64-bit Windows`,
+    target: "One-click installer for 64-bit Windows",
     install: [
       `Download VupsRouter-windows-x64-setup.exe (release ${version || "latest"}) and run it.`,
       "The installers are unsigned, so SmartScreen shows \"Windows protected your PC\": choose More info → Run anyway.",

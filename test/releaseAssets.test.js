@@ -193,3 +193,10 @@ test("12. the page reads releases live instead of hardcoding them", () => {
   // No installer URL may be baked into the page component itself.
   assert.doesNotMatch(page, /browser_download_url|releases\/download\//);
 });
+
+test("13. every published version string tracks package.json", () => {
+  const version = JSON.parse(read("package.json")).version;
+  assert.equal(DOWNLOADS.web.version, version, "the web card must show the client's own version");
+  assert.equal(JSON.parse(read("src-tauri/tauri.conf.json")).version, version, "the Tauri bundle must match");
+  assert.ok(read("android/app/build.gradle").includes(`versionName "${version}"`), "the APK versionName must match");
+});
