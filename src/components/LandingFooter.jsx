@@ -6,6 +6,7 @@ const COLUMNS = [
   {
     label: "Product",
     links: [
+      { to: "/download", text: "Download apps" },
       { to: "/features", text: "What is built" },
       { to: "/about", text: "Why it exists" },
       { to: "/motion", text: "Motion lab" }

@@ -41,14 +41,15 @@ test("the chat shell fills the visual viewport without spilling the page", () =>
 
 test("the mobile drawer slides in, traps focus, and yields to Escape", () => {
   const css = read("src/chat.css");
-  const page = read("src/ChatPage.jsx");
+  const layout = read("src/desktop/DesktopLayout.jsx");
+  const sidebar = read("src/desktop/DesktopSidebar.jsx");
   assert.match(css, /\.vr-sidebar\s*\{[^}]*transform:\s*translateX\(-102%\)[^}]*visibility:\s*hidden/s);
   assert.match(css, /\.vr-sidebar--mobile-open\s*\{[^}]*transform:\s*none;[^}]*visibility:\s*visible/s);
-  assert.match(page, /inert=\{mobileSidebarOpen \|\| undefined\}/);
-  assert.match(page, /if \(event\.key === "Escape"\) setMobileSidebarOpen\(false\)/);
-  assert.match(page, /aria-controls="vr-sidebar"/);
-  assert.match(page, /aria-expanded=\{mobileSidebarOpen\}/);
-  assert.match(page, /id="vr-sidebar"/);
+  assert.match(layout, /inert=\{mobileOpen \|\| undefined\}/);
+  assert.match(layout, /if \(event\.key === "Escape"\) setMobileOpen\(false\)/);
+  assert.match(layout, /aria-controls="vr-sidebar"/);
+  assert.match(layout, /aria-expanded=\{mobileOpen\}/);
+  assert.match(sidebar, /id="vr-sidebar"/);
 });
 
 test("the mobile composer is compact and hides helper text", () => {

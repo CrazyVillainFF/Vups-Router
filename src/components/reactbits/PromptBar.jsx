@@ -4,15 +4,29 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import {
   ArrowDown01Icon,
   Attachment01Icon,
+  Camera01Icon,
   Cancel01Icon,
   Delete02Icon,
+  Edit01Icon,
   File02Icon,
+  FolderAddIcon,
   HelpCircleIcon,
   Key01Icon,
   Mic01Icon,
   SparklesIcon,
   Tick02Icon
 } from '@hugeicons/core-free-icons';
+import {
+  PASTE_MIN_BYTES,
+  PASTE_TYPE_LABEL,
+  formatPromptSize,
+  isLongPaste,
+  isPastedTextAttachment,
+  pastedTextAttachment,
+  pastedTextPreview,
+  utf8ByteLength,
+  withPastedTextContent
+} from '../../chat/pastedText.js';
 import './PromptBar.css';
 
 const ARROW_UP = [12, 4.5, 18.5, 11, 14.25, 11, 14.25, 19.5, 9.75, 19.5, 9.75, 11, 5.5, 11];
@@ -23,6 +37,14 @@ const EDGE = 11;
 
 const DEFAULT_MODELS = [];
 const DEFAULT_EFFORTS = ['Precise', 'Balanced', 'Creative'];
+
+const chipSize = bytes => {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(value < 10240 ? 1 : 0)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+};
 
 const mix = (a, b, t) => a + (b - a) * t;
 const pathAt = (a, b, t) => {
@@ -107,6 +129,17 @@ export default function PromptBar({
   onGenerateImage,
   onAttach,
   onDictate,
+  permissionControl = null,
+  attachmentMode = 'images',
+  sendWithModifier = false,
+  externalFiles = null,
+  externalFilesSignal = 0,
+  draftValue = '',
+  draftSignal = 0,
+  attachmentAccept = 'image/png,image/jpeg,image/webp,image/gif',
+  pasteMinBytes = PASTE_MIN_BYTES,
+  showCamera = false,
+  showFolder = false,
   background = '#111c2e',
   color = '#e9eef7',
   menuBackground = '#16233a',
@@ -125,6 +158,9 @@ export default function PromptBar({
   const rootRef = useRef(null);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
+  const folderInputRef = useRef(null);
+  const sendingCheck = useRef(false);
   const glowRef = useRef(null);
   const sparkRef = useRef(null);
   const typing = useRef({ energy: 0, strokes: 0 });
@@ -133,11 +169,26 @@ export default function PromptBar({
   const rowRefs = useRef([]);
   const lastOpen = useRef(null);
   const dictation = useRef(0);
+  const lastExternalFiles = useRef(0);
+  const lastDraftSignal = useRef(0);
   const latest = useRef({});
-  latest.current = { onSend, beforeSend, onStop, onGenerateImage, onAttach, onDictate, onEffortChange, onModelChange, onDeleteModel, onAddKey };
+  latest.current = {
+    onSend,
+    beforeSend,
+    onStop,
+    onGenerateImage,
+    onAttach,
+    onDictate,
+    onEffortChange,
+    onModelChange,
+    onDeleteModel,
+    onAddKey,
+    attachmentMode
+  };
 
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState([]);
+  const [pasteView, setPasteView] = useState(null);
   const [modelKey, setModelKey] = useState(defaultModel);
   const [plusOpen, setPlusOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
@@ -155,6 +206,17 @@ export default function PromptBar({
   const [modelMenuMaxHeight, setModelMenuMaxHeight] = useState(360);
 
   const model = models.find(m => m.key === modelKey) ?? models[0];
+  useEffect(() => {
+    if (!draftSignal || draftSignal === lastDraftSignal.current) return;
+    lastDraftSignal.current = draftSignal;
+    if (typeof draftValue === 'string') setDraft(draftValue);
+    requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+  }, [draftSignal, draftValue]);
+  useEffect(() => {
+    if (!showFolder) return;
+    folderInputRef.current?.setAttribute('webkitdirectory', '');
+    folderInputRef.current?.setAttribute('directory', '');
+  }, [showFolder]);
   const lastDefault = useRef(null);
   useEffect(() => {
     if (defaultModel === lastDefault.current) return;
@@ -219,8 +281,11 @@ export default function PromptBar({
   const focusInput = () => inputRef.current?.focus({ preventScroll: true });
 
   const collectFiles = useCallback(fileList => {
+    const native = latest.current.attachmentMode === 'native';
     const files = [...(fileList || [])].filter(
-      file => file && typeof file.type === 'string' && file.type.startsWith('image/')
+      file =>
+        file &&
+        (native || (typeof file.type === 'string' && file.type.startsWith('image/')))
     );
     if (files.length === 0) return;
     Promise.resolve(latest.current.onAttach?.(files)).then(items => {
@@ -228,6 +293,48 @@ export default function PromptBar({
       setAttachments(current => [...current, ...(Array.isArray(items) ? items : [items])]);
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!externalFilesSignal || externalFilesSignal === lastExternalFiles.current) return;
+    lastExternalFiles.current = externalFilesSignal;
+    if (externalFiles?.length) collectFiles(externalFiles);
+  }, [externalFilesSignal, externalFiles, collectFiles]);
+
+  const removeAttachment = index => {
+    const target = attachments[index];
+    setAttachments(current => current.filter((_, j) => j !== index));
+    if (target && pasteView?.id === target.id) setPasteView(null);
+  };
+
+  const savePastedText = () => {
+    if (!pasteView) return;
+    const edited = pasteView.text;
+    if (edited.trim()) {
+      setAttachments(current =>
+        current.map(item => (item.id === pasteView.id ? withPastedTextContent(item, edited) : item))
+      );
+    } else {
+      setAttachments(current => current.filter(item => item.id !== pasteView.id));
+    }
+    setPasteView(null);
+    focusInput();
+  };
+
+  const pastePreview =
+    pasteView && pasteView.mode !== 'edit'
+      ? pastedTextPreview({ text: pasteView.text })
+      : { text: '', truncated: false };
+
+  useEffect(() => {
+    if (!pasteView) return undefined;
+    const onKey = event => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      setPasteView(null);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [pasteView]);
 
   const closeMenus = useCallback(() => {
     setPlusOpen(false);
@@ -435,15 +542,24 @@ export default function PromptBar({
     focusInput();
   };
 
-  const send = () => {
-    if (!canSend || busy) return;
-    if (latest.current.beforeSend?.(draft.trim(), attachments) === false) return;
-    latest.current.onSend?.(draft.trim(), { attachments, model, effort: level });
-    setDraft('');
-    setAttachments([]);
-    setDismissed(false);
-    closeMenus();
-    focusInput();
+  const send = async () => {
+    if (!canSend || busy || sendingCheck.current) return;
+    sendingCheck.current = true;
+    try {
+      const allowed = await latest.current.beforeSend?.(draft.trim(), attachments);
+      if (allowed === false) return;
+      latest.current.onSend?.(draft.trim(), { attachments, model, effort: level });
+      setDraft('');
+      setAttachments([]);
+      setPasteView(null);
+      setDismissed(false);
+      closeMenus();
+      focusInput();
+    } catch {
+      /* keep the draft when permission or validation cannot be completed */
+    } finally {
+      sendingCheck.current = false;
+    }
   };
 
   const toggleListen = () => {
@@ -481,6 +597,7 @@ export default function PromptBar({
       }
       if (open === 'model' && e.key === 'Delete' && list[cursor]?.saved && latest.current.onDeleteModel) {
         e.preventDefault();
+        closeMenus();
         latest.current.onDeleteModel(list[cursor]);
         return;
       }
@@ -498,6 +615,7 @@ export default function PromptBar({
       return;
     }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      if (sendWithModifier && !(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
       send();
     }
@@ -681,6 +799,7 @@ export default function PromptBar({
                               onMouseDown={e => e.preventDefault()}
                               onClick={e => {
                                 e.stopPropagation();
+                                closeMenus();
                                 onDeleteModel(row);
                               }}
                             >
@@ -750,6 +869,52 @@ export default function PromptBar({
         onClick={focusInput}
       >
         <canvas ref={sparkRef} className="prompt-bar__sparks" aria-hidden="true" />
+        {pasteView ? (
+          <div className="prompt-bar__paste" role="group" aria-label="Pasted prompt preview">
+            <div className="prompt-bar__paste-head">
+              <span className="prompt-bar__paste-title">
+                {attachments.find(item => item?.id === pasteView.id)?.name || 'Pasted prompt'}
+              </span>
+              <span className="prompt-bar__paste-meta">
+                {PASTE_TYPE_LABEL} · {formatPromptSize(utf8ByteLength(pasteView.text))}
+              </span>
+              <button
+                type="button"
+                className="prompt-bar__paste-btn"
+                onClick={() => {
+                  if (pasteView.mode === 'edit') savePastedText();
+                  else setPasteView(v => ({ ...v, mode: 'edit' }));
+                }}
+              >
+                {pasteView.mode === 'edit' ? 'Save' : 'Edit'}
+              </button>
+              <button
+                type="button"
+                className="prompt-bar__paste-btn"
+                onClick={() => setPasteView(null)}
+                aria-label="Close preview; the pasted prompt stays attached"
+              >
+                Close
+              </button>
+            </div>
+            {pasteView.mode === 'edit' ? (
+              <textarea
+                className="prompt-bar__paste-edit"
+                value={pasteView.text}
+                onChange={event => setPasteView(v => ({ ...v, text: event.target.value }))}
+                aria-label="Edit pasted prompt"
+                spellCheck={false}
+              />
+            ) : (
+              <pre className="prompt-bar__paste-text">
+                {pastePreview.text}
+                {pastePreview.truncated
+                  ? `\n\n… preview stops after ${pastePreview.text.length.toLocaleString()} characters; Edit shows all ${pasteView.text.length.toLocaleString()}.`
+                  : ''}
+              </pre>
+            )}
+          </div>
+        ) : null}
         {attachments.length > 0 ? (
           <div className="prompt-bar__chips">
             {attachments.map((item, i) => {
@@ -757,12 +922,48 @@ export default function PromptBar({
               const label = isItem ? item.name || 'image' : String(item);
               const thumb = isItem ? item.dataUrl || item.previewUrl : null;
               const failed = isItem && item.status === 'error';
+              const pasted = isItem && !failed && isPastedTextAttachment(item);
+              const size = isItem && item.size ? (pasted ? formatPromptSize(item.size) : chipSize(item.size)) : '';
+              if (pasted) {
+                return (
+                  <span
+                    key={item.id ?? i}
+                    className="prompt-bar__chip prompt-bar__chip--paste"
+                    title={`${label} · ${PASTE_TYPE_LABEL} · ${size}`}
+                  >
+                    <button
+                      type="button"
+                      className="prompt-bar__chip-open"
+                      aria-expanded={pasteView?.id === item.id}
+                      aria-label={`Preview pasted prompt ${label}`}
+                      onClick={() => setPasteView({ id: item.id, mode: 'view', text: item.text })}
+                    >
+                      <HugeiconsIcon icon={File02Icon} size={14} strokeWidth={2} />
+                      <span className="prompt-bar__chip-copy">
+                        <span className="prompt-bar__chip-name">{label}</span>
+                        <span className="prompt-bar__chip-kind">
+                          {PASTE_TYPE_LABEL} · {size}
+                        </span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="prompt-bar__chip-x"
+                      aria-label={`Remove ${label}`}
+                      onClick={() => removeAttachment(i)}
+                    >
+                      <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2.5} />
+                    </button>
+                  </span>
+                );
+              }
               return (
                 <span
                   key={isItem ? item.id ?? i : `${item}-${i}`}
                   className={`prompt-bar__chip${thumb ? ' prompt-bar__chip--image' : ''}`}
                   data-error={failed ? '' : undefined}
-                  title={failed ? item.error || label : label}
+                  data-folder={isItem && item.source === 'folder' ? '' : undefined}
+                  title={failed ? item.error || label : [label, size].filter(Boolean).join(' · ')}
                 >
                   {thumb ? (
                     <span className="prompt-bar__chip-thumb" aria-hidden="true">
@@ -772,11 +973,12 @@ export default function PromptBar({
                     <HugeiconsIcon icon={File02Icon} size={12} strokeWidth={2} />
                   )}
                   <span className="prompt-bar__chip-name">{label}</span>
+                  {size ? <span className="prompt-bar__chip-size">{size}</span> : null}
                   <button
                     type="button"
                     className="prompt-bar__chip-x"
                     aria-label={`Remove ${label}`}
-                    onClick={() => setAttachments(a => a.filter((_, j) => j !== i))}
+                    onClick={() => removeAttachment(i)}
                   >
                     <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2.5} />
                   </button>
@@ -805,11 +1007,23 @@ export default function PromptBar({
           onKeyDown={onKeyDown}
           onPaste={e => {
             const files = [...(e.clipboardData?.files || [])].filter(
-              file => file && typeof file.type === 'string' && file.type.startsWith('image/')
+              file =>
+                file &&
+                (attachmentMode === 'native' ||
+                  (typeof file.type === 'string' && file.type.startsWith('image/')))
             );
-            if (files.length === 0) return;
+            if (files.length > 0) {
+              e.preventDefault();
+              collectFiles(files);
+              return;
+            }
+            // A long pasted prompt becomes a compact attachment card; short
+            // clipboard text keeps landing in the textarea as ordinary draft.
+            const text = e.clipboardData?.getData?.('text') || '';
+            if (!isLongPaste(text, pasteMinBytes)) return;
             e.preventDefault();
-            collectFiles(files);
+            setAttachments(current => [...current, pastedTextAttachment(text)]);
+            focusInput();
           }}
         />
 
@@ -874,11 +1088,27 @@ export default function PromptBar({
             </button>
           ) : null}
           <span className="prompt-bar__spacer" />
+          {showCamera ? (
+            <button
+              type="button"
+              className="prompt-bar__tool"
+              aria-label="Take photo"
+              title="Take a photo"
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => {
+                focusInput();
+                closeMenus();
+                cameraInputRef.current?.click();
+              }}
+            >
+              <HugeiconsIcon icon={Camera01Icon} size={15} strokeWidth={2} />
+            </button>
+          ) : null}
           <button
             type="button"
             className="prompt-bar__tool"
-            aria-label="Attach images"
-            title="Attach images (PNG, JPEG, WebP, GIF)"
+            aria-label={attachmentMode === 'native' ? 'Attach files' : 'Attach images'}
+            title={attachmentMode === 'native' ? 'Attach files or images' : 'Attach images (PNG, JPEG, WebP, GIF)'}
             onMouseDown={e => e.preventDefault()}
             onClick={() => {
               focusInput();
@@ -888,6 +1118,27 @@ export default function PromptBar({
           >
             <HugeiconsIcon icon={Attachment01Icon} size={15} strokeWidth={2} />
           </button>
+          {showFolder ? (
+            <button
+              type="button"
+              className="prompt-bar__tool"
+              aria-label="Add folder"
+              title="Add a folder"
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => {
+                focusInput();
+                closeMenus();
+                folderInputRef.current?.click();
+              }}
+            >
+              <HugeiconsIcon icon={FolderAddIcon} size={15} strokeWidth={2} />
+            </button>
+          ) : null}
+          {permissionControl ? (
+            <div className="prompt-bar__permission" onPointerDown={closeMenus}>
+              {permissionControl}
+            </div>
+          ) : null}
           {onDictate ? (
             <button
               type="button"
@@ -934,7 +1185,7 @@ export default function PromptBar({
         ref={fileInputRef}
         className="prompt-bar__file"
         type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif"
+        accept={attachmentAccept}
         multiple
         hidden
         onChange={e => {
@@ -942,6 +1193,34 @@ export default function PromptBar({
           e.target.value = '';
         }}
       />
+      {showCamera ? (
+        <input
+          ref={cameraInputRef}
+          className="prompt-bar__file"
+          type="file"
+          accept="image/*"
+          capture="environment"
+          hidden
+          onChange={e => {
+            collectFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
+      ) : null}
+      {showFolder ? (
+        <input
+          ref={folderInputRef}
+          className="prompt-bar__file"
+          type="file"
+          accept={attachmentAccept}
+          multiple
+          hidden
+          onChange={e => {
+            collectFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
+      ) : null}
     </div>
   );
 }

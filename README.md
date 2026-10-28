@@ -2,6 +2,68 @@
 
 React 19 + Vite frontend for VupsRouter: the existing home, signup, and signin pages, plus a real chat that talks to the VupsRouter backend proxy.
 
+## Download VupsRouter
+
+| Platform | Status | Get it |
+| --- | --- | --- |
+| **Web / PWA** | Available now | <https://vups-router-three.vercel.app/> |
+| **Windows desktop** | Builds in CI; not published as a release asset yet | [Releases](https://github.com/CrazyVillainFF/Vups-Router/releases) |
+| **Android** | Capacitor project exists; CI produces a debug-signed test APK, no signed release APK or Play listing | see [Android](#android) below |
+| **iOS** | No iOS app exists — nothing to download | — |
+
+This table lists only what actually exists. `src/download/releases.js` (the in-app `/download` page) keeps the same rule: no installer or APK URL is advertised until that exact artifact is built, tested, and published.
+
+### Web app (works today)
+
+Open <https://vups-router-three.vercel.app/>, sign in, and install it from the browser:
+
+1. Chrome or Edge: the install icon in the address bar, or menu → **Install app**.
+2. Safari on macOS/iOS: Share → **Add to Home Screen**.
+3. Android Chrome: menu → **Add to Home Screen**.
+
+The PWA uses the same backend and account as the website; there is no separate installer. The service worker never caches `/api/`, so conversations and credentials stay out of the app cache.
+
+### Windows
+
+The Windows app is a Tauri 2 shell. It starts a loopback-only server (`127.0.0.1`, random port) that serves the UI bundled at build time and proxies `/api/*` to `https://vups-router-be.onrender.com`, then opens `http://127.0.0.1:<port>/chat?native=windows` in its own window. Sign-in uses that same-origin `/api` path, so the session cookie stays first-party. Because the interface is baked into the installer, a web-only change reaches Windows users only after a rebuild — and it needs internet for the API. Publishing is a tag push, no manual build:
+
+```sh
+npm ci && npm test && npm run build && npm run tauri:build
+```
+
+That produces, under `src-tauri/target/release/bundle/`:
+
+- `nsis/VupsRouter_<version>_x64-setup.exe` — the usual one-click installer
+- `msi/VupsRouter_<version>_x64_en-US.msi` — the same app as an MSI for managed installs
+
+Pushing a `v*` tag runs `.github/workflows/native-builds.yml`, which builds the tests, the web bundle, and both installer formats, then attaches them to a GitHub Release with checksums. Until that release exists, the Releases page is empty by design — do not link a local `target/` folder, a source archive, or a `localhost` URL as an installer.
+
+Installing a published build:
+
+1. Download `VupsRouter_<version>_x64-setup.exe` from the release.
+2. Run it; the app appears in **Start → VupsRouter** and signs in on first launch.
+3. The installers are **not code-signed yet**, so Windows SmartScreen shows "Windows protected your PC" — choose **More info → Run anyway** only if you trust the download source. Signing (`AZURE_TRUSTED_CERT_*` or a EV/OV certificate) is a separate step and is not claimed here.
+4. Uninstall from **Settings → Apps → VupsRouter**.
+
+### Android
+
+`android/` is a real Capacitor 7 project (`com.vupsrouter.app`) that loads the same production site with `?native=android`, and CI builds a **debug** APK (`app-debug.apk`) — attached to the tag's Release as a testing artifact. A debug APK is signed with the Android debug key, is not Play-Store eligible, and is not advertised as the product download.
+
+A release APK needs a keystore that this repository does not have. The workflow reads these secrets and only runs the signed build when they are present — leave them unset and the release job is skipped rather than producing a broken package:
+
+| Secret | Purpose |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | Base64 of the `.keystore`/`.jks` file |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
+| `ANDROID_KEY_ALIAS` | Key alias inside the keystore |
+| `ANDROID_KEY_PASSWORD` | Key password |
+
+Never commit a keystore, password, or Play credential. Until a signed APK or a Play listing exists, install VupsRouter on Android with **Add to Home Screen** (see the web section).
+
+### Localhost is development only
+
+`http://localhost:5173` and the local API on `:4000` are dev servers; they are not a product URL and their data disappears with the process. Anything that requires an account, provider key, or session must be tested against the deployed site.
+
 ## Setup
 
 ```sh

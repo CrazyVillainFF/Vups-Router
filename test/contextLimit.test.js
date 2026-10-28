@@ -436,7 +436,7 @@ test("continue-in-new-chat is persisted, guarded, reusable after failure, and ke
   assert.match(chat, /const \{ handoff, conversation \} = await prepareContinuation\(\{/);
   assert.match(chat, /createConversation,/);
   assert.match(chat, /isUnavailable: isConversationCreateUnavailable/);
-  assert.match(chat, /setActiveConvId\(conversation\?\.id \?\? null\)/);
+  assert.match(chat, /if \(conversation\?\.id\) syncTaskParam\(conversation\.id\)/);
   assert.match(chat, /preserveUnsyncedChat\(sourceMessages\)/);
   assert.match(
     chat,

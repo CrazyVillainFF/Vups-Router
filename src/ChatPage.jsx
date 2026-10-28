@@ -6,33 +6,38 @@ import React, {
   useMemo,
   useId,
 } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import {
-  Plus,
-  Sidebar as SidebarIcon,
-  House,
-  ChatCircle,
-  SignIn,
-  UserPlus,
   ArrowClockwise,
   Warning,
   Copy,
   Check,
   DownloadSimple,
-  Trash,
-  Gear,
-  SignOut,
   ThumbsUp,
   ThumbsDown,
   ShareNetwork,
   Image as ImageIcon,
+  FileText,
+  FolderSimple,
   CaretDown,
   CaretUp,
 } from "@phosphor-icons/react";
 import PromptBar from "./components/reactbits/PromptBar.jsx";
+import NativeChatControls from "./native/NativeChatControls.jsx";
+import NativePermissionDialog from "./native/NativePermissionDialog.jsx";
+import HoldToDeleteDialog from "./components/HoldToDeleteDialog.jsx";
+import { NATIVE_SHELLS, detectNativeShell } from "./native/shell.js";
+import {
+  DEFAULT_PERMISSION_MODE,
+  attachmentPermissionDetails,
+  loadPermissionMode,
+  permissionDecision,
+  permissionModeInfo,
+  savePermissionMode,
+} from "./native/permissions.js";
 import AgentActivity from "./components/AgentActivity.jsx";
 import GeneratedFiles from "./components/GeneratedFiles.jsx";
 import ContextLimitNotice, {
@@ -61,15 +66,26 @@ import {
   sharePayload
 } from "./chat/messageActions.js";
 import {
+  ACCEPTED_IMAGE_ACCEPT_ATTR,
   IMAGE_LIMITS,
+  TEXT_ATTACHMENT_ACCEPT_ATTR,
+  TEXT_LIMITS,
+  contentWithTextAttachments,
   formatBytes,
   generateAttachmentId,
   isImageFile,
+  isTextAttachmentFile,
   readImageAttachment,
+  readTextAttachment,
+  readyTextAttachments,
+  textAttachmentChars,
   toPayloadImages,
   validateImageFile,
+  validateTextFile,
 } from "./chat/attachments.js";
 import { streamChatResponse } from "./services/chat.js";
+import { runDesktopToolChat } from "./services/desktopChat.js";
+import { setDesktopToolPolicy } from "./native/desktopTools.js";
 import { presentSaveWarning, settleTurnFromError } from "./chat/turnOutcome.js";
 import { resolveTurnNotice, TURN_NOTICE } from "./chat/turnPresentation.js";
 import {
@@ -101,7 +117,6 @@ import {
 } from "./chat/modelCatalog.js";
 import {
   createConversation,
-  deleteConversation,
   fetchFreeModels,
   fetchProviderConfig,
   fetchOmniRouteStatus,
@@ -112,7 +127,6 @@ import {
   getApiErrorMessage,
   getConversation,
   isConversationCreateUnavailable,
-  listConversations,
   removeProvider,
   saveMessageFeedback,
 } from "./services/api.js";
@@ -120,7 +134,10 @@ import {
   createContinuationGuard,
   prepareContinuation
 } from "./chat/continuation.js";
-import { useAuth } from "./context/AuthContext.jsx";
+import { usePreferences } from "./desktop/PreferencesContext.jsx";
+import { useTasks } from "./desktop/TaskContext.jsx";
+import { useWorkspaces } from "./desktop/WorkspaceContext.jsx";
+import WorkspaceFilesDialog from "./desktop/WorkspaceFilesDialog.jsx";
 import "./chat.css";
 
 // â”€â”€â”€ Chat configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -141,6 +158,15 @@ function loadChatMode() {
     return stored === "motion" ? "motion" : "general";
   } catch {
     return "general";
+  }
+}
+
+function localBrowserStorage() {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
   }
 }
 
@@ -215,6 +241,9 @@ function requestHistory(messages) {
     const entry = { role: message.role, content: message.content };
     if (index === filtered.length - 1 && Array.isArray(message.images) && message.images.length > 0) {
       entry.images = message.images;
+    }
+    if (index === filtered.length - 1 && Array.isArray(message.textFiles) && message.textFiles.length > 0) {
+      entry.textFiles = message.textFiles;
     }
     return entry;
   });
@@ -617,6 +646,21 @@ function Message({
                   })}
                 </div>
               )}
+              {message.textFiles?.length > 0 && (
+                <div className="vr-msg-files">
+                  {message.textFiles.map((file, index) => (
+                    <span
+                      key={file.id ?? index}
+                      className="vr-msg-file"
+                      title={file.path || file.name}
+                    >
+                      <FileText size={14} aria-hidden="true" />
+                      <span>{file.path || file.name}</span>
+                      <em>{formatBytes(file.size)}</em>
+                    </span>
+                  ))}
+                </div>
+              )}
               {message.content ? (
                 <p
                   id={textId}
@@ -913,138 +957,6 @@ function WelcomeScreen({ configured, modelName, sharedActive, gatewayActive, vup
 
 // â”€â”€â”€ Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function Sidebar({
-  conversations,
-  activeId,
-  onNew,
-  onSelect,
-  onDelete,
-  collapsed,
-  onToggle,
-  mobileOpen,
-  onMobileClose,
-  user,
-  onSignOut,
-}) {
-  return (
-    <>
-      {mobileOpen && (
-        <div
-          className="vr-sidebar-backdrop"
-          onClick={onMobileClose}
-          aria-hidden="true"
-        />
-      )}
-      <aside
-        id="vr-sidebar"
-        className={`vr-sidebar${collapsed ? " vr-sidebar--collapsed" : ""}${
-          mobileOpen ? " vr-sidebar--mobile-open" : ""
-        }`}
-        aria-label="Chat sidebar"
-      >
-        <div className="vr-sidebar-top">
-          <Link to="/" className="vr-brand" aria-label="VupsRouter home">
-            <span className="vr-brand-mark" aria-hidden="true">
-              <VupsLogo />
-            </span>
-            {!collapsed && (
-              <span className="vr-brand-name">
-                vups<span>router</span>
-              </span>
-            )}
-          </Link>
-          <button
-            className="vr-sidebar-toggle"
-            onClick={onToggle}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            <SidebarIcon size={18} />
-          </button>
-        </div>
-
-        <button className="vr-new-chat-btn" onClick={onNew} aria-label="New chat">
-          <Plus size={16} weight="bold" />
-          {!collapsed && <span>New chat</span>}
-        </button>
-
-        {!collapsed && conversations.length > 0 && (
-          <div className="vr-sidebar-section">
-            <span className="vr-sidebar-label">Recent</span>
-            <ul className="vr-conv-list" role="list">
-              {conversations.slice(0, 15).map((conv) => (
-                <li key={conv.id} className="vr-conv-row">
-                  <button
-                    className={`vr-conv-item${
-                      conv.id === activeId ? " vr-conv-item--active" : ""
-                    }`}
-                    onClick={() => onSelect(conv.id)}
-                    title={conv.title}
-                  >
-                    <ChatCircle size={14} aria-hidden="true" className="vr-conv-icon" />
-                    <span className="vr-conv-title">{conv.title}</span>
-                  </button>
-                  <button
-                    className="vr-conv-delete"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onDelete(conv.id);
-                    }}
-                    aria-label={`Delete conversation ${conv.title}`}
-                    title="Delete conversation"
-                  >
-                    <Trash size={13} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        <nav className="vr-sidebar-nav" aria-label="App navigation">
-          <Link to="/" className="vr-nav-item" title="Home" onClick={onMobileClose}>
-            <House size={16} aria-hidden="true" />
-            {!collapsed && <span>Home</span>}
-          </Link>
-          <Link
-            to="/settings"
-            className="vr-nav-item"
-            title="API settings"
-            onClick={onMobileClose}
-          >
-            <Gear size={16} aria-hidden="true" />
-            {!collapsed && <span>API settings</span>}
-          </Link>
-          {user ? (
-            <button
-              className="vr-nav-item"
-              title={user.email}
-              onClick={() => {
-                onMobileClose();
-                onSignOut();
-              }}
-            >
-              <SignOut size={16} aria-hidden="true" />
-              {!collapsed && <span>Sign out</span>}
-            </button>
-          ) : (
-            <>
-              <Link to="/signin" className="vr-nav-item" title="Sign in" onClick={onMobileClose}>
-                <SignIn size={16} aria-hidden="true" />
-                {!collapsed && <span>Sign in</span>}
-              </Link>
-              <Link to="/signup" className="vr-nav-item" title="Get started" onClick={onMobileClose}>
-                <UserPlus size={16} aria-hidden="true" />
-                {!collapsed && <span>Get started</span>}
-              </Link>
-            </>
-          )}
-        </nav>
-      </aside>
-    </>
-  );
-}
-
 // â”€â”€â”€ Message List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function MessageList({
@@ -1131,16 +1043,25 @@ function MessageList({
 // â”€â”€â”€ ChatPage (Root) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function ChatPage() {
-  const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const {
+    setConversations,
+    refreshConversations,
+    saveLocalChat,
+    getLocalChat,
+    removeTask,
+    draftRequest,
+    refreshUsage
+  } = useTasks();
+  const { preferences } = usePreferences();
+  const { activeWorkspace, owner: workspaceOwner } = useWorkspaces();
+  const activeConvId = searchParams.get("task") || "";
 
-  const [conversations, setConversations] = useState([]);
-  const [activeConvId, setActiveConvId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [streamingId, setStreamingId] = useState(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [config, setConfig] = useState(null);
   const [providerModels, setProviderModels] = useState([]);
   const [shared, setShared] = useState(null);
@@ -1152,17 +1073,29 @@ export default function ChatPage() {
   const [freeCatalogSettled, setFreeCatalogSettled] = useState(false);
   const [openModelSignal, setOpenModelSignal] = useState(0);
   const [notice, setNotice] = useState("");
+  const [deleteModelTarget, setDeleteModelTarget] = useState(null);
   const [composerWarning, setComposerWarning] = useState("");
   const [imageGenerating, setImageGenerating] = useState(false);
   const [generatedImage, setGeneratedImage] = useState(null);
   const [imageError, setImageError] = useState("");
   const [currentEffort, setCurrentEffort] = useState("Balanced");
   const [chatMode, setChatMode] = useState(loadChatMode);
+  const [nativeShell] = useState(() => detectNativeShell());
+  const [permissionMode, setPermissionMode] = useState(
+    () => loadPermissionMode(localBrowserStorage()) || DEFAULT_PERMISSION_MODE
+  );
+  const [permissionRequest, setPermissionRequest] = useState(null);
+  const pendingPermissionResolve = useRef(null);
+  const [nativeToolBridgeError, setNativeToolBridgeError] = useState("");
+  const [fullAccessPending, setFullAccessPending] = useState(false);
+  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+  const [workspaceAttachment, setWorkspaceAttachment] = useState(null);
+  const [draftInsertion, setDraftInsertion] = useState(null);
   const abortRef = useRef(null);
   const sendingRef = useRef(false);
   const initializedRef = useRef(false);
   const requestSeqRef = useRef(0);
-  const menuButtonRef = useRef(null);
+  const loadedTaskRef = useRef("");
   const continuationGuardRef = useRef(null);
   if (!continuationGuardRef.current) continuationGuardRef.current = createContinuationGuard();
   const [handoffState, setHandoffState] = useState({
@@ -1170,43 +1103,30 @@ export default function ChatPage() {
     sourceId: null,
     error: ""
   });
-  // A failed turn that never reached the server has no conversation document.
-  // Keep its transcript reachable from the sidebar before switching away.
-  const localChatsRef = useRef(new Map());
-  const [localChats, setLocalChats] = useState([]);
-  const sidebarConversations = useMemo(() => {
-    const known = new Set(conversations.map(conversation => conversation.id));
-    const local = localChats.filter(conversation => !known.has(conversation.id));
-    return local.length > 0 ? [...local, ...conversations] : conversations;
-  }, [conversations, localChats]);
 
   useEffect(() => {
-    if (!mobileSidebarOpen) return undefined;
-    const onKeyDown = (event) => {
-      if (event.key === "Escape") setMobileSidebarOpen(false);
-    };
-    document.addEventListener("keydown", onKeyDown);
-    const frame = requestAnimationFrame(() => {
-      document
-        .querySelector("#vr-sidebar a, #vr-sidebar button")
-        ?.focus({ preventScroll: true });
+    if (!draftRequest) return;
+    setDraftInsertion({ text: draftRequest.text, key: draftRequest.key });
+  }, [draftRequest]);
+
+  useEffect(() => {
+    if (nativeShell !== NATIVE_SHELLS.windows || !workspaceOwner) return;
+    let cancelled = false;
+    setDesktopToolPolicy({
+      owner: workspaceOwner,
+      mode: permissionMode,
+      workspaceId: permissionMode === "workspace" ? activeWorkspace?.id : null
+    }).then(() => {
+      if (!cancelled) setNativeToolBridgeError("");
+    }).catch(error => {
+      // The mode lives in localStorage, so the selector would otherwise keep
+      // showing "Full access" while the native bridge silently refuses it.
+      if (!cancelled) setNativeToolBridgeError(error?.message || "The Windows desktop tool bridge is unavailable.");
     });
     return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      cancelAnimationFrame(frame);
-      const button = menuButtonRef.current;
-      if (button && document.contains(button)) button.focus({ preventScroll: true });
+      cancelled = true;
     };
-  }, [mobileSidebarOpen]);
-
-  useEffect(() => {
-    const query = window.matchMedia("(min-width: 651px)");
-    const onChange = (event) => {
-      if (event.matches) setMobileSidebarOpen(false);
-    };
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, []);
+  }, [nativeShell, workspaceOwner, permissionMode, activeWorkspace?.id]);
 
   function beginRequest() {
     const controller = new AbortController();
@@ -1229,19 +1149,79 @@ export default function ChatPage() {
     setStreamingId(null);
   }
 
-  const refreshConversations = useCallback(async () => {
-    try {
-      const list = await listConversations();
-      setConversations(list);
-    } catch {
-      /* list stays as-is; individual operations surface their own errors */
+  function syncTaskParam(id, { replace = true } = {}) {
+    loadedTaskRef.current = id || "";
+    setSearchParams(current => {
+      const next = new URLSearchParams(current);
+      if (id) next.set("task", id);
+      else next.delete("task");
+      return next;
+    }, { replace });
+  }
+
+  async function loadTask(id) {
+    invalidateInFlight();
+    setNotice("");
+    setComposerWarning("");
+    setGeneratedImage(null);
+    setImageError("");
+    if (String(id).startsWith("local-")) {
+      const local = getLocalChat(id);
+      setMessages(local ? local.messages : []);
+      if (!local) setNotice("This local task is no longer available.");
+      return;
     }
-  }, []);
+    setMessages([]);
+    try {
+      const [conversation, artifacts] = await Promise.all([
+        getConversation(id),
+        fetchConversationArtifacts(id).catch(() => [])
+      ]);
+      if (loadedTaskRef.current !== id) return;
+      const artifactMap = new Map(
+        artifacts
+          .filter(artifact => artifact?.messageId)
+          .map(artifact => [artifact.messageId, artifact])
+      );
+      setMessages(
+        conversation.messages
+          .filter(
+            message =>
+              message.role !== "assistant" ||
+              String(message.content || "").trim() ||
+              artifactMap.has(message.messageId)
+          )
+          .map(message => toLocalMessage(message, artifactMap))
+      );
+    } catch (error) {
+      if (loadedTaskRef.current !== id) return;
+      setNotice(getApiErrorMessage(error));
+    }
+  }
+
+  useEffect(() => {
+    if (loadedTaskRef.current === activeConvId) return;
+    loadedTaskRef.current = activeConvId;
+    if (activeConvId) loadTask(activeConvId);
+    else resetConversation();
+  }, [activeConvId]);
+
+  useEffect(() => {
+    if (!location.state?.newTask) return;
+    loadedTaskRef.current = "";
+    resetConversation();
+    if (searchParams.get("task")) {
+      setSearchParams(current => {
+        const next = new URLSearchParams(current);
+        next.delete("task");
+        return next;
+      }, { replace: true });
+    }
+  }, [location.state?.newTask]);
 
   useEffect(() => {
     if (initializedRef.current) return;
     initializedRef.current = true;
-    refreshConversations();
     fetchFreeModels()
       .then((freeData) => {
         setFreeCatalog(freeData?.catalog || null);
@@ -1260,9 +1240,8 @@ export default function ChatPage() {
         setConfig(stored);
         setShared(sharedStatus);
         setOmniroute(gatewayStatus);
-        setModelType(
-          stored?.modelType === FREE_MODEL_TYPE ? FREE_MODEL_TYPE : CUSTOM_MODEL_TYPE
-        );
+        // fetchProviderConfig() resolves to data.config, which carries no
+        // modelType; the preference comes from fetchFreeModels() above.
         return fetchProviderModels()
           .then((models) => setProviderModels(models))
           .catch((error) => {
@@ -1320,6 +1299,51 @@ export default function ChatPage() {
     }
   }
 
+  function applyPermissionMode(mode) {
+    setPermissionMode(savePermissionMode(localBrowserStorage(), mode));
+  }
+
+  function changeWindowsPermissionMode(mode) {
+    if (mode === "full" && permissionMode !== "full") {
+      setFullAccessPending(true);
+      return;
+    }
+    applyPermissionMode(mode);
+  }
+
+  function authorizeNativeAttachments(attachments) {
+    if (nativeShell !== NATIVE_SHELLS.windows) return Promise.resolve(true);
+    const decision = permissionDecision(permissionMode, attachments);
+    if (decision.allowed) return Promise.resolve(true);
+    // A dropped resolver would leave the composer waiting forever: PromptBar only
+    // re-opens its send guard once this promise settles.
+    pendingPermissionResolve.current?.(false);
+    return new Promise((resolve) => {
+      pendingPermissionResolve.current = (allowed) => {
+        pendingPermissionResolve.current = null;
+        resolve(allowed);
+      };
+      setPermissionRequest({
+        resolve: allowed => pendingPermissionResolve.current?.(allowed),
+        items: decision.items,
+        description: permissionModeInfo(permissionMode).description
+      });
+    });
+  }
+
+  useEffect(() => () => pendingPermissionResolve.current?.(false), []);
+
+  function settlePermissionRequest(allowed) {
+    const request = permissionRequest;
+    setPermissionRequest(null);
+    request?.resolve?.(allowed);
+  }
+
+  async function beforeComposerSend(text, attachments) {
+    if (!canSubmitComposer(text, attachments)) return false;
+    return authorizeNativeAttachments(attachments);
+  }
+
   // Starts a fresh conversation locally with a bounded handoff. The existing
   // API creates conversations on the first chat request, so this workspace is
   // persisted together with that first message; the old chat is never touched.
@@ -1333,8 +1357,7 @@ export default function ChatPage() {
     const title =
       (firstUser?.content || "").replace(/\s+/g, " ").trim().slice(0, 60) || "Previous chat";
     const entry = { id, title, updatedAt: new Date().toISOString() };
-    localChatsRef.current.set(id, { entry, messages: sourceMessages });
-    setLocalChats(previous => [entry, ...previous.filter(chat => chat.id !== id)]);
+    saveLocalChat(entry, sourceMessages);
     return id;
   }
 
@@ -1378,7 +1401,8 @@ export default function ChatPage() {
             ...previous.filter(item => item.id !== conversation.id)
           ]);
         }
-        setActiveConvId(conversation?.id ?? null);
+        if (conversation?.id) syncTaskParam(conversation.id);
+        else loadedTaskRef.current = "";
         setMessages([
           {
             id: generateId(),
@@ -1397,7 +1421,6 @@ export default function ChatPage() {
         setComposerWarning("");
         setGeneratedImage(null);
         setImageError("");
-        setMobileSidebarOpen(false);
         requestAnimationFrame(() => {
           document.querySelector(".vr-handoff")?.focus({ preventScroll: true });
         });
@@ -1411,42 +1434,45 @@ export default function ChatPage() {
     });
   }
 
-  async function handleDeleteModel(row) {    if (!row?.configId) return;
-    const label = row.apiKeyMasked ? `${row.provider} (${row.apiKeyMasked})` : row.provider;
-    if (!window.confirm(`Delete the saved configuration for ${label}? Its key and saved models are removed. Your other saved keys are not affected.`)) {
-      return;
+  function requestDeleteModel(row) {
+    if (!row?.configId) return;
+    setDeleteModelTarget(row);
+  }
+
+  async function deleteSavedModel() {
+    const row = deleteModelTarget;
+    if (!row?.configId) {
+      throw new Error("This saved provider is no longer available.");
     }
     try {
       await removeProvider(row.configId);
-      const remaining = providerModels.filter(
-        (model) => model.shared === true || model.configId !== row.configId
-      );
-      const wasActive = Boolean(activeRow && !activeRow.shared && activeRow.configId === row.configId);
-      setProviderModels(remaining);
-      if (wasActive) {
-        const fallback = fallbackRow(buildCatalog({ models: remaining, shared, vups: true, modelType, freeCatalog }));
-        const next = fallback ? selectionFromRow(fallback) : null;
-        setSelection(next);
-        saveStoredSelection(next);
-      }
-      setNotice(`Removed the saved configuration for ${row.provider}.`);
-      fetchProviderModels()
-        .then((models) => setProviderModels(models))
-        .catch(() => {});
     } catch (error) {
-      setNotice(getApiErrorMessage(error));
+      throw new Error(getApiErrorMessage(error));
     }
+    const remaining = providerModels.filter(
+      (model) => model.shared === true || model.configId !== row.configId
+    );
+    const wasActive = Boolean(activeRow && !activeRow.shared && activeRow.configId === row.configId);
+    setProviderModels(remaining);
+    if (wasActive) {
+      const fallback = fallbackRow(buildCatalog({ models: remaining, shared, vups: true, modelType, freeCatalog }));
+      const next = fallback ? selectionFromRow(fallback) : null;
+      setSelection(next);
+      saveStoredSelection(next);
+    }
+    setNotice(`Removed the saved configuration for ${row.provider}.`);
+    fetchProviderModels()
+      .then((models) => setProviderModels(models))
+      .catch(() => {});
   }
 
-  function startNewConversation() {
+  function resetConversation() {
     invalidateInFlight();
-    setActiveConvId(null);
     setMessages([]);
     setNotice("");
     setComposerWarning("");
     setGeneratedImage(null);
     setImageError("");
-    setMobileSidebarOpen(false);
     const fresh = catalog.find((row) => row.vups);
     if (fresh) {
       const next = selectionFromRow(fresh);
@@ -1455,97 +1481,101 @@ export default function ChatPage() {
     }
   }
 
-  async function selectConversation(id) {
-    if (id === activeConvId) {
-      setMobileSidebarOpen(false);
-      return;
-    }
-    invalidateInFlight();
-    setMobileSidebarOpen(false);
-    setNotice("");
-    setComposerWarning("");
-    setGeneratedImage(null);
-    setImageError("");
-    if (String(id).startsWith("local-")) {
-      const local = localChatsRef.current.get(id);
-      setActiveConvId(id);
-      setMessages(local ? local.messages : []);
-      return;
-    }
-    setActiveConvId(id);
-    setMessages([]);
-    try {
-      const [conversation, artifacts] = await Promise.all([
-        getConversation(id),
-        fetchConversationArtifacts(id).catch(() => [])
-      ]);
-      const artifactMap = new Map(
-        artifacts
-          .filter(artifact => artifact?.messageId)
-          .map(artifact => [artifact.messageId, artifact])
-      );
-      setMessages(
-        conversation.messages
-          .filter(
-            (message) =>
-              message.role !== "assistant" ||
-              String(message.content || "").trim() ||
-              artifactMap.has(message.messageId)
-          )
-          .map(message => toLocalMessage(message, artifactMap))
-      );
-    } catch (error) {
-      setNotice(getApiErrorMessage(error));
-    }
-  }
-
-  async function removeConversation(id) {
-    const title =
-      conversations.find((conversation) => conversation.id === id)?.title ||
-      localChats.find((conversation) => conversation.id === id)?.title;
-    if (!window.confirm(`Delete \u201c${title || "this conversation"}\u201d? This cannot be undone.`)) return;
-    if (String(id).startsWith("local-")) {
-      localChatsRef.current.delete(id);
-      setLocalChats((prev) => prev.filter((conversation) => conversation.id !== id));
-      if (id === activeConvId) startNewConversation();
-      return;
-    }
-    try {
-      await deleteConversation(id);
-      setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
-      if (id === activeConvId) startNewConversation();
-    } catch (error) {
-      setNotice(getApiErrorMessage(error));
-    }
-  }
-
-  // Called by the composer with real image Files (picker, drop, or paste).
-  // Validation problems become error chips instead of blocking the whole pick.
+  // Called by the composer with real Files (picker, drop, paste, folder, or
+  // Android camera). Validation problems become error chips instead of
+  // blocking the whole pick.
   async function pickAttachments(files) {
-    const list = [...files].filter(isImageFile).slice(0, IMAGE_LIMITS.count);
-    return Promise.all(
-      list.map(async (file) => {
-        const check = validateImageFile(file);
+    const input = [...(files || [])];
+    const selected = [];
+    let imageCount = 0;
+    let textCount = 0;
+    let skipped = 0;
+    let imageBytes = 0;
+    let textBytes = 0;
+
+    for (const file of input) {
+      if (isImageFile(file) && imageCount < IMAGE_LIMITS.count) {
+        if (imageBytes + Number(file.size || 0) <= IMAGE_LIMITS.totalBytes) {
+          imageCount += 1;
+          imageBytes += Number(file.size || 0);
+          selected.push(file);
+          continue;
+        }
+      } else if (isTextAttachmentFile(file) && textCount < TEXT_LIMITS.count) {
+        if (textBytes + Number(file.size || 0) <= TEXT_LIMITS.totalBytes) {
+          textCount += 1;
+          textBytes += Number(file.size || 0);
+          selected.push(file);
+          continue;
+        }
+      }
+      skipped += 1;
+    }
+
+    const items = await Promise.all(
+      selected.map(async (file) => {
+        const source = file.attachmentSource || (file.webkitRelativePath ? "folder" : "picker");
+        if (isImageFile(file)) {
+          const check = validateImageFile(file);
+          if (!check.ok) {
+            return {
+              id: generateAttachmentId(),
+              name: file.name || "image",
+              status: "error",
+              error: check.error,
+            };
+          }
+          try {
+            const item = await readImageAttachment(file);
+            return {
+              ...item,
+              kind: "image",
+              source,
+              path: file.relativePath || file.webkitRelativePath || file.name
+            };
+          } catch {
+            return {
+              id: generateAttachmentId(),
+              name: file.name || "image",
+              status: "error",
+              error: "That image could not be read.",
+            };
+          }
+        }
+
+        const check = validateTextFile(file);
         if (!check.ok) {
           return {
             id: generateAttachmentId(),
-            name: file.name || "image",
+            name: file.name || "file",
             status: "error",
             error: check.error,
           };
         }
         try {
-          return await readImageAttachment(file);
-        } catch {
+          return await readTextAttachment(file, generateAttachmentId(), source);
+        } catch (error) {
           return {
             id: generateAttachmentId(),
-            name: file.name || "image",
+            name: file.name || "file",
             status: "error",
-            error: "That image could not be read.",
+            error: error?.message || "That file could not be read as text.",
           };
         }
       })
     );
+
+    if (skipped > 0) {
+      items.push({
+        id: generateAttachmentId(),
+        name: "Some files skipped",
+        status: "error",
+        error:
+          "Some files were unsupported or exceeded the attachment limits. " +
+          `Use up to ${IMAGE_LIMITS.count} images and ${TEXT_LIMITS.count} text files per message.`,
+      });
+    }
+    return items;
   }
 
   async function handleGenerateImage(text) {
@@ -1581,8 +1611,12 @@ export default function ChatPage() {
 
   function canSubmitComposer(text, attachments) {
     const items = Array.isArray(attachments) ? attachments : [];
-    if (text.length > MAX_USER_MESSAGE_CHARS) {
-      setComposerWarning("That message is too long. Keep it under 32,000 characters.");
+    const textFiles = readyTextAttachments(items);
+    const charCount = text.length + textAttachmentChars(textFiles);
+    if (charCount > MAX_USER_MESSAGE_CHARS) {
+      setComposerWarning(
+        "That message and its attached text are too long. Keep the total under 32,000 characters."
+      );
       return false;
     }
     if (items.some((item) => item && typeof item === "object" && item.status === "error")) {
@@ -1598,14 +1632,24 @@ export default function ChatPage() {
       (item) => item && typeof item === "object" && item.status === "error"
     );
     const attachmentItems = rawAttachments.filter(
-      (item) => item && typeof item === "object" && item.status !== "error" && item.dataUrl
+      (item) => item && typeof item === "object" && item.status !== "error"
     );
-    const imagePayload = toPayloadImages(attachmentItems);
+    const imageItems = attachmentItems.filter((item) => item.dataUrl);
+    const textFiles = readyTextAttachments(attachmentItems);
+    const imagePayload = toPayloadImages(imageItems);
+    const requestText = contentWithTextAttachments(text, textFiles);
 
-    if (sendingRef.current || loading || typeof text !== "string" || (!text.trim() && imagePayload.length === 0)) return;
+    if (
+      sendingRef.current ||
+      loading ||
+      typeof text !== "string" ||
+      (!text.trim() && imagePayload.length === 0 && textFiles.length === 0)
+    ) return;
 
-    if (text.length > MAX_USER_MESSAGE_CHARS) {
-      setComposerWarning("That message is too long. Keep it under 32,000 characters.");
+    if (requestText.length > MAX_USER_MESSAGE_CHARS) {
+      setComposerWarning(
+        "That message and its attached text are too long. Keep the total under 32,000 characters."
+      );
       return;
     }
 
@@ -1641,6 +1685,21 @@ export default function ChatPage() {
 
     if (sendingRef.current) return;
     sendingRef.current = true;
+    if (nativeShell === NATIVE_SHELLS.windows && workspaceOwner) {
+      try {
+        await setDesktopToolPolicy({
+          owner: workspaceOwner,
+          mode: permissionMode,
+          workspaceId: permissionMode === "workspace" ? activeWorkspace?.id : null
+        });
+      } catch (error) {
+        sendingRef.current = false;
+        const message = error?.message || "Could not update the Windows filesystem permission mode.";
+        setNativeToolBridgeError(message);
+        setNotice(message);
+        return;
+      }
+    }
     setNotice("");
     setComposerWarning("");
     const chosenEffort = meta?.effort || currentEffort;
@@ -1648,7 +1707,8 @@ export default function ChatPage() {
       id: generateId(),
       role: "user",
       content: text,
-      ...(attachmentItems.length > 0 ? { images: attachmentItems } : {}),
+      ...(imageItems.length > 0 ? { images: imageItems } : {}),
+      ...(textFiles.length > 0 ? { textFiles } : {}),
     };
     const baseMessages = retryHistory ?? [...messages, userMsg];
     const history = requestHistory(baseMessages).slice(-40);
@@ -1666,8 +1726,9 @@ export default function ChatPage() {
     const inlineRequested = wantsInlineCode(text);
     let streamedContent = "";
 
+    const useDesktopTools = nativeShell === NATIVE_SHELLS.windows && Boolean(workspaceOwner) && imagePayload.length === 0;
     try {
-      const result = await streamChatResponse({
+      const requestOptions = {
         conversationId: activeConvId,
         messages: history,
         model: modelKey,
@@ -1682,10 +1743,9 @@ export default function ChatPage() {
         onMeta: ({ conversationId, messageId }) => {
           if (!isCurrentRequest(seq)) return;
           if (String(activeConvId || "").startsWith("local-")) {
-            localChatsRef.current.delete(activeConvId);
-            setLocalChats((prev) => prev.filter((chat) => chat.id !== activeConvId));
+            removeTask(activeConvId).catch(() => {});
           }
-          setActiveConvId(conversationId);
+          syncTaskParam(conversationId);
           setMessages((prev) => markTurnMeta(prev, assistantId, { messageId, conversationId }));
           setConversations((prev) =>
             prev.some((conversation) => conversation.id === conversationId)
@@ -1695,7 +1755,7 @@ export default function ChatPage() {
                     id: conversationId,
                     title:
                       text.replace(/\s+/g, " ").trim().slice(0, 60) ||
-                      (attachmentItems.length > 0 ? "Image attachment" : "New chat"),
+                      (attachmentItems.length > 0 ? "Local file attachment" : "New chat"),
                     updatedAt: new Date().toISOString(),
                   },
                   ...prev,
@@ -1713,7 +1773,19 @@ export default function ChatPage() {
             recordTurnActivity(prev, assistantId, activity, { runId: activityRunId })
           );
         },
-      });
+      };
+      let result;
+      if (useDesktopTools) {
+        try {
+          result = await runDesktopToolChat(requestOptions);
+        } catch (error) {
+          if (error?.code !== "tool_calling_unsupported") throw error;
+          setComposerWarning("This model's provider does not support local filesystem tools. The message was sent without them.");
+          result = await streamChatResponse(requestOptions);
+        }
+      } else {
+        result = await streamChatResponse(requestOptions);
+      }
       if (!isCurrentRequest(seq)) return;
       const finalContent =
         typeof result?.content === "string" && result.content.trim() ? result.content : streamedContent;
@@ -1738,7 +1810,7 @@ export default function ChatPage() {
         return;
       }
       const partial = typeof error.partialContent === "string" ? error.partialContent : "";
-      if (error.conversationId) setActiveConvId(error.conversationId);
+      if (error.conversationId) syncTaskParam(error.conversationId);
       setMessages((prev) =>
         settleTurnFromError(prev, assistantId, {
           error,
@@ -1755,6 +1827,7 @@ export default function ChatPage() {
         setLoading(false);
         setStreamingId(null);
         abortRef.current = null;
+        refreshUsage();
       }
     }
   }
@@ -1890,7 +1963,7 @@ export default function ChatPage() {
         return;
       }
       const partial = typeof error.partialContent === "string" ? error.partialContent : "";
-      if (error.conversationId) setActiveConvId(error.conversationId);
+      if (error.conversationId) syncTaskParam(error.conversationId);
       setMessages((prev) =>
         settleTurnFromError(prev, targetId, {
           error,
@@ -1911,70 +1984,41 @@ export default function ChatPage() {
         setLoading(false);
         setStreamingId(null);
         abortRef.current = null;
+        refreshUsage();
       }
     }
   }
 
-  function handleRetry() {
+  async function handleRetry() {
     if (sendingRef.current || loading) return;
     const lastUserIdx = messages.map((message) => message.role).lastIndexOf("user");
     if (lastUserIdx === -1) return;
     const lastUser = messages[lastUserIdx];
     const history = messages.slice(0, lastUserIdx + 1);
+    const attachments = [...(lastUser.images || []), ...(lastUser.textFiles || [])];
+    const allowed = await authorizeNativeAttachments(attachments);
+    if (!allowed) return;
     // Live attachments still carry their data URLs, so a retry resends the
     // image; attachments restored from history (metadata only) fall back to
     // a text-only retry rather than failing.
-    handleSend(lastUser.content, history, { attachments: lastUser.images });
-  }
-
-  async function handleSignOut() {
-    await signOut();
-    navigate("/");
+    handleSend(lastUser.content, history, { attachments });
   }
 
   return (
-    <div className="vr-chat-layout">
-      <button
-        ref={menuButtonRef}
-        className="vr-mobile-menu-btn"
-        onClick={() => {
-          setSidebarCollapsed(false);
-          setMobileSidebarOpen(true);
-        }}
-        aria-label="Open sidebar"
-        aria-controls="vr-sidebar"
-        aria-expanded={mobileSidebarOpen}
-      >
-        <SidebarIcon size={20} />
-      </button>
-
-      <Sidebar
-        conversations={sidebarConversations}
-        activeId={activeConvId}
-        onNew={startNewConversation}
-        onSelect={selectConversation}
-        onDelete={removeConversation}
-        collapsed={sidebarCollapsed}
-        onToggle={() => {
-          if (window.matchMedia("(max-width: 650px)").matches) {
-            setMobileSidebarOpen(false);
-            return;
-          }
-          setSidebarCollapsed((v) => !v);
-        }}
-        mobileOpen={mobileSidebarOpen}
-        onMobileClose={() => setMobileSidebarOpen(false)}
-        user={user}
-        onSignOut={handleSignOut}
-      />
-
-      <main className="vr-chat-main" id="main-content" inert={mobileSidebarOpen || undefined}>
+    <>
+      <main className="vr-chat-main" id="main-content">
         <header className="vr-chat-header" aria-live="polite">
           <span className="vr-chat-header__dot" aria-hidden="true" />
           <span className="vr-chat-header__label">Chatting with</span>
           <strong className="vr-chat-header__model">{activeRow?.name || "No model selected"}</strong>
           {activeRow && !activeRow.shared && !activeRow.vups ? (
             <span className="vr-chat-header__provider">{activeRow.provider}</span>
+          ) : null}
+          {activeWorkspace ? (
+            <span className="vr-header-workspace" title={activeWorkspace.path}>
+              <FolderSimple size={13} aria-hidden="true" />
+              {activeWorkspace.title}
+            </span>
           ) : null}
         </header>
         {messages.length === 0 ? (
@@ -2057,6 +2101,18 @@ export default function ChatPage() {
               <Link to="/settings">Open API settings</Link>
             </div>
           )}
+          {activeWorkspace ? (
+            <div className="vr-workspace-bar">
+              <span className="vr-workspace-bar__icon" aria-hidden="true"><FolderSimple size={16} /></span>
+              <span className="vr-workspace-bar__copy">
+                <strong>{activeWorkspace.title}</strong>
+                <span title={activeWorkspace.path}>{activeWorkspace.path}</span>
+              </span>
+              <button type="button" onClick={() => setWorkspacePickerOpen(true)} disabled={loading}>
+                Attach workspace files
+              </button>
+            </div>
+          ) : null}
           <div className="vr-mode-switch" role="group" aria-label="Assistant mode">
             <span className="vr-mode-switch__label">Mode</span>
             {VUPS_MODES.map((mode) => (
@@ -2095,7 +2151,7 @@ export default function ChatPage() {
               models={catalog}
               defaultModel={activeModelKey}
               onModelChange={changeModel}
-              onDeleteModel={handleDeleteModel}
+              onDeleteModel={requestDeleteModel}
               onAddKey={() => navigate("/settings")}
               openModelSignal={openModelSignal}
               efforts={VUPS_EFFORTS}
@@ -2104,11 +2160,32 @@ export default function ChatPage() {
               busy={loading}
               generating={imageGenerating}
               onSend={(text, meta) => handleSend(text, null, meta)}
-              beforeSend={(text, attachments) => canSubmitComposer(text, attachments)}
+              beforeSend={beforeComposerSend}
               onStop={handleStop}
               onGenerateImage={handleGenerateImage}
               onAttach={pickAttachments}
               onDictate={handleDictate}
+              attachmentMode={nativeShell ? "native" : "images"}
+              attachmentAccept={
+                nativeShell ? TEXT_ATTACHMENT_ACCEPT_ATTR : ACCEPTED_IMAGE_ACCEPT_ATTR
+              }
+              showCamera={nativeShell === NATIVE_SHELLS.android}
+              showFolder={nativeShell === NATIVE_SHELLS.windows}
+              permissionControl={
+                nativeShell === NATIVE_SHELLS.windows ? (
+                  <NativeChatControls
+                    mode={permissionMode}
+                    disabled={loading}
+                    bridgeError={nativeToolBridgeError}
+                    onChange={changeWindowsPermissionMode}
+                  />
+                ) : null
+              }
+              sendWithModifier={preferences.sendShortcut === "modifier"}
+              externalFiles={workspaceAttachment?.files}
+              externalFilesSignal={workspaceAttachment?.key}
+              draftValue={draftInsertion?.text}
+              draftSignal={draftInsertion?.key}
               background="#0d1524"
               color="#e9eef7"
               menuBackground="#111c2e"
@@ -2119,11 +2196,58 @@ export default function ChatPage() {
               className="vr-prompt-bar"
             />
             <p className="vr-composer-hint">
-              Enter to send {"\u00b7"} Shift+Enter for newline {"\u00b7"} Attach images with the paperclip
+              {nativeShell === NATIVE_SHELLS.windows
+                ? `${preferences.sendShortcut === "modifier" ? "Ctrl+Enter" : "Enter"} to send \u00b7 Shift+Enter for newline \u00b7 File contents stay local until you send`
+                : nativeShell === NATIVE_SHELLS.android
+                  ? `${preferences.sendShortcut === "modifier" ? "Ctrl+Enter" : "Enter"} to send \u00b7 Shift+Enter for newline \u00b7 Camera and files open only when you tap them`
+                  : `${preferences.sendShortcut === "modifier" ? "Ctrl+Enter" : "Enter"} to send \u00b7 Shift+Enter for newline \u00b7 Attach images with the paperclip`}
             </p>
           </div>
         </footer>
       </main>
-    </div>
+      {permissionRequest ? (
+        <NativePermissionDialog
+          title="Send attached file contents?"
+          description={`${permissionModeInfo(permissionMode).label}: ${permissionRequest.description}`}
+          details={attachmentPermissionDetails(permissionRequest.items)}
+          confirmLabel="Allow and send"
+          onCancel={() => settlePermissionRequest(false)}
+          onConfirm={() => settlePermissionRequest(true)}
+        />
+      ) : null}
+      {fullAccessPending ? (
+        <NativePermissionDialog
+          title="Enable full access?"
+          description="The assistant may use read-only Windows filesystem tools across accessible folders. Protected system locations still require native approval. This does not grant shell, file-write, administrator rights, or a Windows permission bypass."
+          confirmLabel="Enable full access"
+          tone="danger"
+          onCancel={() => setFullAccessPending(false)}
+          onConfirm={() => {
+            applyPermissionMode("full");
+            setFullAccessPending(false);
+          }}
+        />
+      ) : null}
+      <WorkspaceFilesDialog
+        open={workspacePickerOpen}
+        onClose={() => setWorkspacePickerOpen(false)}
+        onAttach={files => setWorkspaceAttachment({ files, key: Date.now() })}
+      />
+      <HoldToDeleteDialog
+        open={Boolean(deleteModelTarget)}
+        title="Delete saved provider configuration?"
+        itemName={
+          deleteModelTarget
+            ? deleteModelTarget.apiKeyMasked
+              ? `${deleteModelTarget.provider} (${deleteModelTarget.apiKeyMasked})`
+              : deleteModelTarget.provider
+            : ""
+        }
+        description="This removes the saved API key and model list for this provider. Your other saved keys are not affected."
+        successMessage="Provider configuration removed."
+        onCancel={() => setDeleteModelTarget(null)}
+        onConfirm={deleteSavedModel}
+      />
+    </>
   );
 }

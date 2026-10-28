@@ -1,0 +1,11 @@
+[[permission]]
+identifier = "allow-workspace-commands"
+description = "Allow the VupsRouter workspace bridge to list, pick, rename, remove, scan, and read local workspace files."
+commands.allow = [
+  "workspace_list",
+  "workspace_pick",
+  "workspace_rename",
+  "workspace_remove",
+  "workspace_scan",
+  "workspace_read"
+]
