@@ -55,13 +55,21 @@ test("Vite dev and preview proxy /api to the verified backend", async () => {
   }
 });
 
-test("the production CSP allows the proxy origin only for API connections", () => {
+test("the production CSP allows only the verified backend and the release lookup", async () => {
   const csp = vercel.headers
     .flatMap(entry => entry.headers)
     .find(header => header.key === "Content-Security-Policy");
   assert.ok(csp, "missing Content-Security-Policy header");
   assert.match(csp.value, /connect-src 'self' https:\/\/vups-router-be\.onrender\.com/);
   assert.doesNotMatch(csp.value, /localhost|127\.0\.0\.1|\[::1\]/i);
+
+  const { LATEST_RELEASE_API_URL } = await import("../src/download/releases.js");
+  const connectSrc = /connect-src([^;]*)/.exec(csp.value)?.[1] ?? "";
+  assert.ok(
+    connectSrc.includes(new URL(LATEST_RELEASE_API_URL).origin),
+    "/download reads the GitHub Releases API; dev serves no CSP, so production alone would hide the block"
+  );
+  assert.doesNotMatch(connectSrc, /\*/, "connect-src must stay an explicit origin allow-list");
 });
 
 test("API responses stay uncached through the proxy", () => {
