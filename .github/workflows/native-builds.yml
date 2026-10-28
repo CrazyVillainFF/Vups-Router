@@ -1,7 +1,17 @@
 name: Native builds
 
+run-name: Native builds (${{ github.ref_name }})
+
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: >-
+          Existing tag to publish as a GitHub Release (for example v1.0.0).
+          Leave blank to build artifacts only, without publishing a release.
+        required: false
+        type: string
+        default: ""
   push:
     tags:
       - "v*"
@@ -9,8 +19,22 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: native-builds-${{ github.ref }}
+  cancel-in-progress: false
+
+# Assets are published under names that do not contain the version, so
+# releases/latest/download/<name> stays valid for every future release.
+# The version itself lives in the tag, the title, and the notes.
+env:
+  WINDOWS_EXE_ASSET: VupsRouter-windows-x64-setup.exe
+  WINDOWS_MSI_ASSET: VupsRouter-windows-x64.msi
+  ANDROID_DEBUG_ASSET: VupsRouter-android-test-debug.apk
+  ANDROID_RELEASE_ASSET: VupsRouter-android-release.apk
+
 jobs:
   signing-available:
+    name: Check Android signing secrets
     runs-on: ubuntu-latest
     outputs:
       keystore: ${{ steps.check.outputs.keystore }}
@@ -18,14 +42,59 @@ jobs:
       - id: check
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -n "$KEYSTORE" ]; then
+          # Report presence only; never echo a value.
+          if [ -n "$KEYSTORE" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
             echo "keystore=true" >> "$GITHUB_OUTPUT"
+            echo "All four Android signing secrets are set, so a release-signed APK will be built." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "keystore=false" >> "$GITHUB_OUTPUT"
+            echo "Android signing secrets are missing or incomplete: the signed build is skipped and only the debug test APK is published." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+  windows:
+    name: Windows installers
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm run tauri:build
+      - name: Stage installers under stable asset names
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          $bundle = "src-tauri/target/release/bundle"
+          $exe = @(Get-ChildItem -Path $bundle -Recurse -Filter "*-setup.exe")
+          $msi = @(Get-ChildItem -Path $bundle -Recurse -Filter "*.msi")
+          if ($exe.Count -eq 0) { Write-Error "Tauri produced no NSIS installer under $bundle"; exit 1 }
+          Copy-Item $exe[0].FullName "release-assets/$env:WINDOWS_EXE_ASSET"
+          if ($msi.Count -gt 0) {
+            Copy-Item $msi[0].FullName "release-assets/$env:WINDOWS_MSI_ASSET"
+          } else {
+            Write-Warning "Tauri produced no MSI, so only the NSIS installer will be published."
+          }
+          Get-ChildItem release-assets | ForEach-Object {
+            Write-Host ("{0}  ({1:N0} bytes)" -f $_.Name, $_.Length)
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vupsrouter-windows
+          path: release-assets/*
+          if-no-files-found: error
+
   android-debug:
+    name: Android debug APK
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,39 +115,27 @@ jobs:
         working-directory: android
       - run: ./gradlew assembleDebug --no-daemon
         working-directory: android
+      - name: Verify and stage the APK
+        working-directory: android
+        run: |
+          set -euo pipefail
+          mkdir -p ../release-assets
+          cp app/build/outputs/apk/debug/app-debug.apk "../release-assets/$ANDROID_DEBUG_ASSET"
+          APKSIGNER="$(ls -1 "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1 || true)"
+          if [ -n "$APKSIGNER" ]; then
+            "$APKSIGNER" verify --print-certs "../release-assets/$ANDROID_DEBUG_ASSET"
+          else
+            echo "apksigner is unavailable on this runner, so the signature check was skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          ls -l ../release-assets
       - uses: actions/upload-artifact@v4
         with:
           name: vupsrouter-android-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-
-  windows-unsigned:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - uses: dtolnay/rust-toolchain@stable
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
-      - run: npm run tauri:build
-      - name: Stage installers
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
-          Get-ChildItem -Path src-tauri/target/release/bundle -Recurse -Include *.exe,*.msi |
-            ForEach-Object { Copy-Item $_.FullName release-assets/ }
-          Get-ChildItem release-assets | Select-Object -ExpandProperty Name
-      - uses: actions/upload-artifact@v4
-        with:
-          name: vupsrouter-windows-unsigned
           path: release-assets/*
           if-no-files-found: error
 
   android-release:
+    name: Android release-signed APK
     needs: signing-available
     if: needs.signing-available.outputs.keystore == 'true'
     runs-on: ubuntu-latest
@@ -102,6 +159,7 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
+          set -euo pipefail
           printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/vupsrouter.keystore"
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/vupsrouter.keystore" >> "$GITHUB_ENV"
       - name: Sign the release build
@@ -111,46 +169,130 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon
         working-directory: android
+      - name: Verify and stage the signed APK
+        working-directory: android
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          test -f "$APK" || { echo "no release APK was produced" >&2; exit 1; }
+          mkdir -p ../release-assets
+          cp "$APK" "../release-assets/$ANDROID_RELEASE_ASSET"
+          APKSIGNER="$(ls -1 "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1 || true)"
+          if [ -n "$APKSIGNER" ]; then
+            "$APKSIGNER" verify --print-certs "../release-assets/$ANDROID_RELEASE_ASSET"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: vupsrouter-android-release
-          path: android/app/build/outputs/apk/release/app-release.apk
+          path: release-assets/*
           if-no-files-found: error
 
   github-release:
-    needs: [signing-available, windows-unsigned, android-debug, android-release]
+    name: Publish GitHub Release
+    needs: [windows, android-debug, android-release]
+    # Publish whatever actually built: one failing platform must not hold up the
+    # other, and nothing is advertised that was not attached.
     if: >-
-      always() && github.event_name == 'push' &&
-      startsWith(github.ref, 'refs/tags/v') &&
-      needs.windows-unsigned.result == 'success' &&
-      needs.android-debug.result == 'success' &&
-      (needs.android-release.result == 'success' || needs.android-release.result == 'skipped')
+      always() &&
+      (needs.windows.result == 'success' || needs.android-debug.result == 'success') &&
+      (needs.android-release.result == 'success' || needs.android-release.result == 'skipped') &&
+      (github.event_name != 'workflow_dispatch' || github.event.inputs.tag != '')
     permissions:
       contents: write
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: vupsrouter-*
           path: assets
           merge-multiple: true
-      - name: Checksums and asset list
+          fail-on-unmatched: false
+      - name: Checksums
         working-directory: assets
         run: |
-          test -n "$(ls -A)" || { echo "no build artifacts found" >&2; exit 1; }
+          set -euo pipefail
+          test -n "$(ls -A)" || { echo "no build artifacts were downloaded" >&2; exit 1; }
           find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' | sort |
-            xargs sha256sum > SHA256SUMS.txt
+            xargs -r sha256sum > SHA256SUMS.txt
           cat SHA256SUMS.txt
-      - name: Publish release
+      - name: Write release notes from the assets that exist
+        run: |
+          set -euo pipefail
+          APP_VERSION="$(node -p "require('./package.json').version")"
+          size_of() {
+            awk -v b="$(stat -c %s "assets/$1")" 'BEGIN { printf "%.1f MB", b / 1048576 }'
+          }
+          {
+            echo "VupsRouter $APP_VERSION — native builds produced by \`.github/workflows/native-builds.yml\` for tag \`$RELEASE_TAG\`."
+            echo
+            echo "| File | Size | What it is |"
+            echo "| --- | --- | --- |"
+            if [ -f "assets/$WINDOWS_EXE_ASSET" ]; then
+              echo "| \`$WINDOWS_EXE_ASSET\` | $(size_of "$WINDOWS_EXE_ASSET") | Windows x64 installer (Tauri shell + NSIS). |"
+            fi
+            if [ -f "assets/$WINDOWS_MSI_ASSET" ]; then
+              echo "| \`$WINDOWS_MSI_ASSET\` | $(size_of "$WINDOWS_MSI_ASSET") | The same Windows app as an MSI, for managed installs. |"
+            fi
+            if [ -f "assets/$ANDROID_RELEASE_ASSET" ]; then
+              echo "| \`$ANDROID_RELEASE_ASSET\` | $(size_of "$ANDROID_RELEASE_ASSET") | Release-signed APK (Android 6.0+). |"
+            fi
+            if [ -f "assets/$ANDROID_DEBUG_ASSET" ]; then
+              echo "| \`$ANDROID_DEBUG_ASSET\` | $(size_of "$ANDROID_DEBUG_ASSET") | Debug-signed **test** APK. Sideloadable, but not Play-Store eligible and not a production release. |"
+            fi
+            echo "| \`SHA256SUMS.txt\` | — | SHA-256 checksums for every file above. |"
+            echo
+            if [ -f "assets/$WINDOWS_EXE_ASSET" ] || [ -f "assets/$WINDOWS_MSI_ASSET" ]; then
+              echo "### Windows"
+              echo
+              echo "The installers are **not code-signed**, so SmartScreen shows \"Windows protected your PC\" on first run: choose **More info → Run anyway**. Check the file against \`SHA256SUMS.txt\` before installing. Code signing (OV/EV certificate or \`AZURE_TRUSTED_CERT_*\`) is a separate step and is not claimed here."
+              echo
+              echo "The desktop app bundles the web client at build time and calls the hosted API, so it needs internet access and only changes when a new release is published."
+              echo
+            fi
+            if [ -f "assets/$ANDROID_DEBUG_ASSET" ]; then
+              echo "### Android"
+              echo
+              echo "The APK wraps the live site at \`https://vups-router-three.vercel.app/chat?native=android\`. Installing it requires allowing apps from this source on the device. If you would rather not sideload, use Chrome's **Add to Home Screen** — same experience, no APK."
+              if [ ! -f "assets/$ANDROID_RELEASE_ASSET" ]; then
+                echo
+                echo "No release-signed APK is attached: the Android signing secrets are not configured on this repository, so only the debug test build above exists."
+              fi
+              echo
+            fi
+            echo "### Permanent download links"
+            echo
+            echo "These always resolve to the newest release and do not change with the version:"
+            echo
+            for name in "$WINDOWS_EXE_ASSET" "$WINDOWS_MSI_ASSET" "$ANDROID_RELEASE_ASSET" "$ANDROID_DEBUG_ASSET"; do
+              if [ -f "assets/$name" ]; then
+                echo "- https://github.com/$GITHUB_REPOSITORY/releases/latest/download/$name"
+              fi
+            done
+            echo
+            echo "The web app at https://vups-router-three.vercel.app/ remains the always-current way to use VupsRouter."
+          } > release-notes.md
+          cat release-notes.md
+      - name: Create or refresh the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "VupsRouter $GITHUB_REF_NAME" \
-            --verify-tag \
-            --notes "Builds produced by .github/workflows/native-builds.yml for tag $GITHUB_REF_NAME.
-
-          Windows installers are **unsigned**: SmartScreen will show \"Windows protected your PC\" on first run. Android `app-debug.apk` is a debug package for testing only, not a Play Store release. A signed release APK is attached only when the Android signing secrets are configured on this repository.
-
-          Verify downloads against \`SHA256SUMS.txt\`. The web app at https://vups-router-three.vercel.app/ is the primary, always-current way to use VupsRouter." \
-            assets/*
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; replacing its assets."
+            gh release upload "$RELEASE_TAG" --clobber assets/*
+          else
+            gh release create "$RELEASE_TAG" \
+              --verify-tag \
+              --latest \
+              --title "VupsRouter $RELEASE_TAG" \
+              --notes-file release-notes.md \
+              assets/*
+          fi
+          echo "Published: $(gh release view "$RELEASE_TAG" --json url --jq .url)"
+      - name: Explain the usual permission failure
+        if: failure()
+        run: |
+          echo "::error::Release publishing failed. If the log says 'Resource not accessible by integration', the GITHUB_TOKEN is read-only: set Settings → Actions → General → Workflow permissions to 'Read and write permissions', then re-run this workflow (Actions → Native builds → Run workflow, with the tag filled in)."
