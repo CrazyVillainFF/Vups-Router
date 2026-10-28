@@ -7,3 +7,4 @@ src-tauri/gen
 *.jks
 *.keystore
 android/keystore.properties
+test/.compiled
