@@ -106,7 +106,26 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: android-actions/setup-android@v3
+      - name: Prepare the Android SDK from the runner image
+        run: |
+          set -euo pipefail
+          echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
+          echo "JAVA_HOME=${JAVA_HOME:-<unset>}"
+          java -version
+          if [ -z "${ANDROID_HOME:-}" ] || [ ! -d "$ANDROID_HOME" ]; then
+            echo '::error::This runner has no Android SDK at $ANDROID_HOME, so no APK can be built here.'
+            echo "The runner image has no Android SDK; this job needs an SDK provisioning step that works on this image." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          SDKMANAGER="$(ls -1 "$ANDROID_HOME"/cmdline-tools/latest/bin/sdkmanager "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1 || true)"
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+            "$SDKMANAGER" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+          else
+            echo "sdkmanager was not found; relying on the SDK packages already installed on the runner." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "platforms:   $(ls "$ANDROID_HOME/platforms" 2>/dev/null | tr '\n' ' ')"
+          echo "build-tools: $(ls "$ANDROID_HOME/build-tools" 2>/dev/null | tr '\n' ' ')"
       - run: npm ci
       - run: npm test
       - run: npm run build
@@ -149,7 +168,26 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: android-actions/setup-android@v3
+      - name: Prepare the Android SDK from the runner image
+        run: |
+          set -euo pipefail
+          echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
+          echo "JAVA_HOME=${JAVA_HOME:-<unset>}"
+          java -version
+          if [ -z "${ANDROID_HOME:-}" ] || [ ! -d "$ANDROID_HOME" ]; then
+            echo '::error::This runner has no Android SDK at $ANDROID_HOME, so no APK can be built here.'
+            echo "The runner image has no Android SDK; this job needs an SDK provisioning step that works on this image." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          SDKMANAGER="$(ls -1 "$ANDROID_HOME"/cmdline-tools/latest/bin/sdkmanager "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1 || true)"
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+            "$SDKMANAGER" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+          else
+            echo "sdkmanager was not found; relying on the SDK packages already installed on the runner." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "platforms:   $(ls "$ANDROID_HOME/platforms" 2>/dev/null | tr '\n' ' ')"
+          echo "build-tools: $(ls "$ANDROID_HOME/build-tools" 2>/dev/null | tr '\n' ' ')"
       - run: npm ci
       - run: npm run build
       - run: npx cap sync android
