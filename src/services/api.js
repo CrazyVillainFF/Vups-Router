@@ -49,6 +49,12 @@ export async function fetchCurrentUser() {
   return data.user;
 }
 
+export async function fetchUsage() {
+  ensureApiBaseURL();
+  const { data } = await apiClient.get("/auth/usage");
+  return data.usage;
+}
+
 export async function requestPasswordReset(email) {
   ensureApiBaseURL();
   const { data } = await apiClient.post("/forgot-password", { email });
@@ -201,6 +207,20 @@ export async function listConversations() {
   return data.conversations;
 }
 
+export async function searchConversations(query) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.get("/conversations", {
+    params: { q: query }
+  });
+  return data.conversations;
+}
+
+export async function renameConversation(id, title) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.patch(`/conversations/${id}`, { title });
+  return data.conversation;
+}
+
 export async function createConversation({ handoff, title }) {
   ensureApiBaseURL();
   const { data } = await apiClient.post("/conversations", { handoff, title });
@@ -242,6 +262,63 @@ export async function deleteConversation(id) {
 }
 
 // ─── Image generation ─────────────────────────────────────────────────────
+
+export async function listPlugins() {
+  ensureApiBaseURL();
+  const { data } = await apiClient.get("/plugins");
+  return data;
+}
+
+export async function getPlugin(pluginId) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.get(`/plugins/${encodeURIComponent(pluginId)}`);
+  return data.plugin;
+}
+
+export async function installPlugin(pluginId, payload = {}) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.post(`/plugins/${encodeURIComponent(pluginId)}/install`, payload);
+  return data;
+}
+
+export async function updatePlugin(pluginId, payload = {}) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.patch(`/plugins/${encodeURIComponent(pluginId)}`, payload);
+  return data;
+}
+
+export async function testPlugin(pluginId) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.post(`/plugins/${encodeURIComponent(pluginId)}/test`);
+  return data;
+}
+
+export async function uninstallPlugin(pluginId) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.delete(`/plugins/${encodeURIComponent(pluginId)}`);
+  return data;
+}
+
+export async function executePluginTool(pluginId, toolName, args = {}, confirm = false) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.post(
+    `/plugins/${encodeURIComponent(pluginId)}/tools/${encodeURIComponent(toolName)}`,
+    { args, confirm }
+  );
+  return data;
+}
+
+export async function fetchPluginTools() {
+  ensureApiBaseURL();
+  const { data } = await apiClient.get("/plugins/tools");
+  return data;
+}
+
+export async function fetchPluginActivity(limit = 20) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.get("/plugins/activity", { params: { limit } });
+  return Array.isArray(data.activity) ? data.activity : [];
+}
 
 export async function generateImage(prompt) {
   ensureApiBaseURL();

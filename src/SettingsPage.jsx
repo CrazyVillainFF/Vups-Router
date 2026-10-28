@@ -18,6 +18,7 @@ import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import SiteHeader from "./components/SiteHeader.jsx";
+import HoldToDeleteDialog from "./components/HoldToDeleteDialog.jsx";
 import { Alert as LwAlert } from "./components/lightswind/alert";
 import { Badge as LwBadge } from "./components/lightswind/badge";
 import { Skeleton } from "./components/lightswind/skeleton";
@@ -173,7 +174,7 @@ function GuideLinks({ entry }) {
   );
 }
 
-export default function SettingsPage() {
+export default function SettingsPage({ embedded = false }) {
   const [providers, setProviders] = useState([]);
   const [activeConfigId, setActiveConfigId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -191,6 +192,7 @@ export default function SettingsPage() {
   const [modelType, setModelType] = useState("custom");
   const [freeCatalog, setFreeCatalog] = useState(null);
   const [freeCatalogLoading, setFreeCatalogLoading] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const refresh = useCallback(async () => {
     const data = await listProviders();
@@ -542,29 +544,36 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleDelete(provider) {
-    const label = provider.apiKeyMasked ? `${provider.provider} (${provider.apiKeyMasked})` : provider.provider;
-    if (!window.confirm(`Remove the saved configuration for ${label}? Its key and model list will be deleted. Other saved keys are not affected.`)) {
-      return;
+  function requestDelete(provider) {
+    if (!provider?.configId) return;
+    setDeleteTarget(provider);
+  }
+
+  async function deleteProviderConfig() {
+    const provider = deleteTarget;
+    if (!provider?.configId) {
+      throw new Error("This saved provider is no longer available.");
     }
+    const label = provider.apiKeyMasked ? `${provider.provider} (${provider.apiKeyMasked})` : provider.provider;
     setBusy(`delete-${provider.configId}`);
     try {
       await removeProvider(provider.configId);
-      await refresh();
-      if (form?.configId === provider.configId) setForm(null);
-      setAlert({ severity: "success", message: `${label} removed.` });
     } catch (error) {
-      setAlert({ severity: "error", message: getApiErrorMessage(error) });
-    } finally {
       setBusy("");
+      throw new Error(getApiErrorMessage(error));
     }
+    setProviders(current => current.filter(item => item.configId !== provider.configId));
+    if (form?.configId === provider.configId) setForm(null);
+    setAlert({ severity: "success", message: `${label} removed.` });
+    setBusy("");
+    refresh().catch(() => {});
   }
 
   if (loading) {
     return (
       <>
-        <SiteHeader />
-        <main className="settings-page">
+        {embedded ? null : <SiteHeader />}
+        <main id={embedded ? "main-content" : undefined} className={`settings-page${embedded ? " settings-page--embedded" : ""}`}>
           <div className="settings-shell">
             <div className="settings-heading">
               <span className="auth-kicker">PROVIDERS &amp; MODELS</span>
@@ -600,8 +609,8 @@ export default function SettingsPage() {
 
   return (
     <>
-      <SiteHeader />
-      <main className="settings-page">
+      {embedded ? null : <SiteHeader />}
+      <main id={embedded ? "main-content" : undefined} className={`settings-page${embedded ? " settings-page--embedded" : ""}`}>
         <div className="settings-shell">
           <div className="settings-heading">
             <span className="auth-kicker">PROVIDERS &amp; MODELS</span>
@@ -769,7 +778,7 @@ export default function SettingsPage() {
                       >
                         Test model
                       </Button>
-                      <Button size="small" color="error" variant="text" disabled={Boolean(busy)} startIcon={<DeleteOutlineRoundedIcon />} onClick={() => handleDelete(provider)}>
+                      <Button size="small" color="error" variant="text" disabled={Boolean(busy)} startIcon={<DeleteOutlineRoundedIcon />} onClick={() => requestDelete(provider)}>
                         Remove
                       </Button>
                     </div>
@@ -1107,6 +1116,21 @@ export default function SettingsPage() {
           </section>
         </div>
       </main>
+      <HoldToDeleteDialog
+        open={Boolean(deleteTarget)}
+        title="Remove saved provider configuration?"
+        itemName={
+          deleteTarget
+            ? deleteTarget.apiKeyMasked
+              ? `${deleteTarget.provider} (${deleteTarget.apiKeyMasked})`
+              : deleteTarget.provider
+            : ""
+        }
+        description="This removes the saved API key and model list for this provider. Your other saved keys are not affected."
+        successMessage="Provider configuration removed."
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={deleteProviderConfig}
+      />
     </>
   );
 }

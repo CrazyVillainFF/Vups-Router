@@ -11,6 +11,7 @@ const PHASE_LABELS = {
   request: "Model request queued",
   waiting: "Connecting to model",
   responding: "Generating response",
+  reasoning: "Thinking",
   generating_code: "Generating code",
   preparing_files: "Preparing files"
 };

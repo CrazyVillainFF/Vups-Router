@@ -10,7 +10,11 @@
  */
 
 import { apiClient } from "./api.js";
-import { toPayloadImages } from "../chat/attachments.js";
+import {
+  contentWithTextAttachments,
+  readyTextAttachments,
+  toPayloadImages
+} from "../chat/attachments.js";
 import {
   isFirewallBlockedResponse,
   isPersistenceFailureCode,
@@ -117,6 +121,12 @@ export function toRequestMessages(messages) {
   const filtered = sanitizeHistoryMessages(messages);
   return filtered.map((message, index) => {
     const entry = { role: message.role, content: String(message.content ?? "") };
+    if (index === filtered.length - 1 && Array.isArray(message.textFiles) && message.textFiles.length > 0) {
+      const textFiles = readyTextAttachments(message.textFiles);
+      if (textFiles.length > 0) {
+        entry.content = contentWithTextAttachments(entry.content, textFiles);
+      }
+    }
     if (index === filtered.length - 1 && Array.isArray(message.images) && message.images.length > 0) {
       const images = toPayloadImages(message.images);
       if (images.length > 0) entry.images = images;
@@ -378,6 +388,7 @@ export async function streamChatResponse({
     let continuedFile = null;
     let streamError = null;
     let finishReason = null;
+    let usage = null;
     let saveWarning = null;
     let sawDone = false;
     let terminalEvent = null;
@@ -443,6 +454,7 @@ export async function streamChatResponse({
         if (typeof event.finishReason === "string" && event.finishReason) {
           finishReason = event.finishReason;
         }
+        if (event.usage && typeof event.usage === "object") usage = event.usage;
         if (event.saveWarning && typeof event.saveWarning === "object") {
           saveWarning = {
             code: typeof event.saveWarning.code === "string" ? event.saveWarning.code : "save_failed",
@@ -608,6 +620,7 @@ export async function streamChatResponse({
       conversationId: resolvedConversationId,
       messageId: resolvedMessageId,
       finishReason,
+      ...(usage ? { usage } : {}),
       saveWarning,
       artifact,
       artifacts,

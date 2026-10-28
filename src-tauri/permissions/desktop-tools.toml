@@ -1,0 +1,8 @@
+[[permission]]
+identifier = "allow-desktop-tools"
+description = "Allow the VupsRouter desktop tool bridge to set a permission policy and execute approved read-only Windows filesystem tools."
+commands.allow = [
+  "desktop_tool_set_policy",
+  "desktop_tool_policy_status",
+  "desktop_tool_execute"
+]

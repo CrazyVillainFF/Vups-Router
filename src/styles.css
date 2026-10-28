@@ -105,3 +105,16 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
 .auth-logo-image{display:block;width:100%;height:auto;object-fit:contain;user-select:none}
 @media(max-width:900px){.auth-logo{width:min(100%,190px);margin-top:16px}}
 @media(max-width:650px){.auth-logo{display:none}}
+.auth-layout--native{grid-template-columns:1fr}
+.auth-layout--native .auth-art-panel,.auth-layout--native .back-home,.auth-layout--native .auth-side-note{display:none}
+.auth-layout--native .auth-form-panel{min-height:100svh;padding:48px 24px}
+.auth-layout--native .auth-form-wrap{max-width:420px}
+@media(max-width:650px){.auth-layout--native .auth-form-panel{min-height:100svh;padding:48px 24px}}
+.auth-external{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+.auth-external__divider{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:#71819a;font:9px var(--mono);letter-spacing:1.4px;text-transform:uppercase}
+.auth-external__divider::before,.auth-external__divider::after{content:"";flex:1;height:1px;background:var(--line)}
+.auth-external__actions{display:flex;flex-direction:column;gap:8px}
+.auth-external__actions .MuiButton-root{min-height:40px;border-color:#2b3a52;color:#dbe5f4;font-size:12.5px}
+.auth-external__actions .MuiButton-root:hover{border-color:var(--accent);background:rgba(108,155,255,.06)}
+.auth-external__note{margin:11px 0 0;color:#71819a;font-size:10.5px;line-height:1.55;text-align:center}
+@media(max-width:650px){.auth-external{margin-top:18px;padding-top:15px}}

@@ -3,7 +3,7 @@
   "appName": "VupsRouter",
   "webDir": "dist",
   "server": {
-    "url": "https://vups-router-three.vercel.app",
+    "url": "https://vups-router-three.vercel.app/chat?native=android",
     "androidScheme": "https",
     "cleartext": false,
     "allowNavigation": [

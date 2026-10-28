@@ -87,6 +87,6 @@ test("service worker skips API responses and registers only in production", () =
   assert.ok(existsSync(path.join(root, "public/offline.html")), "offline fallback is missing");
 
   const main = read("src/main.jsx");
-  assert.ok(main.includes('import.meta.env.PROD && "serviceWorker" in navigator'));
+  assert.ok(main.includes('import.meta.env.PROD && !isTauriRuntime() && "serviceWorker" in navigator'));
   assert.ok(main.includes('register("/sw.js")'));
 });

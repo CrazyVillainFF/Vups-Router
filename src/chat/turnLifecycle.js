@@ -218,7 +218,8 @@ export function sanitizeHistoryMessages(messages) {
     if (message?.role === "assistant") return hasRecoverableOutput(message);
     if (message?.role === "user") {
       return Boolean(String(message?.content || "").trim()) ||
-        (Array.isArray(message?.images) && message.images.length > 0);
+        (Array.isArray(message?.images) && message.images.length > 0) ||
+        (Array.isArray(message?.textFiles) && message.textFiles.length > 0);
     }
     return false;
   });

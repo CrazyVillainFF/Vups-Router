@@ -5,7 +5,6 @@ import ChatPage from "./ChatPage.jsx";
 import SettingsPage from "./SettingsPage.jsx";
 import VupsLogo from "./components/VupsLogo.jsx";
 import PageMeta from "./components/PageMeta.jsx";
-import RequireAuth from "./components/RequireAuth.jsx";
 import { PrivacyPolicy, TermsOfService, CookiePolicy } from "./legal/LegalPages.jsx";
 import { ForgotPasswordPage } from "./auth/PasswordRecovery.jsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
@@ -16,6 +15,16 @@ import DownloadPage from "./pages/DownloadPage.jsx";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import { getApiErrorMessage } from "./services/api.js";
+import { NATIVE_SHELLS, detectNativeShell, isTauriRuntime } from "./native/shell.js";
+import { openAuthPage } from "./native/authLinks.js";
+import ProtectedAppLayout from "./desktop/ProtectedAppLayout.jsx";
+import {
+  AccountPage,
+  AppSettingsPage,
+  AutomationsPage,
+  HelpPage
+} from "./desktop/DesktopPages.jsx";
+import PluginsPage from "./plugins/PluginsPage.jsx";
 import {
   authFormError,
   buildAuthPayload,
@@ -50,18 +59,26 @@ function AuthPage({ mode }) {
   const isSignup = mode === "signup";
   const navigate = useNavigate();
   const location = useLocation();
+  const redirectTo = location.state?.from || "/chat";
+  const returnSearch = redirectTo.includes("?") ? redirectTo.slice(redirectTo.indexOf("?") + 1) : "";
+  const nativeShell =
+    detectNativeShell(returnSearch || undefined) ||
+    (isTauriRuntime() ? NATIVE_SHELLS.windows : null);
   const { signUp, signIn, status } = useAuth();
   const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "" });
   const [visibility, setVisibility] = useState(initialPasswordVisibility);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [externalError, setExternalError] = useState("");
+  const [externalBusy, setExternalBusy] = useState("");
   const [touched, setTouched] = useState({});
-  const redirectTo = location.state?.from || "/chat";
 
   useEffect(() => {
     setMessage("");
     setError("");
+    setExternalError("");
+    setExternalBusy("");
     setTouched({});
     setForm({ name: "", email: "", password: "", confirmPassword: "" });
     setVisibility(initialPasswordVisibility());
@@ -102,8 +119,22 @@ function AuthPage({ mode }) {
       setError(getApiErrorMessage(err));
     } finally { setBusy(false); }
   }
-    return <div className="auth-layout"><div className="auth-art-panel"><Link to="/" className="brand auth-brand"><span className="brand-mark"><VupsLogo /></span><span>vups<span className="brand-light">router</span></span></Link><div className="auth-art-copy"><div className="eyebrow"><span className="eyebrow-line"/> FREE AI, MADE CLEAR</div><h1>Find your next<br/><span>AI model.</span></h1><p>Compare free access options and open models.</p><div className="auth-logo" aria-hidden="true"><VupsLogo className="auth-logo-image" sizes="220px" /></div><div className="auth-art-lines"><span/><span/><span/><span/><span/></div></div><div className="auth-art-foot"><span>FREE AI / CLEAR CHOICES</span><span>VUPSROUTER / 2026</span></div></div>
-    <div className="auth-form-panel"><Link to="/" className="back-home">← Back to home</Link><div className="auth-form-wrap"><div className="auth-form-heading"><span className="auth-kicker">{isSignup ? "JOIN VUPSROUTER" : "GOOD TO HAVE YOU BACK"}</span><h2>{isSignup ? "Create your account" : "Welcome back"}</h2><p>{isSignup ? "Create an account to use your VupsRouter account features." : "Sign in to your VupsRouter account."}</p></div>
+
+  async function openExternalAuth(kind) {
+    if (externalBusy) return;
+    setExternalError("");
+    setExternalBusy(kind);
+    try {
+      await openAuthPage(kind);
+    } catch (err) {
+      setExternalError(err?.message || "Could not open the VupsRouter website.");
+    } finally {
+      setExternalBusy("");
+    }
+  }
+
+    return <div className={`auth-layout${nativeShell ? " auth-layout--native" : ""}`}><div className="auth-art-panel"><Link to="/" className="brand auth-brand"><span className="brand-mark"><VupsLogo /></span><span>vups<span className="brand-light">router</span></span></Link><div className="auth-art-copy"><div className="eyebrow"><span className="eyebrow-line"/> FREE AI, MADE CLEAR</div><h1>Find your next<br/><span>AI model.</span></h1><p>Compare free access options and open models.</p><div className="auth-logo" aria-hidden="true"><VupsLogo className="auth-logo-image" sizes="220px" /></div><div className="auth-art-lines"><span/><span/><span/><span/><span/></div></div><div className="auth-art-foot"><span>FREE AI / CLEAR CHOICES</span><span>VUPSROUTER / 2026</span></div></div>
+    <div className="auth-form-panel"><Link to="/" className="back-home">{"\u2190"} Back to home</Link><div className="auth-form-wrap"><div className="auth-form-heading"><span className="auth-kicker">{isSignup ? "JOIN VUPSROUTER" : "GOOD TO HAVE YOU BACK"}</span><h2>{isSignup ? "Create your account" : "Welcome back"}</h2><p>{isSignup ? "Create an account to use your VupsRouter account features." : "Sign in to your VupsRouter account."}</p></div>
       {error && <Alert severity="error" sx={{mb:2}}>{error}</Alert>}{message && <Alert severity="success" sx={{mb:2}}>{message}</Alert>}
       <form className="auth-form" onSubmit={handleSubmit}>
         {isSignup && <TextField label="Your name" value={form.name} onChange={update("name")} onBlur={markTouched("name")} error={Boolean(fieldError("name"))} helperText={fieldError("name")} autoComplete="name" autoFocus inputProps={{minLength:2,maxLength:80}} required />}
@@ -151,11 +182,40 @@ function AuthPage({ mode }) {
           required
         />}
         {!isSignup && <div className="auth-forgot"><Link to="/forgot-password">Forgot password?</Link></div>}
-        <Button type="submit" variant="contained" fullWidth disabled={busy} endIcon={busy ? <CircularProgress size={17} color="inherit"/> : <ArrowOutwardRoundedIcon />}>{busy ? "Please wait…" : isSignup ? "Create account" : "Sign in"}</Button>
+        <Button type="submit" variant="contained" fullWidth disabled={busy} endIcon={busy ? <CircularProgress size={17} color="inherit"/> : <ArrowOutwardRoundedIcon />}>{busy ? "Please wait..." : isSignup ? "Create account" : "Sign in"}</Button>
       </form>
+      {nativeShell ? (
+        <div className="auth-external">
+          <div className="auth-external__divider"><span>or</span></div>
+          <div className="auth-external__actions">
+            <Button
+              type="button"
+              variant="outlined"
+              fullWidth
+              disabled={busy || Boolean(externalBusy)}
+              endIcon={<ArrowOutwardRoundedIcon />}
+              onClick={() => openExternalAuth("signin")}
+            >
+              {externalBusy === "signin" ? "Opening browser..." : "Sign in in browser"}
+            </Button>
+            <Button
+              type="button"
+              variant="outlined"
+              fullWidth
+              disabled={busy || Boolean(externalBusy)}
+              endIcon={<ArrowOutwardRoundedIcon />}
+              onClick={() => openExternalAuth("signup")}
+            >
+              {externalBusy === "signup" ? "Opening browser..." : "Sign up in browser"}
+            </Button>
+          </div>
+          {externalError ? <Alert severity="error" sx={{mt:1.5}}>{externalError}</Alert> : null}
+          <p className="auth-external__note">Opens the VupsRouter website in your browser. Browser sign-in does not automatically sign in this desktop app.</p>
+        </div>
+      ) : null}
       <div className="auth-switch">{isSignup ? "Already have an account?" : "New to VupsRouter?"} <Link to={isSignup ? "/signin" : "/signup"}>{isSignup ? "Sign in" : "Create an account"}</Link></div>
       <p className="auth-terms">By continuing, you agree to our <Link to="/terms">Terms of Service</Link> and <Link to="/privacy-policy">Privacy Policy</Link>.</p>
-    </div><div className="auth-side-note">OPEN MODELS <span>•</span> CHECK THE LIMITS</div></div></div>;
+    </div><div className="auth-side-note">OPEN MODELS <span>{"\u00b7"}</span> CHECK THE LIMITS</div></div></div>;
 }
 
 function ScrollToTop() {
@@ -203,8 +263,16 @@ export default function App() {
     <Route path="/signin" element={<><PageMeta title="Sign in — VupsRouter" description="Sign in to your VupsRouter account." noIndex /><AuthPage mode="signin" /></>} />
     <Route path="/forgot-password" element={<><PageMeta title="Forgot password — VupsRouter" noIndex /><ForgotPasswordPage /></>} />
     <Route path="/reset-password" element={<Navigate to="/forgot-password" replace />} />
-    <Route path="/settings" element={<><PageMeta title="API Settings — VupsRouter" noIndex /><RequireAuth><SettingsPage /></RequireAuth></>} />
-    <Route path="/chat" element={<><PageMeta title="Chat — VupsRouter" description="Chat with Vups v3 Galax or route requests through your own AI provider." noIndex /><RequireAuth><ChatPage /></RequireAuth></>} />
+    <Route element={<ProtectedAppLayout />}>
+      <Route path="/chat" element={<><PageMeta title="Chat — VupsRouter" description="Chat with Vups v3 Galax or route requests through your own AI provider." noIndex /><ChatPage /></>} />
+      <Route path="/settings" element={<><PageMeta title="API Settings — VupsRouter" noIndex /><SettingsPage embedded /></>} />
+      <Route path="/app-settings" element={<><PageMeta title="Application Settings — VupsRouter" noIndex /><AppSettingsPage /></>} />
+      <Route path="/automations" element={<><PageMeta title="Automations — VupsRouter" noIndex /><AutomationsPage /></>} />
+      <Route path="/plugins" element={<><PageMeta title="Plugins — VupsRouter" noIndex /><PluginsPage /></>} />
+      <Route path="/extensions" element={<Navigate to="/plugins" replace />} />
+      <Route path="/help" element={<><PageMeta title="Help — VupsRouter" noIndex /><HelpPage /></>} />
+      <Route path="/account" element={<><PageMeta title="Account — VupsRouter" noIndex /><AccountPage /></>} />
+    </Route>
     <Route path="/privacy-policy" element={<PrivacyPolicy />} />
     <Route path="/terms" element={<TermsOfService />} />
     <Route path="/cookie-policy" element={<CookiePolicy />} />
