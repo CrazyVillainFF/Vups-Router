@@ -12,6 +12,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
 import ArrowOutwardRoundedIcon from "@mui/icons-material/ArrowOutwardRounded";
 import { AboutPage, FeaturesPage, NotFoundPage } from "./pages/InfoPages.jsx";
 import LandingPage from "./pages/LandingPage.jsx";
+import DownloadPage from "./pages/DownloadPage.jsx";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import { getApiErrorMessage } from "./services/api.js";
@@ -179,6 +180,7 @@ export default function App() {
     <Route path="/" element={<LandingPage />} />
     <Route path="/features" element={<FeaturesPage />} />
     <Route path="/about" element={<AboutPage />} />
+    <Route path="/download" element={<DownloadPage />} />
     <Route
       path="/motion"
       element={

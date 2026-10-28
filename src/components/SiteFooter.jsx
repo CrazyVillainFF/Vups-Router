@@ -8,6 +8,7 @@ export default function SiteFooter() {
     <Link to="/" className="brand" aria-label="VupsRouter home"><span className="brand-mark"><VupsLogo /></span><span>vups<span className="brand-light">router</span></span></Link>
     <span className="footer-copy">VupsRouter AI, built by Vups.</span>
     <div className="footer-links">
+      <Link to="/download">Download</Link>
       <Link to="/features">Features</Link>
       <Link to="/about">About</Link>
       <Link to="/motion">Motion lab</Link>

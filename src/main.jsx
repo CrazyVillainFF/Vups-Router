@@ -28,3 +28,21 @@ const theme = createTheme({
 createRoot(document.getElementById("root")).render(
   <React.StrictMode><ThemeProvider theme={theme}><CssBaseline /><BrowserRouter><App /></BrowserRouter></ThemeProvider></React.StrictMode>
 );
+
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").then(registration => {
+      if (registration.waiting) registration.waiting.postMessage("SKIP_WAITING");
+      registration.addEventListener("updatefound", () => {
+        const worker = registration.installing;
+        worker?.addEventListener("statechange", () => {
+          if (worker.state === "installed" && navigator.serviceWorker.controller) {
+            worker.postMessage("SKIP_WAITING");
+          }
+        });
+      });
+    }).catch(() => {
+      // A failed service-worker registration must never block the app.
+    });
+  });
+}

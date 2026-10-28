@@ -8,9 +8,15 @@
     "prebuild": "node scripts/check-api-config.mjs",
     "build": "node ./node_modules/vite/bin/vite.js build",
     "preview": "vite preview",
-    "test": "node --test"
+    "test": "node --test",
+    "cap:sync": "cap sync android",
+    "cap:android": "cap open android",
+    "tauri:dev": "npx --yes @tauri-apps/cli@2 dev",
+    "tauri:build": "npx --yes @tauri-apps/cli@2 build"
   },
   "dependencies": {
+    "@capacitor/android": "^7.6.9",
+    "@capacitor/core": "^7.6.9",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
     "@gsap/react": "^2.1.2",
@@ -36,6 +42,7 @@
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.6.9",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^5.0.2",
     "tailwindcss": "^4.3.3",

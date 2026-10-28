@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080c15">
+  <title>VupsRouter is offline</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100svh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      color: #e8edf7;
+      background:
+        linear-gradient(rgba(107, 150, 255, .06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(107, 150, 255, .04) 1px, transparent 1px),
+        #080c15;
+      background-size: 84px 84px, 84px 84px, auto;
+      font-family: "Outfit", "Avenir Next", system-ui, sans-serif;
+    }
+    main { width: min(480px, 100%); padding: 34px; border: 1px solid #202a3b; border-radius: 18px; background: rgba(16, 26, 46, .9); }
+    .label { color: #71819b; font: 10px ui-monospace, monospace; letter-spacing: .16em; }
+    h1 { margin: 18px 0 12px; font-size: clamp(2.2rem, 8vw, 3.4rem); font-weight: 550; letter-spacing: -.06em; line-height: 1; }
+    h1 span { color: #6b96ff; }
+    p { margin: 0; color: #a2b0c8; font-size: 14px; line-height: 1.75; }
+    a { display: inline-flex; margin-top: 24px; padding: 12px 18px; border-radius: 999px; color: #07101f; background: #4f83ff; font-size: 13px; font-weight: 650; text-decoration: none; }
+    a:focus-visible { outline: 2px solid #e8edf7; outline-offset: 4px; }
+  </style>
+</head>
+<body>
+  <main>
+    <span class="label">VUPSROUTER / OFFLINE</span>
+    <h1>You are <span>offline.</span></h1>
+    <p>VupsRouter needs a connection to reach your account, conversations, and AI models. Reconnect and try again. Your saved data has not been changed.</p>
+    <a href="/">Try again</a>
+  </main>
+</body>
+</html>

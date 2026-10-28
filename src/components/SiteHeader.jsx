@@ -125,6 +125,9 @@ export default function SiteHeader() {
               </NavLink>
             )
           )}
+          <NavLink to="/download" onClick={() => setMenuOpen(false)}>
+            Download
+          </NavLink>
           <NavLink
             to="/chat"
             onClick={() => setMenuOpen(false)}
