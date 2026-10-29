@@ -28,15 +28,16 @@ export function AuthProvider({ children }) {
     setSessionError("");
     try {
       const current = await fetchCurrentUser();
-      if (check !== checkRef.current) return;
+      if (check !== checkRef.current) return null;
       applyUser(current);
       setStatus("authenticated");
+      return current;
     } catch (error) {
-      if (check !== checkRef.current) return;
+      if (check !== checkRef.current) return null;
       if (isUnauthorizedError(error)) {
         applyUser(null);
         setStatus("anonymous");
-        return;
+        return null;
       }
       setSessionError(getApiErrorMessage(error));
       if (userRef.current) {
@@ -44,6 +45,7 @@ export function AuthProvider({ children }) {
       } else {
         setStatus("unavailable");
       }
+      return userRef.current || null;
     }
   }, [applyUser]);
 

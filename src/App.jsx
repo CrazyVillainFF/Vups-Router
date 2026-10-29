@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Button, TextField, Alert, CircularProgress, IconButton, InputAdornment } from "@mui/material";
 import ChatPage from "./ChatPage.jsx";
@@ -17,6 +17,15 @@ import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import { getApiErrorMessage } from "./services/api.js";
 import { NATIVE_SHELLS, detectNativeShell, isTauriRuntime } from "./native/shell.js";
 import { openAuthPage } from "./native/authLinks.js";
+import {
+  beginDesktopSignIn,
+  clearPendingSignIn,
+  readPendingSignIn,
+  reopenDesktopSignIn,
+  waitForDesktopSignIn
+} from "./native/desktopSignIn.js";
+import LinkErrorToast from "./components/LinkErrorToast.jsx";
+import DesktopAuthPage from "./pages/DesktopAuthPage.jsx";
 import ProtectedAppLayout from "./desktop/ProtectedAppLayout.jsx";
 import {
   AccountPage,
@@ -64,7 +73,7 @@ function AuthPage({ mode }) {
   const nativeShell =
     detectNativeShell(returnSearch || undefined) ||
     (isTauriRuntime() ? NATIVE_SHELLS.windows : null);
-  const { signUp, signIn, status } = useAuth();
+  const { signUp, signIn, status, refreshSession } = useAuth();
   const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "" });
   const [visibility, setVisibility] = useState(initialPasswordVisibility);
   const [busy, setBusy] = useState(false);
@@ -73,6 +82,11 @@ function AuthPage({ mode }) {
   const [externalError, setExternalError] = useState("");
   const [externalBusy, setExternalBusy] = useState("");
   const [touched, setTouched] = useState({});
+  const [handoff, setHandoff] = useState({ state: "idle", message: "" });
+  const [lastAuthKind, setLastAuthKind] = useState("signin");
+  const transactionRef = useRef(null);
+  const handoffRef = useRef(null);
+  const shellLabel = nativeShell === NATIVE_SHELLS.android ? "ANDROID" : "WINDOWS";
 
   useEffect(() => {
     setMessage("");
@@ -83,6 +97,20 @@ function AuthPage({ mode }) {
     setForm({ name: "", email: "", password: "", confirmPassword: "" });
     setVisibility(initialPasswordVisibility());
   }, [mode]);
+
+  useEffect(() => {
+    if (!nativeShell) return undefined;
+    const pending = readPendingSignIn();
+    if (!pending) return undefined;
+    watchHandoff(pending);
+    return () => {
+      handoffRef.current?.abort();
+      handoffRef.current = null;
+    };
+    // Resume only once per native auth screen mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nativeShell]);
+
 
   if (status === "authenticated") return <Navigate to={redirectTo} replace />;
 
@@ -120,21 +148,79 @@ function AuthPage({ mode }) {
     } finally { setBusy(false); }
   }
 
+  function stopHandoff() {
+    handoffRef.current?.abort();
+    handoffRef.current = null;
+    clearPendingSignIn();
+    transactionRef.current = null;
+    setHandoff({ state: "idle", message: "" });
+    setExternalBusy("");
+  }
+
+  async function watchHandoff(transaction, { reopen = false } = {}) {
+    handoffRef.current?.abort();
+    const controller = new AbortController();
+    transactionRef.current = transaction;
+    handoffRef.current = controller;
+    setExternalBusy("");
+    setHandoff({ state: "waiting", message: "" });
+    try {
+      if (reopen) await reopenDesktopSignIn(transaction);
+      await waitForDesktopSignIn(transaction, { signal: controller.signal });
+      await refreshSession();
+      setHandoff({ state: "done", message: "" });
+    } catch (err) {
+      if (err?.name === "AbortError") return;
+      if (handoffRef.current !== controller) return;
+      // Another tab or a remount may have consumed the approval first.
+      const current = await refreshSession();
+      if (current) {
+        setHandoff({ state: "done", message: "" });
+        return;
+      }
+      setHandoff({
+        state: "error",
+        message: err?.message || "Could not finish signing in. Try again."
+      });
+    } finally {
+      if (handoffRef.current === controller) handoffRef.current = null;
+    }
+  }
+
   async function openExternalAuth(kind) {
-    if (externalBusy) return;
+    setLastAuthKind(kind);
+    if (externalBusy || handoff.state === "waiting") return;
     setExternalError("");
+    setHandoff({ state: "idle", message: "" });
+    if (kind === "forgot") {
+      setExternalBusy(kind);
+      try {
+        await openAuthPage("forgot");
+      } catch (err) {
+        setExternalError(err?.message || "Could not open the VupsRouter website.");
+      } finally {
+        setExternalBusy("");
+      }
+      return;
+    }
     setExternalBusy(kind);
     try {
-      await openAuthPage(kind);
+      const { transaction } = await beginDesktopSignIn({
+        client: nativeShell === NATIVE_SHELLS.android ? "android" : "windows",
+        mode: kind
+      });
+      await watchHandoff(transaction);
     } catch (err) {
-      setExternalError(err?.message || "Could not open the VupsRouter website.");
-    } finally {
       setExternalBusy("");
+      setHandoff({
+        state: "error",
+        message: err?.message || "Could not start sign-in. Try again."
+      });
     }
   }
 
     return <div className={`auth-layout${nativeShell ? " auth-layout--native" : ""}`}><div className="auth-art-panel"><Link to="/" className="brand auth-brand"><span className="brand-mark"><VupsLogo /></span><span>vups<span className="brand-light">router</span></span></Link><div className="auth-art-copy"><div className="eyebrow"><span className="eyebrow-line"/> FREE AI, MADE CLEAR</div><h1>Find your next<br/><span>AI model.</span></h1><p>Compare free access options and open models.</p><div className="auth-logo" aria-hidden="true"><VupsLogo className="auth-logo-image" sizes="220px" /></div><div className="auth-art-lines"><span/><span/><span/><span/><span/></div></div><div className="auth-art-foot"><span>FREE AI / CLEAR CHOICES</span><span>VUPSROUTER / 2026</span></div></div>
-    <div className="auth-form-panel"><Link to="/" className="back-home">{"\u2190"} Back to home</Link><div className="auth-form-wrap"><div className="auth-form-heading"><span className="auth-kicker">{nativeShell ? "VUPSROUTER FOR WINDOWS" : isSignup ? "JOIN VUPSROUTER" : "GOOD TO HAVE YOU BACK"}</span><h2>{nativeShell ? isSignup ? "Create your account" : "Sign in" : isSignup ? "Create your account" : "Welcome back"}</h2><p>{nativeShell ? "Account access opens securely in your browser." : isSignup ? "Create an account to use your VupsRouter account features." : "Sign in to your VupsRouter account."}</p></div>
+    <div className="auth-form-panel"><Link to="/" className="back-home">{"\u2190"} Back to home</Link><div className="auth-form-wrap"><div className="auth-form-heading"><span className="auth-kicker">{nativeShell ? `VUPSROUTER FOR ${shellLabel}` : isSignup ? "JOIN VUPSROUTER" : "GOOD TO HAVE YOU BACK"}</span><h2>{nativeShell ? isSignup ? "Create your account" : "Sign in" : isSignup ? "Create your account" : "Welcome back"}</h2><p>{nativeShell ? "Account access opens securely in your browser." : isSignup ? "Create an account to use your VupsRouter account features." : "Sign in to your VupsRouter account."}</p></div>
       {!nativeShell ? <>
       {error && <Alert severity="error" sx={{mb:2}}>{error}</Alert>}{message && <Alert severity="success" sx={{mb:2}}>{message}</Alert>}
       <form className="auth-form" onSubmit={handleSubmit}>
@@ -185,7 +271,7 @@ function AuthPage({ mode }) {
         {!isSignup && <div className="auth-forgot"><Link to="/forgot-password">Forgot password?</Link></div>}
         <Button type="submit" variant="contained" fullWidth disabled={busy} endIcon={busy ? <CircularProgress size={17} color="inherit"/> : <ArrowOutwardRoundedIcon />}>{busy ? "Please wait..." : isSignup ? "Create account" : "Sign in"}</Button>
       </form>
-      <div className="auth-switch">{isSignup ? "Already have an account?" : "New to VupsRouter?"} <Link to={isSignup ? "/signin" : "/signup"}>{isSignup ? "Sign in" : "Create an account"}</Link></div>
+      <div className="auth-switch">{isSignup ? "Already have an account?" : "New to VupsRouter?"} <Link to={isSignup ? "/signin" : "/signup"} state={location.state}>{isSignup ? "Sign in" : "Create an account"}</Link></div>
       <p className="auth-terms">By continuing, you agree to our <Link to="/terms">Terms of Service</Link> and <Link to="/privacy-policy">Privacy Policy</Link>.</p>
       </> : (
         <div className="auth-external auth-external--native">
@@ -194,17 +280,19 @@ function AuthPage({ mode }) {
               type="button"
               variant="contained"
               fullWidth
-              disabled={Boolean(externalBusy)}
+              disabled={Boolean(externalBusy) || handoff.state === "waiting"}
               endIcon={<ArrowOutwardRoundedIcon />}
               onClick={() => openExternalAuth("signin")}
             >
-              {externalBusy === "signin" ? "Opening browser..." : "Sign in with browser"}
+              {externalBusy === "signin"
+                ? "Opening browser..."
+                : handoff.state === "waiting" ? "Waiting for sign-in..." : "Sign in with browser"}
             </Button>
             <Button
               type="button"
               variant="outlined"
               fullWidth
-              disabled={Boolean(externalBusy)}
+              disabled={Boolean(externalBusy) || handoff.state === "waiting"}
               endIcon={<ArrowOutwardRoundedIcon />}
               onClick={() => openExternalAuth("signup")}
             >
@@ -214,15 +302,48 @@ function AuthPage({ mode }) {
               type="button"
               variant="outlined"
               fullWidth
-              disabled={Boolean(externalBusy)}
+              disabled={Boolean(externalBusy) || handoff.state === "waiting"}
               endIcon={<ArrowOutwardRoundedIcon />}
               onClick={() => openExternalAuth("forgot")}
             >
               {externalBusy === "forgot" ? "Opening browser..." : "Reset password in browser"}
             </Button>
           </div>
-          {externalError ? <Alert severity="error" sx={{mt:1.5}}>{externalError}</Alert> : null}
-          <p className="auth-external__note">The VupsRouter website opens in your system browser. This Windows build does not yet receive a browser session, so it cannot sign you in automatically.</p>
+          {handoff.state === "waiting" ? (
+            <>
+              <Alert severity="info" sx={{ mt: 1.5 }}>
+                Finish signing in in your browser. This window continues automatically.
+              </Alert>
+              <div className="auth-external__handoff-actions">
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={async () => {
+                    try {
+                      await reopenDesktopSignIn(transactionRef.current);
+                    } catch (err) {
+                      setHandoff({ state: "error", message: err?.message || "Could not reopen the sign-in page." });
+                    }
+                  }}
+                >
+                  Open the page again
+                </Button>
+                <Button size="small" variant="text" onClick={stopHandoff}>Cancel</Button>
+              </div>
+            </>
+          ) : null}
+          {handoff.state === "error" ? (
+            <>
+              <Alert severity="error" sx={{ mt: 1.5 }}>{handoff.message}</Alert>
+              <Button size="small" variant="text" sx={{ mt: 1 }} onClick={() => openExternalAuth(lastAuthKind)}>
+                Try again
+              </Button>
+            </>
+          ) : null}
+          {externalError ? <Alert severity="error" sx={{ mt: 1.5 }}>{externalError}</Alert> : null}
+          <p className="auth-external__note">
+            VupsRouter opens the secure sign-in page in your browser. {shellLabel === "ANDROID" ? "This Android app" : "This Windows app"} finishes signing you in automatically when you are done there.
+          </p>
         </div>
       )}
     </div><div className="auth-side-note">OPEN MODELS <span>{"\u00b7"}</span> CHECK THE LIMITS</div></div></div>;
@@ -246,11 +367,12 @@ function ScrollToTop() {
 }
 
 export default function App() {
-  return <AuthProvider><ScrollToTop /><Routes>
+  return <AuthProvider><LinkErrorToast /><ScrollToTop /><Routes>
     <Route path="/" element={<LandingPage />} />
     <Route path="/features" element={<FeaturesPage />} />
     <Route path="/about" element={<AboutPage />} />
     <Route path="/download" element={<DownloadPage />} />
+    <Route path="/desktop-auth" element={<DesktopAuthPage />} />
     <Route
       path="/motion"
       element={
