@@ -65,6 +65,25 @@ const OVERSIZE_CODES = new Set([
 ]);
 const OVERSIZE_PATTERN = /cannot exceed \d+ characters/i;
 
+// Backend request validation. These sentences are written for users, so they
+// can be shown as-is instead of collapsing into "Something went wrong".
+const VALIDATION_PATTERN =
+  /message content cannot be empty|last message must come from the user|images can only be attached|messages must be a non-empty array|content must be a string|role must be|unsupported image|too many images|message id/i;
+// A shipped shell talking to a server that does not know its origin. The
+// provider is not involved, so it must not read as a provider denial.
+const ORIGIN_BLOCKED_PATTERN = /origin not allowed/i;
+
+// The shared catalog answers with its own codes. Each one needs a different
+// next action, so none of them may fall through to the generic card.
+const SHARED_MODEL_CODES = new Set(["shared_model_unavailable"]);
+const SHARED_REJECTED_CODES = new Set(["shared_request_rejected"]);
+const SHARED_CONFIG_CODES = new Set(["shared_auth_failed", "shared_disabled", "shared_not_configured"]);
+
+// Desktop local-file tools are a client/server feature pair. When the server
+// half is missing the user's message is still valid, so it must not read as a
+// model outage or a generic failure.
+const DESKTOP_TOOL_CODES = new Set(["desktop_tools_unavailable", "desktop_chat_failed", "invalid_tool_response"]);
+
 function hasPattern(value, pattern) {
   return typeof value === "string" && pattern.test(value);
 }
@@ -132,10 +151,21 @@ export function classifyChatError(error) {
   if (status === 429 || hasPattern(combined, RATE_PATTERN) || code === "rate_limited" || code === "rate_limit_error") {
     return "rate_limit";
   }
+  // Before the credential branch: an unallowlisted app origin answers 403, but
+  // no provider key or permission is involved.
+  if (hasPattern(message, ORIGIN_BLOCKED_PATTERN)) return "origin_blocked";
+  if (status === 400 && hasPattern(combined, VALIDATION_PATTERN)) return "request_invalid";
+  // Before the credential branch: the shared-catalog messages mention a key,
+  // but the user has no key to fix — the server does.
+  if (SHARED_MODEL_CODES.has(code)) return "model";
+  if (SHARED_REJECTED_CODES.has(code)) return "request_rejected";
+  if (SHARED_CONFIG_CODES.has(code)) return "shared_config";
   if (status === 401 || status === 403 || hasPattern(combined, AUTH_PATTERN) || code === "unauthorized" || code === "invalid_api_key") {
     if (!isMissingApiKeyError(error)) return "access_denied";
     return isMissingKeyEvidence(error) ? "missing_api_key" : "invalid_api_key";
   }
+  // After the credential branch so an expired session keeps its own card.
+  if (DESKTOP_TOOL_CODES.has(code) || code === "tool_round_limit") return "desktop_tools";
   if (code.endsWith("_unavailable") || code === "provider_unavailable" || code === "upstream_unavailable") {
     return "server_error";
   }
@@ -228,8 +258,40 @@ export function presentChatError(error, { modelLabel = "", now = new Date() } = 
     canSwitchModel = false;
   } else if (category === "model") {
     title = "Model unavailable";
-    message = "This model is unavailable. Try another model.";
+    message = model
+      ? `${model} is not available right now. Pick another model from the menu, or add your own provider key in Settings.`
+      : "This model is unavailable. Try another model.";
     retry = false;
+  } else if (category === "request_rejected") {
+    title = "Request rejected";
+    message = model
+      ? `${model} rejected this request as invalid. Sending it again will not change the outcome — pick another model, or start a new chat.`
+      : "This model rejected the request as invalid. Sending it again will not change the outcome — pick another model, or start a new chat.";
+    retry = false;
+  } else if (category === "shared_config") {
+    title = "Shared models unavailable";
+    message =
+      "The shared model service is not working on the server, so no shared model will answer right now. Add your own provider key in Settings, or contact your administrator.";
+    retry = false;
+  } else if (category === "request_invalid") {
+    title = "Message not sent";
+    message =
+      "This message was rejected before it reached the model, so nothing was sent. Start a new chat, or remove the attachment that triggered it and send it again.";
+    retry = false;
+    canSwitchModel = false;
+  } else if (category === "origin_blocked") {
+    title = "This app cannot reach the server";
+    message =
+      "The VupsRouter server does not accept requests from this app address. Update to the latest build, or open VupsRouter in your browser instead.";
+    retry = false;
+    canSwitchModel = false;
+  } else if (category === "desktop_tools") {
+    title = "Local file tools unavailable";
+    message =
+      code === "tool_round_limit"
+        ? "The assistant used too many local file steps for one request. Ask for fewer files, or send the request again without the workspace folder."
+        : "The local file tools could not run against the connected server, so nothing was read from your workspace. Send the message again, or remove the workspace folder to chat without tools.";
+    canSwitchModel = false;
   } else if (category === "timeout") {
     title = "Request timed out";
     message = "This is taking too long. Try again.";

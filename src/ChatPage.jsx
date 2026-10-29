@@ -170,6 +170,15 @@ function localBrowserStorage() {
   }
 }
 
+function sessionBrowserStorage() {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
 // Web Speech API dictation (active only if supported by browser)
 const handleDictate =
   typeof window !== "undefined" &&
@@ -233,7 +242,21 @@ function toLocalMessage(message, artifactMap = null) {
   };
 }
 
-// Only the final message may carry images â€” the backend rejects attachments
+// Local file tools need both a Windows shell and a server endpoint. When
+// either is missing the turn is still answerable, so resend it as a plain chat
+// and say why instead of failing the message.
+const DESKTOP_TOOL_FALLBACK_REASONS = {
+  tool_calling_unsupported: "This model's provider does not support local filesystem tools. The message was sent without them.",
+  desktop_tools_unavailable: "The connected server has no local-file tool endpoint yet, so this message was sent as a normal chat."
+};
+
+// A server without the endpoint answers every tool turn with the same 404, so
+// the first failure is remembered for the rest of the app session and later
+// turns go straight to plain chat. The next launch re-probes, so a redeployed
+// backend starts using tools again without the user clearing anything.
+const DESKTOP_TOOLS_MISSING_KEY = "vr.desktopToolsMissing";
+
+// Only the final message may carry images — the backend rejects attachments
 // on earlier messages, so trimmed history stays text-only.
 function requestHistory(messages) {
   const filtered = sanitizeHistoryMessages(messages);
@@ -1075,6 +1098,9 @@ export default function ChatPage() {
   const [notice, setNotice] = useState("");
   const [deleteModelTarget, setDeleteModelTarget] = useState(null);
   const [composerWarning, setComposerWarning] = useState("");
+  const [serverLacksToolEndpoint, setServerLacksToolEndpoint] = useState(
+    () => sessionBrowserStorage()?.getItem(DESKTOP_TOOLS_MISSING_KEY) === "1"
+  );
   const [imageGenerating, setImageGenerating] = useState(false);
   const [generatedImage, setGeneratedImage] = useState(null);
   const [imageError, setImageError] = useState("");
@@ -1726,7 +1752,15 @@ export default function ChatPage() {
     const inlineRequested = wantsInlineCode(text);
     let streamedContent = "";
 
-    const useDesktopTools = nativeShell === NATIVE_SHELLS.windows && Boolean(workspaceOwner) && imagePayload.length === 0;
+    const useDesktopTools =
+      nativeShell === NATIVE_SHELLS.windows &&
+      Boolean(workspaceOwner) &&
+      imagePayload.length === 0 &&
+      !serverLacksToolEndpoint;
+    // Local tools are a bonus on a plain question but the whole point of the
+    // turn once a project folder is picked, so only the second case owes the
+    // user an explanation when the server cannot run them.
+    const warnAboutSkippedTools = Boolean(activeWorkspace?.id);
     try {
       const requestOptions = {
         conversationId: activeConvId,
@@ -1779,8 +1813,21 @@ export default function ChatPage() {
         try {
           result = await runDesktopToolChat(requestOptions);
         } catch (error) {
-          if (error?.code !== "tool_calling_unsupported") throw error;
-          setComposerWarning("This model's provider does not support local filesystem tools. The message was sent without them.");
+          const reason = DESKTOP_TOOL_FALLBACK_REASONS[error?.code];
+          if (!reason) throw error;
+          if (error.code === "desktop_tools_unavailable") {
+            sessionBrowserStorage()?.setItem(DESKTOP_TOOLS_MISSING_KEY, "1");
+            setServerLacksToolEndpoint(true);
+          }
+          // A tool loop can emit text before it fails, and the plain resend
+          // re-emits the same answer, so clear the half-written turn first.
+          streamedContent = "";
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantId ? createAssistantTurn({ id: assistantId }) : message
+            )
+          );
+          if (warnAboutSkippedTools) setComposerWarning(reason);
           result = await streamChatResponse(requestOptions);
         }
       } else {

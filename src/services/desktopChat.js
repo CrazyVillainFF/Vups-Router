@@ -22,12 +22,17 @@ function createRunId() {
   return `desktop_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
 }
 
-function requestError(error) {
+export function requestError(error) {
   const data = error?.response?.data;
+  const status = error?.response?.status ?? null;
+  // 404/405 here means the connected server has no tool route at all, which is
+  // a server-build gap rather than a rejected message. The caller can resend
+  // the same turn without local tools, so keep it apart from real failures.
+  const routeMissing = status === 404 || status === 405;
   return new DesktopChatError(
     data?.message || error?.message || "The desktop tool request failed.",
-    data?.code || error?.code || "desktop_chat_failed",
-    error?.response?.status ?? null
+    routeMissing ? "desktop_tools_unavailable" : data?.code || error?.code || "desktop_chat_failed",
+    status
   );
 }
 

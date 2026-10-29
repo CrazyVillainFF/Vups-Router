@@ -14,6 +14,8 @@ export function TaskProvider({ children }) {
   const [usage, setUsage] = useState(null);
   const [taskError, setTaskError] = useState("");
   const [usageError, setUsageError] = useState("");
+  const [usageUnsupported, setUsageUnsupported] = useState(false);
+  const usageUnsupportedRef = useRef(false);
   const [draftRequest, setDraftRequest] = useState(null);
   const localChatsRef = useRef(new Map());
 
@@ -30,17 +32,23 @@ export function TaskProvider({ children }) {
   }, []);
 
   const refreshUsage = useCallback(async () => {
+    if (usageUnsupportedRef.current) return null;
     try {
       const next = await fetchUsage();
       setUsage(next);
       setUsageError("");
       return next;
     } catch (error) {
-      const message =
-        error?.response?.status === 404
-          ? "Usage is unavailable from the backend right now."
-          : error.message || "Could not load usage.";
-      setUsageError(message);
+      if (error?.response?.status === 404) {
+        // A server with no usage endpoint at all. Retrying every minute or after
+        // every turn cannot fix that, so stop asking and say so plainly instead
+        // of leaving a permanent "unavailable" error on screen.
+        usageUnsupportedRef.current = true;
+        setUsageUnsupported(true);
+        setUsageError("This server does not report daily usage.");
+        return null;
+      }
+      setUsageError(error.message || "Could not load usage.");
       return null;
     }
   }, []);
@@ -125,6 +133,7 @@ export function TaskProvider({ children }) {
       taskError,
       usage,
       usageError,
+      usageUnsupported,
       refreshUsage,
       draftRequest,
       requestDraft
@@ -141,6 +150,7 @@ export function TaskProvider({ children }) {
       taskError,
       usage,
       usageError,
+      usageUnsupported,
       refreshUsage,
       draftRequest,
       requestDraft

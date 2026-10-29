@@ -65,7 +65,7 @@ export default function DesktopSidebar({
   const [searchParams] = useSearchParams();
   const sidebarSearch = useRef(null);
   const { preferences } = usePreferences();
-  const { tasks, renameTask, removeTask, usage, usageError } = useTasks();
+  const { tasks, renameTask, removeTask, usage, usageError, usageUnsupported } = useTasks();
   const {
     supported: workspaceSupported,
     workspaces,
@@ -131,9 +131,12 @@ export default function DesktopSidebar({
   }, [toolsClosed]);
 
   const usageLabel = useMemo(() => {
-    if (!usage) return usageError ? "Usage unavailable" : "Loading usage...";
+    if (!usage) {
+      if (usageUnsupported) return "Daily usage is not tracked by this server";
+      return usageError ? "Usage unavailable" : "Loading usage...";
+    }
     return `${usage.dailyUsed} of ${usage.dailyQuota} requests today`;
-  }, [usage, usageError]);
+  }, [usage, usageError, usageUnsupported]);
 
   const usagePercent = usage && usage.dailyQuota > 0
     ? Math.min(100, Math.round((usage.dailyUsed / usage.dailyQuota) * 100))
