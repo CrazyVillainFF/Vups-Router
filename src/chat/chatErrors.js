@@ -165,7 +165,12 @@ export function classifyChatError(error) {
     return isMissingKeyEvidence(error) ? "missing_api_key" : "invalid_api_key";
   }
   // After the credential branch so an expired session keeps its own card.
-  if (DESKTOP_TOOL_CODES.has(code) || code === "tool_round_limit") return "desktop_tools";
+  // Anything the desktop tool service raised is about local tools, whatever code
+  // the server attached, so a new server-side failure cannot become "Something
+  // went wrong".
+  if (DESKTOP_TOOL_CODES.has(code) || code === "tool_round_limit" || error?.name === "DesktopChatError") {
+    return "desktop_tools";
+  }
   if (code.endsWith("_unavailable") || code === "provider_unavailable" || code === "upstream_unavailable") {
     return "server_error";
   }

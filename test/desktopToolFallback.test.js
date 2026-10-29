@@ -45,6 +45,22 @@ test("an expired session on the tool route keeps its own card", () => {
   assert.equal(classifyChatError(error), "access_denied");
 });
 
+test("a server-side tool failure the client has never seen still explains itself", () => {
+  // Reproduced against the deployed backend: the tool route answered
+  // 400 "The provider rejected the request (HTTP 400)... not a valid model ID"
+  // with code "bad_request", which no client-side code list covered, so the turn
+  // rendered the generic card.
+  const error = new DesktopChatError(
+    "The provider rejected the request (HTTP 400). Provider said: vups-v3-galax is not a valid model ID",
+    "bad_request",
+    400
+  );
+  assert.equal(classifyChatError(error), "desktop_tools");
+  const presented = presentChatError(error, { modelLabel: "Vups v3 Galax" });
+  assert.equal(presented.title, "Local file tools unavailable");
+  assert.doesNotMatch(presented.message, /something went wrong/i);
+});
+
 test("the too-many-steps card tells the user to narrow the request", () => {
   const presented = presentChatError(
     Object.assign(new Error("The assistant used too many local filesystem tool rounds."), { code: "tool_round_limit" }),
