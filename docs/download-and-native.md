@@ -27,9 +27,18 @@ The manifest and PWA use the production website. Installability still depends on
 
 The composer exposes `Ask me every time` (default), `Agent (workspace)`, and `Full access`.
 
-- `Ask me every time` requires approval before any attached local file is sent.
-- `Agent (workspace)` auto-sends files selected through the folder picker, but asks for individual file picks.
-- `Full access` requires a separate warning confirmation before it is enabled, then sends any attached file without another prompt.
+- `Ask me every time` requires approval before any attached local file is sent, and asks again for each local filesystem read. A folder the user marked `Always allow` on a card is the one standing exception; it is listed and revocable in Settings.
+- `Agent (workspace)` auto-sends files selected through the folder picker, but asks for individual file picks. Tool reads inside the selected workspace run without a card; any path outside it asks, even a folder allowed in an earlier mode.
+- `Full access` requires a separate warning confirmation before it is enabled, then sends any attached file without another prompt. Protected system locations (`C:\Windows`, `Program Files`, `ProgramData`, drive roots, UNC paths) still ask on every call and never get a standing grant.
+
+Enforcement lives in `src-tauri/src/desktop_tools.rs`, not in the selector:
+
+- Every tool call re-reads the stored policy. A request payload cannot carry a mode or owner — `ToolRequest` deserializes only `tool` and `args`, and unknown fields are ignored.
+- `desktop_tool_set_policy` is the only way to change the mode. A real change (mode, workspace, or account) bumps a generation counter, denies every card on screen, and clears the task's one-time approvals. A change to a narrower mode also deletes every standing `Always allow` grant for that account, so `Full access` → `Ask me every time` cannot inherit a folder approved a moment earlier. Re-sending the current mode changes nothing.
+- Each `desktop_tool_execute` captures the generation before it runs and checks it before the card, after the answer, and immediately before touching the disk. A switch that lands while a card is open returns `policy_changed` instead of reading under the old mode.
+- The selector updates only after the native layer has adopted the new mode; a failed switch leaves the previous mode in force and shows the reason. No stored policy (fresh launch before the page installs the saved mode) is a refusal, not a default.
+- A workspace that is missing or unreadable is stored as workspace mode with no root, so every path keeps asking; it is never treated as permission for the whole disk.
+- Reads stay read-only in all three modes: no shell, writes, deletion, registry access, elevation, or Windows permission bypass exists in the tool set. `workspace_read` (Attach workspace files) is a separate, user-initiated command that only reads inside a workspace the user picked in a native dialog, rejects traversal and symlinks, and never gives the model a new path.
 
 The Windows composer adds a read-only filesystem tool loop: `get_windows_known_folder`, `list_directory`, `list_recent_files`, `read_file`, `search_files`, and `read_file_metadata`, driven by `POST /api/chat/desktop-tools` in `src/services/desktopChat.js`. There is no local shell, command-execution, or file-write tool, so "agent execution" means the model reading files the permission mode allows — not running anything on the machine.
 
