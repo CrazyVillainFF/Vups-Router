@@ -423,8 +423,13 @@ export function AutomationsPage() {
           {automations.length === 0 ? (
             <div className="vr-card vr-empty-card">
               <Sparkle size={20} />
-              <strong>No saved automations</strong>
-              <span>Create a reusable brief and open it as a task whenever you need it.</span>
+              <strong>No saved automations yet</strong>
+              <span>Saved briefs appear here, ready to open as a task.</span>
+              <ol className="vr-empty-steps">
+                <li>Write the brief in the form.</li>
+                <li>Save it with a name you will recognise.</li>
+                <li>Open it as a task when you need it — it never sends itself.</li>
+              </ol>
             </div>
           ) : (
             automations.map(automation => (
@@ -488,7 +493,7 @@ export function HelpPage() {
         </article>
         <article className="vr-card">
           <h2>Permission modes</h2>
-          <p>Ask me every time prompts before each local filesystem read. Agent allows reads inside the selected workspace and asks outside it. Full access allows broad read-only filesystem tools but still asks before protected system locations and never bypasses Windows permissions.</p>
+          <p>Ask me every time prompts before each local filesystem read, except folders you marked &quot;Always allow&quot; in the card; those are listed above and can be revoked. Agent allows reads inside the selected workspace and asks outside it, even for folders allowed in an earlier mode. Full access allows broad read-only filesystem tools but still asks every time for protected system locations and never bypasses Windows permissions. Switching modes applies immediately in the native layer and cancels any card still waiting; switching to a stricter mode also clears the folders you had allowed for good.</p>
         </article>
         <article className="vr-card">
           <h2>Search and organize</h2>

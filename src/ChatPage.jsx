@@ -34,6 +34,7 @@ import { NATIVE_SHELLS, detectNativeShell } from "./native/shell.js";
 import {
   DEFAULT_PERMISSION_MODE,
   attachmentPermissionDetails,
+  isPermissionMode,
   loadPermissionMode,
   permissionDecision,
   permissionModeInfo,
@@ -954,32 +955,80 @@ function Message({
 
 // â”€â”€â”€ Welcome Screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function WelcomeScreen({ configured, modelName, sharedActive, gatewayActive, vupsActive, sharedLoading }) {
+const STARTER_PROMPTS = [
+  {
+    title: "Explain a codebase",
+    hint: "Module map and risk notes",
+    prompt:
+      "Explain how this project is put together: the main modules, how they connect, and where the riskiest code lives."
+  },
+  {
+    title: "Draft a bug report",
+    hint: "Ask questions, then write it",
+    prompt:
+      "Help me write a bug report. Ask me for the symptom, the steps to reproduce, and the expected behavior, then draft it."
+  },
+  {
+    title: "Plan a release",
+    hint: "Checks, risks, rollback",
+    prompt: "Plan a release for this project: the checks to run, the risks to watch, and the rollback steps."
+  }
+];
+
+function WelcomeScreen({ configured, modelName, sharedActive, gatewayActive, vupsActive, sharedLoading, onStarter }) {
   return (
     <div className="vr-welcome">
-      <div className="vr-welcome-art" aria-hidden="true">
-        <div className="vr-welcome-ring ring-outer" />
-        <div className="vr-welcome-ring ring-inner" />
-        <div className="vr-welcome-icon">
-          <VupsLogo />
+      <div className="vr-welcome-inner">
+        <div className="vr-welcome-art" aria-hidden="true">
+          <div className="vr-welcome-ring ring-outer" />
+          <div className="vr-welcome-ring ring-inner" />
+          <div className="vr-welcome-icon">
+            <VupsLogo />
+          </div>
         </div>
+        <p className="vr-welcome-eyebrow">VupsRouter workspace</p>
+        <h1 className="vr-welcome-title">
+          VupsRouter <span>AI</span>
+        </h1>
+        <p className="vr-welcome-desc">
+          {configured
+            ? vupsActive
+              ? `Chatting with ${modelName || "Vups v3 Galax"}.`
+              : sharedActive
+                ? `Chatting with ${modelName || "the shared model"}.`
+                : gatewayActive
+                  ? `Chatting with ${modelName || "this model"} through the OmniRoute gateway.`
+                  : `Chatting with ${modelName || "your configured model"} through your own provider.`
+            : sharedLoading
+              ? "Checking for an available AI model..."
+              : "Vups v3 Galax is not configured on this server yet. Add your own AI provider in API settings."}
+        </p>
+        {configured && onStarter ? (
+          <section className="vr-welcome-start" aria-label="Starting points">
+            <p className="vr-welcome-start-label">
+              Start with a prompt. It fills the message box, and nothing is sent until you press Enter.
+            </p>
+            <div className="vr-welcome-starters">
+              {STARTER_PROMPTS.map(item => (
+                <button
+                  key={item.title}
+                  type="button"
+                  className="vr-welcome-starter"
+                  onClick={() => onStarter(item.prompt)}
+                >
+                  <span className="vr-welcome-starter-title">{item.title}</span>
+                  <span className="vr-welcome-starter-hint">{item.hint}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
+        {!configured && !sharedLoading ? (
+          <Link className="vr-welcome-cta" to="/settings">
+            Open API settings
+          </Link>
+        ) : null}
       </div>
-      <h1 className="vr-welcome-title">
-        VupsRouter <span>AI</span>
-      </h1>
-      <p className="vr-welcome-desc">
-        {configured
-          ? vupsActive
-            ? `Chatting with ${modelName || "Vups v3 Galax"}.`
-            : sharedActive
-              ? `Chatting with ${modelName || "the shared model"}.`
-              : gatewayActive
-                ? `Chatting with ${modelName || "this model"} through the OmniRoute gateway.`
-                : `Chatting with ${modelName || "your configured model"} through your own provider.`
-          : sharedLoading
-            ? "Checking for an available AI model..."
-            : "Vups v3 Galax is not configured on this server yet. Add your own AI provider in API settings."}
-      </p>
     </div>
   );
 }
@@ -1126,6 +1175,8 @@ export default function ChatPage() {
   const activityRunIdRef = useRef("run");
   const [nativeToolBridgeError, setNativeToolBridgeError] = useState("");
   const [fullAccessPending, setFullAccessPending] = useState(false);
+  const [permissionApplying, setPermissionApplying] = useState(false);
+  const policySyncRef = useRef("");
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const [workspaceAttachment, setWorkspaceAttachment] = useState(null);
   const [draftInsertion, setDraftInsertion] = useState(null);
@@ -1150,6 +1201,17 @@ export default function ChatPage() {
   useEffect(() => {
     if (nativeShell !== NATIVE_SHELLS.windows || !workspaceOwner) return;
     let cancelled = false;
+    const signature = `${workspaceOwner}|${permissionMode}|${
+      permissionMode === "workspace" ? activeWorkspace?.id || "" : ""
+    }`;
+    const changed = Boolean(policySyncRef.current) && policySyncRef.current !== signature;
+    policySyncRef.current = signature;
+    if (changed) {
+      // The native layer denies cards raised under the previous mode or
+      // workspace, so the page must not keep offering those decisions.
+      cancelDesktopToolApprovals().catch(() => {});
+      clearApprovals();
+    }
     setDesktopToolPolicy({
       owner: workspaceOwner,
       mode: permissionMode,
@@ -1199,6 +1261,13 @@ export default function ChatPage() {
 
   async function loadTask(id) {
     invalidateInFlight();
+    // A card belongs to the tool call of the task that raised it; switching
+    // tasks abandons that call instead of leaving a decision hanging over a
+    // different conversation.
+    if (nativeShell === NATIVE_SHELLS.windows) {
+      cancelDesktopToolApprovals().catch(() => {});
+      clearApprovals();
+    }
     setNotice("");
     setComposerWarning("");
     setGeneratedImage(null);
@@ -1337,11 +1406,37 @@ export default function ChatPage() {
     }
   }
 
-  function applyPermissionMode(mode) {
+  // The selector only moves after the native layer has adopted the mode, so a
+  // drawer that says "Agent (workspace)" can never sit on top of a Full access
+  // policy. Saved grants survive; one-time approvals from the old mode do not.
+  async function applyPermissionMode(mode) {
+    if (!isPermissionMode(mode)) return false;
+    if (nativeShell === NATIVE_SHELLS.windows && workspaceOwner) {
+      setPermissionApplying(true);
+      try {
+        await setDesktopToolPolicy({
+          owner: workspaceOwner,
+          mode,
+          workspaceId: mode === "workspace" ? activeWorkspace?.id : null
+        });
+        setNativeToolBridgeError("");
+      } catch (error) {
+        const message = error?.message || "Could not update the Windows filesystem permission mode.";
+        setNativeToolBridgeError(message);
+        setNotice(message);
+        setPermissionApplying(false);
+        return false;
+      }
+      setPermissionApplying(false);
+    }
+    cancelDesktopToolApprovals().catch(() => {});
+    clearApprovals();
     setPermissionMode(savePermissionMode(localBrowserStorage(), mode));
+    return true;
   }
 
   function changeWindowsPermissionMode(mode) {
+    if (permissionApplying) return;
     if (mode === "full" && permissionMode !== "full") {
       setFullAccessPending(true);
       return;
@@ -2188,6 +2283,7 @@ export default function ChatPage() {
             gatewayActive={activeIsGateway}
             vupsActive={activeIsVups}
             sharedLoading={shared === null && omniroute === null && !config?.configured}
+            onStarter={text => setDraftInsertion({ text, key: Date.now() })}
           />
         ) : (
           <MessageList
@@ -2348,7 +2444,8 @@ export default function ChatPage() {
                 nativeShell === NATIVE_SHELLS.windows ? (
                   <NativeChatControls
                     mode={permissionMode}
-                    disabled={loading}
+                    disabled={loading || permissionApplying}
+                    applying={permissionApplying}
                     bridgeError={nativeToolBridgeError}
                     onChange={changeWindowsPermissionMode}
                   />

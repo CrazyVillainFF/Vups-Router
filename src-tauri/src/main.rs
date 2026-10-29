@@ -12,7 +12,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let url = desktop_server::start(app.handle().clone())
-                .map_err(|error| std::io::Error::other(error))?;
+                .map_err(std::io::Error::other)?;
             let url = url
                 .parse()
                 .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;

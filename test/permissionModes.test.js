@@ -1,0 +1,128 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import {
+  DEFAULT_PERMISSION_MODE,
+  WINDOWS_PERMISSION_MODES,
+  loadPermissionMode,
+  permissionDecision,
+  permissionModeInfo,
+  savePermissionMode
+} from "../src/native/permissions.js";
+
+const read = path => readFileSync(new URL(path, import.meta.url), "utf8").replace(/\r\n/g, "\n");
+
+const chatPageSource = read("../src/ChatPage.jsx");
+const controlsSource = read("../src/native/NativeChatControls.jsx");
+const rustSource = read("../src-tauri/src/desktop_tools.rs");
+
+function memoryStorage() {
+  const map = new Map();
+  return {
+    getItem: key => (map.has(key) ? map.get(key) : null),
+    setItem: (key, value) => map.set(key, String(value))
+  };
+}
+
+function file(source) {
+  return { id: `att-${source}`, name: "notes.txt", size: 12, source, status: "ready" };
+}
+
+test("the three modes keep their ids and labels", () => {
+  assert.deepEqual(
+    WINDOWS_PERMISSION_MODES.map(mode => [mode.id, mode.label]),
+    [
+      ["ask", "Ask me every time"],
+      ["workspace", "Agent (workspace)"],
+      ["full", "Full access"]
+    ]
+  );
+  assert.equal(DEFAULT_PERMISSION_MODE, "ask");
+  assert.match(permissionModeInfo("workspace").description, /outside it asks first/i);
+  assert.match(permissionModeInfo("full").description, /protected system locations always ask/i);
+  assert.match(permissionModeInfo("ask").description, /Always allow/i);
+});
+
+test("the selected mode is persisted and an unknown value falls back to ask", () => {
+  const storage = memoryStorage();
+  assert.equal(loadPermissionMode(storage), "ask");
+  assert.equal(savePermissionMode(storage, "full"), "full");
+  assert.equal(loadPermissionMode(storage), "full");
+  assert.equal(savePermissionMode(storage, "root"), "ask");
+  assert.equal(loadPermissionMode(storage), "full", "an invalid write never overwrites the saved mode");
+  storage.setItem("vupsrouter.windows.permission-mode", "everything");
+  assert.equal(loadPermissionMode(storage), "ask");
+});
+
+test("ask mode asks before every local attachment that is not pasted text", () => {
+  for (const source of ["picker", "folder", "workspace"]) {
+    const decision = permissionDecision("ask", [file(source)]);
+    assert.equal(decision.allowed, false);
+    assert.equal(decision.requiresConfirmation, true);
+  }
+  assert.equal(permissionDecision("ask", [file("paste")]).allowed, true);
+  assert.equal(permissionDecision("ask", []).allowed, true);
+});
+
+test("workspace mode sends workspace and folder picks, full access sends anything", () => {
+  assert.equal(permissionDecision("workspace", [file("workspace")]).allowed, true);
+  assert.equal(permissionDecision("workspace", [file("folder")]).allowed, true);
+  assert.equal(permissionDecision("workspace", [file("picker")]).allowed, false);
+  assert.equal(permissionDecision("full", [file("picker")]).allowed, true);
+  assert.equal(permissionDecision("not-a-mode", [file("picker")]).allowed, false);
+});
+
+test("the selector only moves after the native layer adopts the mode", () => {
+  const apply = chatPageSource.slice(
+    chatPageSource.indexOf("async function applyPermissionMode"),
+    chatPageSource.indexOf("function changeWindowsPermissionMode")
+  );
+  assert.match(apply, /await setDesktopToolPolicy\(/);
+  assert.match(apply, /setNativeToolBridgeError\(message\)/);
+  assert.match(apply, /return false;/);
+  // The state is written only after the bridge answered, never before.
+  assert.ok(
+    apply.indexOf("await setDesktopToolPolicy(") < apply.indexOf("setPermissionMode(savePermissionMode"),
+    "the visible mode follows the native policy"
+  );
+  assert.match(chatPageSource, /permissionApplying/);
+  assert.match(controlsSource, /applying = false/);
+  assert.match(controlsSource, /Applying…/);
+});
+
+test("a mode or workspace switch cancels the cards raised under the old policy", () => {
+  const effect = chatPageSource.slice(
+    chatPageSource.indexOf("const signature = `${workspaceOwner}|${permissionMode}|"),
+    chatPageSource.indexOf("function beginRequest")
+  );
+  assert.match(effect, /policySyncRef\.current !== signature/);
+  assert.match(effect, /cancelDesktopToolApprovals\(\)/);
+  assert.match(effect, /clearApprovals\(\)/);
+  // Task switching abandons a card that belongs to another conversation.
+  const loadStart = chatPageSource.indexOf("async function loadTask");
+  assert.ok(loadStart > -1, "loadTask is where tasks are switched");
+  assert.match(chatPageSource.slice(loadStart, loadStart + 900), /cancelDesktopToolApprovals\(\)/);
+});
+
+test("the native layer, not the selector, decides every read", () => {
+  // A crafted execute request cannot carry a mode: the stored policy decides.
+  assert.match(rustSource, /struct ToolRequest \{\n    tool: String,/);
+  // Every execution is stamped with the policy generation and rechecked.
+  assert.match(rustSource, /generation\.load\(Ordering::SeqCst\) == started_at/);
+  assert.match(rustSource, /fn execute_guarded\(/);
+  assert.match(rustSource, /code: "policy_changed"|"policy_changed"/);
+  assert.match(rustSource, /still_current/);
+  // A change resets one-time approvals and cancels pending cards.
+  assert.match(rustSource, /scopes\.session\.reset\(\)/);
+  assert.match(rustSource, /state\.broker\.cancel_all\(\)/);
+  // A narrower mode also drops the standing "Always allow" folders.
+  assert.match(rustSource, /transition\.revoke_grants/);
+  assert.match(rustSource, /scopes\.grants\.clear\(&grant_owner\)/);
+  assert.match(rustSource, /next\.mode\.breadth\(\) < existing\.mode\.breadth\(\)/);
+  // Workspace mode ignores grants outside its root and never falls back to all.
+  assert.match(rustSource, /policy\.mode == ToolMode::Workspace/);
+  assert.match(rustSource, /requires_fresh_approval/);
+  // No policy stored means no tool access at all.
+  assert.match(rustSource, /Choose a filesystem permission mode before using local tools/);
+});

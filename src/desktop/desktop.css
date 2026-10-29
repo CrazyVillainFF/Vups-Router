@@ -36,6 +36,22 @@
   scrollbar-color: var(--line) transparent;
 }
 
+/* The task list folds under the pinned tools block, so the last visible row
+   was being sliced in half. A short fade marks the fold as "more below"
+   instead of looking like clipped content. */
+.vr-sidebar-scroll {
+  position: relative;
+}
+
+.vr-sidebar-scroll::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 24px;
+  pointer-events: none;
+  background: linear-gradient(to top, var(--surface), rgba(13, 21, 36, 0));
+}
+
 .vr-desktop-sidebar .vr-sidebar-section {
   flex: none;
   overflow: visible;
@@ -1731,4 +1747,31 @@ html[data-reduce-motion="true"] *::after {
   .vr-conv-actions .vr-conv-delete {
     display: grid;
   }
+}
+
+/* ── Redesign pass: empty automation state ───────────────────────────────── */
+/* Aligning the empty card to the top of its column and giving it steps reads
+   as guidance; the previous vertically-centred stretch read as missing data. */
+.vr-empty-card {
+  justify-content: flex-start;
+  min-height: 0;
+  padding: 18px 20px 20px;
+  border-style: dashed;
+  color: var(--text-tertiary, #8494ab);
+}
+
+.vr-empty-card strong {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.vr-empty-steps {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.vr-empty-steps li::marker {
+  color: var(--accent);
 }

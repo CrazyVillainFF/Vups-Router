@@ -9,21 +9,24 @@ export const WINDOWS_PERMISSION_MODES = Object.freeze([
     label: "Ask me every time",
     shortLabel: "Ask",
     risk: "Review",
-    description: "Approve every local filesystem read and attachment before it is used."
+    description:
+      "Each local read waits for an in-chat card. Folders you marked \"Always allow\" are the one standing exception and stay revocable in Settings. Switching here from a broader mode clears those folders first."
   },
   {
     id: "workspace",
     label: "Agent (workspace)",
     shortLabel: "Workspace",
     risk: "Scoped",
-    description: "Allow reads inside the selected workspace; ask before reading anything outside it."
+    description:
+      "Reads inside the selected workspace run without a card. Anything outside it asks first, even a folder you allowed in an earlier mode. Switching here from Full access clears standing folder approvals."
   },
   {
     id: "full",
     label: "Full access",
     shortLabel: "Full",
     risk: "Broad",
-    description: "Allow broad read-only filesystem tools, with native approval for protected system locations. No shell, writes, admin rights, or Windows permission bypass."
+    description:
+      "Broad read-only reads across accessible folders. Protected system locations always ask; there is no shell, write, delete, admin right, or Windows permission bypass."
   }
 ]);
 

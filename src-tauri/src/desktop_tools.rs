@@ -5,7 +5,10 @@ use std::{
     fs,
     io::{ErrorKind, Write},
     path::{Component, Path, PathBuf},
-    sync::{Arc, Condvar, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Condvar, Mutex,
+    },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -47,6 +50,10 @@ const CONTENT_SCOPE: &str = "contents";
 #[derive(Default)]
 pub struct DesktopToolState {
     policy: Mutex<Option<ToolPolicy>>,
+    /// Bumped on every real policy change. A tool call captures this before it
+    /// runs and rechecks it before touching the disk, so a mode or workspace
+    /// switch that lands while a card is on screen cannot authorize the old read.
+    generation: Arc<AtomicU64>,
     broker: Arc<ApprovalBroker>,
     scopes: Arc<Mutex<ApprovedScope>>,
 }
@@ -434,9 +441,19 @@ impl ToolMode {
             Self::Full => "Full access",
         }
     }
+
+    /// How much the mode allows. Moving down the list is a narrowing switch,
+    /// which is what revokes the standing consent the broader mode relied on.
+    fn breadth(self) -> u8 {
+        match self {
+            Self::Ask => 0,
+            Self::Workspace => 1,
+            Self::Full => 2,
+        }
+    }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct ToolPolicy {
     owner: String,
     mode: ToolMode,
@@ -448,11 +465,32 @@ impl ToolPolicy {
         PolicyStatus {
             mode: self.mode.as_str().to_string(),
             label: self.mode.label().to_string(),
-            workspace_root: self
-                .workspace_root
-                .as_ref()
-                .map(|path| path.to_string_lossy().to_string()),
+            workspace_root: self.workspace_root.as_ref().map(|path| path_text(path)),
         }
+    }
+}
+
+/// What a policy change must invalidate. A one-time approval belongs to the mode
+/// and workspace that asked the question. Saved "always allow" folders survive a
+/// switch between equally broad modes, but a narrowing switch (Full → workspace
+/// → Ask) revokes them: the stricter mode would have asked for those folders,
+/// so keeping the broader mode's consent would quietly widen it.
+#[derive(Debug, PartialEq, Eq)]
+struct PolicyTransition {
+    cancel_pending: bool,
+    reset_session: bool,
+    revoke_grants: bool,
+}
+
+fn policy_transition(current: Option<&ToolPolicy>, next: &ToolPolicy) -> PolicyTransition {
+    let changed = current.map(|existing| existing != next).unwrap_or(true);
+    let narrowed = current
+        .map(|existing| next.mode.breadth() < existing.mode.breadth())
+        .unwrap_or(false);
+    PolicyTransition {
+        cancel_pending: changed,
+        reset_session: changed,
+        revoke_grants: narrowed,
     }
 }
 
@@ -663,9 +701,17 @@ fn is_protected_system_path(path: &Path) -> bool {
     if canonical.parent().is_none() {
         return true;
     }
+    // Component-wise and case-insensitive: `c:\windows\system32` is the same
+    // protected folder as `C:\Windows\System32`.
     system_paths()
         .iter()
-        .any(|system| canonical.starts_with(system))
+        .any(|system| path_within(system, &canonical))
+}
+
+/// Full access is broad, but a protected system location is never silently
+/// covered by an earlier "always allow" card: each one is answered on its own.
+fn requires_fresh_approval(policy: &ToolPolicy, target: &Path) -> bool {
+    matches!(policy.mode, ToolMode::Full) && is_protected_system_path(target)
 }
 
 fn path_requires_approval(policy: &ToolPolicy, path: &Path) -> bool {
@@ -1473,6 +1519,17 @@ impl ApprovedScope {
             return true;
         }
         let target = Path::new(&prompt.scope_path);
+        // Workspace mode means "this folder and nothing else". A folder grant
+        // given in a broader mode must not become an implicit second workspace.
+        if policy.mode == ToolMode::Workspace
+            && !policy
+                .workspace_root
+                .as_deref()
+                .map(|root| path_within(root, target))
+                .unwrap_or(false)
+        {
+            return false;
+        }
         self.grants
             .covers(&policy.owner, access_scope_for(&prompt.action), target)
     }
@@ -1516,23 +1573,53 @@ fn access_scope_for(action: &str) -> &'static str {
 /// `approve` is the only path to a decision. Production passes the in-chat
 /// broker; tests pass a stub, which is what keeps the authorization order
 /// (resolve, then gate, then approve, then touch the disk) under unit test.
+#[cfg(test)]
 fn execute_tool_with(
     policy: &ToolPolicy,
     request: &ToolRequest,
     scope: &mut ApprovedScope,
+    approve: impl FnMut(&ApprovalPrompt) -> ApprovalDecision,
+) -> ToolResponse {
+    execute_guarded(policy, request, scope, approve, &|| true)
+}
+
+fn policy_changed_failure(prompt: &ApprovalPrompt) -> ToolResponse {
+    ToolResponse::failure(
+        "policy_changed",
+        format!(
+            "The file access mode changed while this request was waiting, so {} was not read. \
+             Ask again under the current mode.",
+            prompt.scope_path
+        ),
+    )
+}
+
+/// `still_current` answers "is the policy that produced this decision still the
+/// one in force?". It is checked before the card, after the answer, and again
+/// immediately before the disk is touched, so a mode or workspace switch cannot
+/// ride in on a decision the user made for a different mode.
+fn execute_guarded(
+    policy: &ToolPolicy,
+    request: &ToolRequest,
+    scope: &mut ApprovedScope,
     mut approve: impl FnMut(&ApprovalPrompt) -> ApprovalDecision,
+    still_current: &dyn Fn() -> bool,
 ) -> ToolResponse {
     let resolved = match resolve_request(policy, request) {
         Ok(resolved) => resolved,
         Err(error) => return ToolResponse::failure(&error.code, error.message),
     };
+    if !still_current() {
+        return policy_changed_failure(&resolved.approval);
+    }
     if resolved.requires_approval {
         let prompt = &resolved.approval;
-        if scope.covers(policy, prompt) {
-            // Already authorized: recording it again would let a revocation be
-            // shadowed by a copy of its own approval.
-        } else {
+        let fresh = requires_fresh_approval(policy, &resolved.target);
+        if fresh || !scope.covers(policy, prompt) {
             let granted = approve(prompt);
+            if !still_current() {
+                return policy_changed_failure(prompt);
+            }
             if granted == ApprovalDecision::Denied {
                 return ToolResponse::failure(
                     "approval_denied",
@@ -1542,10 +1629,22 @@ fn execute_tool_with(
                     ),
                 );
             }
-            if let Err(message) = scope.remember(policy, prompt, granted) {
+            // A standing grant over a protected system folder would turn "ask
+            // every time" into "ask once", so that answer covers this call only.
+            let remembered = if fresh && granted == ApprovalDecision::AlwaysFolder {
+                ApprovalDecision::Once
+            } else {
+                granted
+            };
+            if let Err(message) = scope.remember(policy, prompt, remembered) {
                 return ToolResponse::failure("grant_store_failed", message);
             }
         }
+        // Already authorized: recording it again would let a revocation be
+        // shadowed by a copy of its own approval.
+    }
+    if !still_current() {
+        return policy_changed_failure(&resolved.approval);
     }
     match run_resolved(&resolved) {
         Ok(data) => ToolResponse::success(data),
@@ -1607,14 +1706,19 @@ pub struct GrantView {
     created_at: i64,
 }
 
-fn policy_of(state: &State<'_, DesktopToolState>) -> Result<ToolPolicy, String> {
-    let guard = state
-        .policy
+/// No stored policy is a refusal, not a default. The app starts with tools
+/// closed until the page that owns the saved mode installs it.
+fn require_policy(slot: &Mutex<Option<ToolPolicy>>) -> Result<ToolPolicy, String> {
+    let guard = slot
         .lock()
         .map_err(|_| "Filesystem permission state is unavailable.".to_string())?;
     guard
         .clone()
         .ok_or_else(|| "Choose a filesystem permission mode before using local tools.".to_string())
+}
+
+fn policy_of(state: &State<'_, DesktopToolState>) -> Result<ToolPolicy, String> {
+    require_policy(&state.policy)
 }
 
 #[tauri::command]
@@ -1625,39 +1729,66 @@ pub async fn desktop_tool_set_policy(
 ) -> Result<PolicyStatus, String> {
     let mode = ToolMode::parse(&input.mode)?;
     let owner = workspace::normalize_owner(&input.owner)?;
+    let mut workspace_error = None;
     let workspace_root = if mode == ToolMode::Workspace {
         let id = input.workspace_id.unwrap_or_default();
         if id.trim().is_empty() {
             None
         } else {
-            Some(workspace::workspace_path(&app, &owner, &id)?)
+            match workspace::workspace_path(&app, &owner, &id) {
+                Ok(root) => Some(root),
+                Err(message) => {
+                    // A missing or unreadable workspace is not permission to
+                    // roam the disk: the mode is still adopted, with no root,
+                    // so every path keeps asking. The page is told why.
+                    workspace_error = Some(message);
+                    None
+                }
+            }
         }
     } else {
         None
     };
     let policy = ToolPolicy {
-        owner: owner.clone(),
+        owner,
         mode,
         workspace_root,
     };
+    let grant_owner = policy.owner.clone();
     let status = policy.status();
-    let mut guard = state
-        .policy
-        .lock()
-        .map_err(|_| "Filesystem permission state is unavailable.".to_string())?;
-    let replaced_owner = guard.as_ref().map(|existing| existing.owner.clone());
-    *guard = Some(policy);
-    drop(guard);
-    // Switching account or mode invalidates every approval given under the old
-    // one, and any card still on screen would describe a decision the user is no
-    // longer being asked for.
-    if replaced_owner.as_deref() != Some(owner.as_str()) || mode != ToolMode::Ask {
+    let transition = {
+        let mut guard = state
+            .policy
+            .lock()
+            .map_err(|_| "Filesystem permission state is unavailable.".to_string())?;
+        let transition = policy_transition(guard.as_ref(), &policy);
+        if transition.cancel_pending {
+            *guard = Some(policy);
+            state.generation.fetch_add(1, Ordering::SeqCst);
+        }
+        transition
+    };
+    if transition.cancel_pending {
+        // Cards on screen describe a decision that is no longer being asked
+        // for. Denying them first also releases a paused tool call before the
+        // session state below is rewritten.
         state.broker.cancel_all();
-        if let Ok(mut scopes) = state.scopes.lock() {
-            if replaced_owner.as_deref() != Some(owner.as_str()) {
-                scopes.session.reset();
+        if transition.reset_session || transition.revoke_grants {
+            if let Ok(mut scopes) = state.scopes.lock() {
+                if transition.reset_session {
+                    scopes.session.reset();
+                }
+                if transition.revoke_grants {
+                    // A narrower mode must not inherit "always allow" folders
+                    // handed out by the broader one.
+                    scopes.grants.ensure_loaded(&app);
+                    let _ = scopes.grants.clear(&grant_owner);
+                }
             }
         }
+    }
+    if let Some(message) = workspace_error {
+        return Err(message);
     }
     Ok(status)
 }
@@ -1679,6 +1810,8 @@ pub async fn desktop_tool_execute(
     let audit_request = request.clone();
     let broker = state.broker.clone();
     let scopes = state.scopes.clone();
+    let generation = state.generation.clone();
+    let started_at = generation.load(Ordering::SeqCst);
     let owner = policy.owner.clone();
     let scope_app = app.clone();
     let policy_for_execute = policy.clone();
@@ -1691,9 +1824,14 @@ pub async fn desktop_tool_execute(
             .map_err(|_| "Filesystem permission state is unavailable.".to_string())?;
         scope.grants.ensure_loaded(&scope_app);
         let app_for_prompt = scope_app.clone();
-        Ok(execute_tool_with(&policy_for_execute, &request, &mut scope, |prompt| {
-            broker.request(&app_for_prompt, &owner, prompt)
-        }))
+        let still_current = || generation.load(Ordering::SeqCst) == started_at;
+        Ok(execute_guarded(
+            &policy_for_execute,
+            &request,
+            &mut scope,
+            |prompt| broker.request(&app_for_prompt, &owner, prompt),
+            &still_current,
+        ))
     })
     .await
     .map_err(|_| "The Windows filesystem tool did not finish.".to_string())??;
@@ -2664,6 +2802,342 @@ mod tests {
             "verbatim paths stay out of user-facing text: {}",
             failure.message
         );
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn a_symlink_cannot_carry_a_read_outside_the_workspace() {
+        let root = temp_root();
+        let outside = temp_root();
+        write(&outside.join("secret.txt"), b"secret");
+        write(&root.join("inside.txt"), b"inside");
+        let link = root.join("escape");
+        #[cfg(windows)]
+        let created = std::os::windows::fs::symlink_dir(&outside, &link).is_ok();
+        #[cfg(not(windows))]
+        let created = std::os::unix::fs::symlink(&outside, &link).is_ok();
+        if !created {
+            eprintln!("[skip] this account cannot create directory links; nothing to escape through");
+            fs::remove_dir_all(root).ok();
+            fs::remove_dir_all(outside).ok();
+            return;
+        }
+
+        let response = execute_tool_with(
+            &policy(ToolMode::Workspace, Some(&root)),
+            &tool("list_directory", json!({ "path": link.to_string_lossy() })),
+            &mut ApprovedScope::default(),
+            |_| ApprovalDecision::Once,
+        );
+        assert!(!response.ok);
+        assert_eq!(response.error.expect("failure").code, "symlink_rejected");
+
+        // A workspace listing never follows the link either.
+        let listing = list_directory(&root).expect("list workspace");
+        let names: Vec<&str> = listing["entries"]
+            .as_array()
+            .expect("entries")
+            .iter()
+            .filter_map(|entry| entry["name"].as_str())
+            .collect();
+        assert!(!names.contains(&"escape"), "the link is not followed: {names:?}");
+
+        fs::remove_dir_all(root).ok();
+        fs::remove_dir_all(outside).ok();
+    }
+
+    #[test]
+    fn no_stored_policy_means_no_tool_access() {
+        let slot = Mutex::new(None);
+        assert!(require_policy(&slot).is_err(), "closed until a mode is chosen");
+        slot.lock()
+            .unwrap()
+            .replace(policy(ToolMode::Ask, None));
+        assert_eq!(require_policy(&slot).unwrap().mode, ToolMode::Ask);
+    }
+
+    #[test]
+    fn policy_changes_invalidate_pending_and_session_approvals() {
+        let ask = policy(ToolMode::Ask, None);
+        assert_eq!(
+            policy_transition(None, &ask),
+            PolicyTransition {
+                cancel_pending: true,
+                reset_session: true,
+                // The first policy of a session has nothing narrower to compare
+                // against, so standing grants made under the saved mode survive
+                // a restart.
+                revoke_grants: false
+            }
+        );
+        // Re-sending the mode the app already runs must not throw away a card
+        // the user is looking at.
+        let same = policy_transition(Some(&ask), &ask);
+        assert!(!same.cancel_pending);
+        assert!(!same.reset_session);
+        assert!(!same.revoke_grants);
+
+        let full = policy(ToolMode::Full, None);
+        let stricter = policy_transition(Some(&full), &ask);
+        assert!(stricter.cancel_pending && stricter.reset_session);
+        assert!(stricter.revoke_grants, "Full to Ask is a narrowing switch");
+
+        let root = temp_root();
+        let workspace = policy(ToolMode::Workspace, Some(&root));
+        assert!(
+            policy_transition(Some(&full), &workspace).revoke_grants,
+            "Full to Workspace is a narrowing switch"
+        );
+        assert!(
+            !policy_transition(Some(&ask), &full).revoke_grants,
+            "widening the mode does not revoke what was already approved"
+        );
+
+        let narrowed = policy(ToolMode::Workspace, Some(&root));
+        let widened = policy(ToolMode::Workspace, None);
+        let moved = policy_transition(Some(&narrowed), &widened);
+        assert!(
+            moved.reset_session,
+            "a workspace switch is a permission change even in the same mode"
+        );
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn switching_modes_drops_the_approval_given_under_the_old_one() {
+        let root = temp_root();
+        let file = root.join("notes.txt");
+        write(&file, b"hello");
+        let request = tool("read_file", json!({ "path": file.to_string_lossy() }));
+
+        // Full access reads a normal folder without a card and leaves nothing behind.
+        let mut scope = ApprovedScope::default();
+        let mut asked = 0usize;
+        assert!(execute_tool_with(&policy(ToolMode::Full, None), &request, &mut scope, |_| {
+            asked += 1;
+            ApprovalDecision::Once
+        })
+        .ok);
+        assert_eq!(asked, 0);
+
+        // Ask mode asks for the very next read.
+        assert!(execute_tool_with(&policy(ToolMode::Ask, None), &request, &mut scope, |_| {
+            asked += 1;
+            ApprovalDecision::Once
+        })
+        .ok);
+        assert_eq!(asked, 1, "the broader mode left no session approval behind");
+
+        // The one-time approval covers the rest of the task...
+        assert!(execute_tool_with(&policy(ToolMode::Ask, None), &request, &mut scope, |_| {
+            asked += 1;
+            ApprovalDecision::Once
+        })
+        .ok);
+        assert_eq!(asked, 1, "an answered card is not asked twice");
+
+        // ...until the policy changes, which is exactly what set_policy resets.
+        scope.session.reset();
+        assert!(execute_tool_with(&policy(ToolMode::Ask, None), &request, &mut scope, |_| {
+            asked += 1;
+            ApprovalDecision::Once
+        })
+        .ok);
+        assert_eq!(asked, 2, "a mode change brings the card back");
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn a_policy_change_while_a_card_is_open_abandons_the_read() {
+        let root = temp_root();
+        let file = root.join("notes.txt");
+        write(&file, b"hello");
+        let request = tool("read_file", json!({ "path": file.to_string_lossy() }));
+
+        let mut scope = ApprovedScope::default();
+        // `Cell` keeps both closures on a shared borrow, which is what lets the
+        // approve stub flip the policy while it is being answered.
+        let current = std::cell::Cell::new(true);
+        let mut asked = 0usize;
+        let response = execute_guarded(
+            &policy(ToolMode::Ask, None),
+            &request,
+            &mut scope,
+            |_| {
+                asked += 1;
+                // The user switches mode while the card is on screen.
+                current.set(false);
+                ApprovalDecision::Once
+            },
+            &|| current.get(),
+        );
+
+        assert_eq!(asked, 1);
+        let failure = response.error.expect("failure");
+        assert_eq!(failure.code, "policy_changed");
+        assert!(response.data.is_none(), "no file bytes were returned");
+        assert!(
+            scope.session.approved.is_empty(),
+            "an answer for the old mode is never remembered"
+        );
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn workspace_mode_ignores_grants_made_for_folders_outside_it() {
+        let root = temp_root();
+        let workspace = root.join("work");
+        let outside = root.join("elsewhere");
+        write(&workspace.join("inside.txt"), b"inside");
+        write(&outside.join("outside.txt"), b"outside");
+
+        // A saved "always allow" grant for the outside folder, made earlier in
+        // a broader mode and kept across the restart that follows a switch.
+        let mut grants = GrantStore::default();
+        grants.grants.push(FolderGrant {
+            id: "outside".into(),
+            owner: "user_123".into(),
+            root: path_text(&outside),
+            scope: READ_SCOPE.into(),
+            created_at: 0,
+        });
+        let mut narrowed = ApprovedScope {
+            session: SessionScope::default(),
+            grants,
+        };
+        let mut asked = 0usize;
+        let outside_response = execute_tool_with(
+            &policy(ToolMode::Workspace, Some(&workspace)),
+            &tool("list_directory", json!({ "path": outside.to_string_lossy() })),
+            &mut narrowed,
+            |_| {
+                asked += 1;
+                ApprovalDecision::Denied
+            },
+        );
+        assert_eq!(asked, 1, "outside the workspace always asks");
+        assert_eq!(
+            outside_response.error.expect("failure").code,
+            "approval_denied"
+        );
+
+        // Inside the workspace nothing is asked.
+        let mut inside_asked = 0usize;
+        assert!(execute_tool_with(
+            &policy(ToolMode::Workspace, Some(&workspace)),
+            &tool("list_directory", json!({ "path": workspace.to_string_lossy() })),
+            &mut narrowed,
+            |_| {
+                inside_asked += 1;
+                ApprovalDecision::Denied
+            },
+        )
+        .ok);
+        assert_eq!(inside_asked, 0);
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn workspace_mode_without_a_root_is_stricter_than_ask() {
+        let root = temp_root();
+        let file = root.join("notes.txt");
+        write(&file, b"hello");
+
+        let mut scope = ApprovedScope::default();
+        // A saved grant for this very folder exists, but no workspace root does.
+        scope.grants.grants.push(FolderGrant {
+            id: "g1".into(),
+            owner: "user_123".into(),
+            root: path_text(&root),
+            scope: READ_SCOPE.into(),
+            created_at: 0,
+        });
+
+        let mut asked = 0usize;
+        let response = execute_tool_with(
+            &policy(ToolMode::Workspace, None),
+            &tool("list_directory", json!({ "path": root.to_string_lossy() })),
+            &mut scope,
+            |_| {
+                asked += 1;
+                ApprovalDecision::Denied
+            },
+        );
+        assert_eq!(asked, 1, "a missing workspace never means the whole computer");
+        assert_eq!(response.error.expect("failure").code, "approval_denied");
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn full_access_still_asks_for_a_protected_system_folder() {
+        let windows = PathBuf::from(r"C:\Windows");
+        assert!(windows.is_dir(), "C:\\Windows exists on this machine");
+        assert!(
+            is_protected_system_path(Path::new(r"c:\windows\system32")),
+            "protected folders are matched case-insensitively"
+        );
+        let full = policy(ToolMode::Full, None);
+        let request = tool("list_directory", json!({ "path": windows.to_string_lossy() }));
+
+        // A standing grant over a protected folder must not silence the card.
+        let mut scope = ApprovedScope::default();
+        scope.grants.grants.push(FolderGrant {
+            id: "protected".into(),
+            owner: "user_123".into(),
+            root: path_text(&windows),
+            scope: READ_SCOPE.into(),
+            created_at: 0,
+        });
+        let mut asked = 0usize;
+        let response = execute_tool_with(&full, &request, &mut scope, |_| {
+            asked += 1;
+            ApprovalDecision::Denied
+        });
+        assert_eq!(asked, 1);
+        assert_eq!(response.error.expect("failure").code, "approval_denied");
+
+        // Even "always allow" only covers the one call for a protected folder.
+        let mut once_scope = ApprovedScope::default();
+        let mut asked_again = 0usize;
+        let allowed = execute_tool_with(&full, &request, &mut once_scope, |_| {
+            asked_again += 1;
+            ApprovalDecision::AlwaysFolder
+        });
+        assert_eq!(asked_again, 1);
+        assert!(allowed.ok);
+        assert!(
+            once_scope.grants.grants.is_empty(),
+            "no standing grant is stored for a protected system folder"
+        );
+    }
+
+    #[test]
+    fn a_request_cannot_carry_its_own_mode() {
+        let root = temp_root();
+        let file = root.join("notes.txt");
+        write(&file, b"hello");
+        let request: ToolRequest = serde_json::from_value(json!({
+            "tool": "read_file",
+            "args": { "path": file.to_string_lossy() },
+            "mode": "full",
+            "owner": "someone_else",
+        }))
+        .expect("extra fields are ignored, not honoured");
+
+        let mut asked = 0usize;
+        let response = execute_tool_with(&policy(ToolMode::Ask, None), &request, &mut ApprovedScope::default(), |_| {
+            asked += 1;
+            ApprovalDecision::Denied
+        });
+        assert_eq!(asked, 1, "the stored policy decides, not the request payload");
+        assert_eq!(response.error.expect("failure").code, "approval_denied");
 
         fs::remove_dir_all(root).expect("remove test root");
     }

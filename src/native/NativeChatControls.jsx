@@ -5,7 +5,7 @@ import {
   permissionModeInfo
 } from "./permissions.js";
 
-export default function NativeChatControls({ mode, disabled = false, bridgeError = "", onChange }) {
+export default function NativeChatControls({ mode, disabled = false, applying = false, bridgeError = "", onChange }) {
   const selected = permissionModeInfo(mode);
   const selectedIndex = Math.max(
     0,
@@ -83,10 +83,13 @@ export default function NativeChatControls({ mode, disabled = false, bridgeError
         data-bridge={bridgeDown ? "down" : undefined}
         data-open={open ? "" : undefined}
         aria-label={
-          bridgeDown
-            ? `Permission mode: ${selected.label} (not confirmed by the desktop app)`
-            : `Permission mode: ${selected.label}`
+          applying
+            ? "Permission mode: applying the new mode"
+            : bridgeDown
+              ? `Permission mode: ${selected.label} (not confirmed by the desktop app)`
+              : `Permission mode: ${selected.label}`
         }
+        aria-busy={applying || undefined}
         aria-haspopup="listbox"
         aria-expanded={open}
         title={bridgeDown ? bridgeError : selected.description}
@@ -101,8 +104,12 @@ export default function NativeChatControls({ mode, disabled = false, bridgeError
         ) : (
           <ShieldCheck size={14} aria-hidden="true" />
         )}
-        <b className="vr-permission__label">{bridgeDown ? "Access not active" : selected.label}</b>
-        <b className="vr-permission__label-short">{bridgeDown ? "Not active" : selected.shortLabel}</b>
+        <b className="vr-permission__label">
+          {applying ? "Applying…" : bridgeDown ? "Access not active" : selected.label}
+        </b>
+        <b className="vr-permission__label-short">
+          {applying ? "Applying" : bridgeDown ? "Not active" : selected.shortLabel}
+        </b>
         <CaretDown size={11} aria-hidden="true" />
       </button>
 
