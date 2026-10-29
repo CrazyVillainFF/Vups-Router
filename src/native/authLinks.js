@@ -8,7 +8,8 @@ export const APPROVED_AUTH_ORIGINS = Object.freeze([new URL(PRODUCTION_SITE_URL)
 
 export const AUTH_ROUTE_PATHS = Object.freeze({
   signin: "/signin",
-  signup: "/signup"
+  signup: "/signup",
+  forgot: "/forgot-password"
 });
 
 export function assertApprovedAuthUrl(url) {

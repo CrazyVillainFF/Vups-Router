@@ -1187,6 +1187,28 @@
   opacity: 0.5;
 }
 
+.vr-setting-hint {
+  margin: 8px 0 0;
+  color: #71819a;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.vr-grant-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vr-grant-list .vr-setting-copy span[title] {
+  overflow: hidden;
+  color: #5f6f88;
+  font-family: var(--mono, monospace);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .vr-setting-badge,
 .vr-status-pill {
   display: inline-flex;

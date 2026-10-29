@@ -1,0 +1,1756 @@
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+        Info Watching C:\project\Vups Router\client\src-tauri for changes...
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 423/426: vupsrou…[1m[96m    Building[0m [=======================> ] 424/426: vupsrou…[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 1m 04s
+[1m[92m     Running[0m `target\debug\vupsrouter.exe`
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused imports: `Arc`, `Condvar`, `Duration`, `HashMap`, and `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:19
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                   [1m[93m^^^^^^^[0m  [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m8[0m [1m[96m|[0m     sync::{Arc, Condvar, Mutex},
+  [1m[96m|[0m            [1m[93m^^^[0m  [1m[93m^^^^^^^[0m
+[1m[96m9[0m [1m[96m|[0m     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+  [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `Emitter`[0m
+  [1m[96m--> [0msrc\desktop_tools.rs:11:24
+   [1m[96m|[0m
+[1m[96m11[0m [1m[96m|[0m use tauri::{AppHandle, Emitter, Manager, State};
+   [1m[96m|[0m                        [1m[93m^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 2 warnings (run `cargo fix --bin "vupsrouter" -p vupsrouter` to apply 2 suggestions)
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 38.77s
+[1m[92m     Running[0m `target\debug\vupsrouter.exe`
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0425][0m[1m[97m: cannot find function `path_within` in this scope[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:334:20
+    [1m[96m|[0m
+[1m[96m334[0m [1m[96m|[0m                 && path_within(Path::new(&grant.root), target)
+    [1m[96m|[0m                    [1m[91m^^^^^^^^^^^[0m [1m[91mnot found in this scope[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0425`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 1 previous error; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0425][0m[1m[97m: cannot find function `path_within` in this scope[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:334:20
+    [1m[96m|[0m
+[1m[96m334[0m [1m[96m|[0m                 && path_within(Path::new(&grant.root), target)
+    [1m[96m|[0m                    [1m[91m^^^^^^^^^^^[0m [1m[91mnot found in this scope[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0425`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 1 previous error; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:564:42
+    [1m[96m|[0m
+[1m[96m564[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m565[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m566[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m564[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m565[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:565:44
+    [1m[96m|[0m
+[1m[96m565[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m566[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m565[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m566[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0716`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 2 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0425][0m[1m[97m: cannot find value `CONTENT_SCOPE` in this scope[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:520:31
+    [1m[96m|[0m
+[1m[96m520[0m [1m[96m|[0m             Self::Contents => CONTENT_SCOPE,
+    [1m[96m|[0m                               [1m[91m^^^^^^^^^^^^^[0m [1m[91mnot found in this scope[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0063][0m[1m[97m: missing field `approval` in initializer of `ResolvedRequest`[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:890:8
+    [1m[96m|[0m
+[1m[96m890[0m [1m[96m|[0m     Ok(ResolvedRequest {
+    [1m[96m|[0m        [1m[91m^^^^^^^^^^^^^^^[0m [1m[91mmissing `approval`[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:582:42
+    [1m[96m|[0m
+[1m[96m582[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m583[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m584[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m582[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m583[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:583:44
+    [1m[96m|[0m
+[1m[96m583[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m584[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m583[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m584[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mSome errors have detailed explanations: E0063, E0425, E0716.[0m
+[1m[97mFor more information about an error, try `rustc --explain E0063`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 4 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0063][0m[1m[97m: missing field `approval` in initializer of `ResolvedRequest`[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:891:8
+    [1m[96m|[0m
+[1m[96m891[0m [1m[96m|[0m     Ok(ResolvedRequest {
+    [1m[96m|[0m        [1m[91m^^^^^^^^^^^^^^^[0m [1m[91mmissing `approval`[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:583:42
+    [1m[96m|[0m
+[1m[96m583[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m584[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m585[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m583[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m584[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:584:44
+    [1m[96m|[0m
+[1m[96m584[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m585[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m584[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m585[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mSome errors have detailed explanations: E0063, E0716.[0m
+[1m[97mFor more information about an error, try `rustc --explain E0063`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 3 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0063][0m[1m[97m: missing field `approval` in initializer of `ResolvedRequest`[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:895:8
+    [1m[96m|[0m
+[1m[96m895[0m [1m[96m|[0m     Ok(ResolvedRequest {
+    [1m[96m|[0m        [1m[91m^^^^^^^^^^^^^^^[0m [1m[91mmissing `approval`[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:587:42
+    [1m[96m|[0m
+[1m[96m587[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m588[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m589[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m587[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m588[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:588:44
+    [1m[96m|[0m
+[1m[96m588[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m589[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m588[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m589[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mSome errors have detailed explanations: E0063, E0716.[0m
+[1m[97mFor more information about an error, try `rustc --explain E0063`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 3 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0063][0m[1m[97m: missing field `approval` in initializer of `ResolvedRequest`[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:895:8
+    [1m[96m|[0m
+[1m[96m895[0m [1m[96m|[0m     Ok(ResolvedRequest {
+    [1m[96m|[0m        [1m[91m^^^^^^^^^^^^^^^[0m [1m[91mmissing `approval`[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:587:42
+    [1m[96m|[0m
+[1m[96m587[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m588[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m589[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m587[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m588[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:588:44
+    [1m[96m|[0m
+[1m[96m588[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m589[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m588[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m589[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mSome errors have detailed explanations: E0063, E0716.[0m
+[1m[97mFor more information about an error, try `rustc --explain E0063`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 3 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0277][0m[1m[97m: expected an `FnOnce()` closure, found `std::option::Option<&str>`[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:991:40
+    [1m[96m|[0m
+[1m[96m991[0m [1m[96m|[0m         (!detail_text.is_empty()).then(Some(detail_text.as_str())).flatten(),
+    [1m[96m|[0m                                   [1m[96m----[0m [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m [1m[91mexpected an `FnOnce()` closure, found `std::option::Option<&str>`[0m
+    [1m[96m|[0m                                   [1m[96m|[0m
+    [1m[96m|[0m                                   [1m[96mrequired by a bound introduced by this call[0m
+    [1m[96m|[0m
+    [1m[96m= [0m[1m[97mhelp[0m: the trait `FnOnce()` is not implemented for `std::option::Option<&str>`
+    [1m[96m= [0m[1m[97mnote[0m: wrap the `std::option::Option<&str>` in a closure with no arguments: `|| { /* code */ }`
+[1m[92mnote[0m: required by a bound in `core::bool::<impl bool>::then`
+   [1m[96m--> [0m/rustc/58cf8f9c35b355199727627d07ae34a4e2846d67/library\core\src\bool.rs:65:4
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:587:42
+    [1m[96m|[0m
+[1m[96m587[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m588[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m589[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m587[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m588[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:588:44
+    [1m[96m|[0m
+[1m[96m588[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m589[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m588[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m589[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mSome errors have detailed explanations: E0277, E0716.[0m
+[1m[97mFor more information about an error, try `rustc --explain E0277`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 3 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0277][0m[1m[97m: expected an `FnOnce()` closure, found `std::option::Option<&str>`[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:992:40
+    [1m[96m|[0m
+[1m[96m992[0m [1m[96m|[0m         (!detail_text.is_empty()).then(Some(detail_text.as_str())).flatten(),
+    [1m[96m|[0m                                   [1m[96m----[0m [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m [1m[91mexpected an `FnOnce()` closure, found `std::option::Option<&str>`[0m
+    [1m[96m|[0m                                   [1m[96m|[0m
+    [1m[96m|[0m                                   [1m[96mrequired by a bound introduced by this call[0m
+    [1m[96m|[0m
+    [1m[96m= [0m[1m[97mhelp[0m: the trait `FnOnce()` is not implemented for `std::option::Option<&str>`
+    [1m[96m= [0m[1m[97mnote[0m: wrap the `std::option::Option<&str>` in a closure with no arguments: `|| { /* code */ }`
+[1m[92mnote[0m: required by a bound in `core::bool::<impl bool>::then`
+   [1m[96m--> [0m/rustc/58cf8f9c35b355199727627d07ae34a4e2846d67/library\core\src\bool.rs:65:4
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:587:42
+    [1m[96m|[0m
+[1m[96m587[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m588[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m589[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m587[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m588[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:588:44
+    [1m[96m|[0m
+[1m[96m588[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m589[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m588[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m589[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mSome errors have detailed explanations: E0277, E0716.[0m
+[1m[97mFor more information about an error, try `rustc --explain E0277`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 3 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:587:42
+    [1m[96m|[0m
+[1m[96m587[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m588[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m589[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m587[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m588[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:588:44
+    [1m[96m|[0m
+[1m[96m588[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m589[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m588[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m589[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0716`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 2 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:587:42
+    [1m[96m|[0m
+[1m[96m587[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m588[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m589[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m587[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m588[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:588:44
+    [1m[96m|[0m
+[1m[96m588[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m589[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m588[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m589[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0716`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 2 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:587:42
+    [1m[96m|[0m
+[1m[96m587[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m588[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m589[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m587[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m588[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:588:44
+    [1m[96m|[0m
+[1m[96m588[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m589[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m588[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m589[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0716`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 2 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0425][0m[1m[97m: cannot find value `confirm_native` in this scope[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1577:58
+     [1m[96m|[0m
+[1m[96m1577[0m [1m[96m|[0m         execute_tool_with(&policy_for_execute, &request, confirm_native)
+     [1m[96m|[0m                                                          [1m[91m^^^^^^^^^^^^^^[0m [1m[91mnot found in this scope[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0061][0m[1m[97m: this function takes 4 arguments but 3 arguments were supplied[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1577:9
+     [1m[96m|[0m
+[1m[96m1577[0m [1m[96m|[0m         execute_tool_with(&policy_for_execute, &request, confirm_native)
+     [1m[96m|[0m         [1m[91m^^^^^^^^^^^^^^^^^[0m[1m[96m-----------------------------------------------[0m [1m[96margument #4 is missing[0m
+     [1m[96m|[0m
+[1m[92mnote[0m: function defined here
+    [1m[96m--> [0msrc\desktop_tools.rs:1440:4
+     [1m[96m|[0m
+[1m[96m1440[0m [1m[96m|[0m fn execute_tool_with(
+     [1m[96m|[0m    [1m[92m^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m1444[0m [1m[96m|[0m     approve: impl Fn(&ApprovalPrompt) -> ApprovalDecision,
+     [1m[96m|[0m     [1m[96m-----------------------------------------------------[0m
+[1m[96mhelp[0m: provide the argument
+     [1m[96m|[0m
+[1m[96m1577[0m [1m[96m| [0m        execute_tool_with(&policy_for_execute, &request, confirm_native[92m, /* approve */[0m)
+     [1m[96m|[0m                                                                        [92m+++++++++++++++[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:587:42
+    [1m[96m|[0m
+[1m[96m587[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m588[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m589[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m587[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m588[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:588:44
+    [1m[96m|[0m
+[1m[96m588[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m589[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m588[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m589[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mSome errors have detailed explanations: E0061, E0425, E0716.[0m
+[1m[97mFor more information about an error, try `rustc --explain E0061`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 4 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0425][0m[1m[97m: cannot find value `confirm_native` in this scope[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1576:58
+     [1m[96m|[0m
+[1m[96m1576[0m [1m[96m|[0m         execute_tool_with(&policy_for_execute, &request, confirm_native)
+     [1m[96m|[0m                                                          [1m[91m^^^^^^^^^^^^^^[0m [1m[91mnot found in this scope[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0061][0m[1m[97m: this function takes 4 arguments but 3 arguments were supplied[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1576:9
+     [1m[96m|[0m
+[1m[96m1576[0m [1m[96m|[0m         execute_tool_with(&policy_for_execute, &request, confirm_native)
+     [1m[96m|[0m         [1m[91m^^^^^^^^^^^^^^^^^[0m[1m[96m-----------------------------------------------[0m [1m[96margument #4 is missing[0m
+     [1m[96m|[0m
+[1m[92mnote[0m: function defined here
+    [1m[96m--> [0msrc\desktop_tools.rs:1439:4
+     [1m[96m|[0m
+[1m[96m1439[0m [1m[96m|[0m fn execute_tool_with(
+     [1m[96m|[0m    [1m[92m^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m1443[0m [1m[96m|[0m     approve: impl Fn(&ApprovalPrompt) -> ApprovalDecision,
+     [1m[96m|[0m     [1m[96m-----------------------------------------------------[0m
+[1m[96mhelp[0m: provide the argument
+     [1m[96m|[0m
+[1m[96m1576[0m [1m[96m| [0m        execute_tool_with(&policy_for_execute, &request, confirm_native[92m, /* approve */[0m)
+     [1m[96m|[0m                                                                        [92m+++++++++++++++[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:586:42
+    [1m[96m|[0m
+[1m[96m586[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m587[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m588[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m586[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m587[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:587:44
+    [1m[96m|[0m
+[1m[96m587[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m588[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m587[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m588[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mSome errors have detailed explanations: E0061, E0425, E0716.[0m
+[1m[97mFor more information about an error, try `rustc --explain E0061`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 4 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0425][0m[1m[97m: cannot find function `app_for_placeholder` in this scope[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1612:96
+     [1m[96m|[0m
+[1m[96m1612[0m [1m[96m|[0m [1m[96m...[0mst, &mut move_scope_placeholder(&broker, &app_for_placeholder(&app), &owner), |_| {
+     [1m[96m|[0m                                              [1m[91m^^^^^^^^^^^^^^^^^^^[0m [1m[91mnot found in this scope[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0425][0m[1m[97m: cannot find function `move_scope_placeholder` in this scope[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1612:63
+     [1m[96m|[0m
+[1m[96m1612[0m [1m[96m|[0m [1m[96m...[0m   execute_tool_with(&policy_for_execute, &request, &mut move_scope_placeholder(&broker, &app_for_placeholder(&app), &owner), |[1m[96m...[0m
+     [1m[96m|[0m                                                             [1m[91m^^^^^^^^^^^^^^^^^^^^^^[0m [1m[91mnot found in this scope[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0560][0m[1m[97m: struct `GrantView` has no field named `root`[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1655:13
+     [1m[96m|[0m
+[1m[96m1655[0m [1m[96m|[0m             root: grant.root,
+     [1m[96m|[0m             [1m[91m^^^^[0m [1m[91m`GrantView` does not have this field[0m
+     [1m[96m|[0m
+     [1m[96m= [0m[1m[97mnote[0m: all struct fields are already assigned
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0609][0m[1m[97m: no field `root` on type `GrantView`[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1659:25
+     [1m[96m|[0m
+[1m[96m1659[0m [1m[96m|[0m             path: grant.root,
+     [1m[96m|[0m                         [1m[91m^^^^[0m [1m[91munknown field[0m
+     [1m[96m|[0m
+     [1m[96m= [0m[1m[97mnote[0m: available fields are: `id`, `path`, `name`, `scope`, `created_at`
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:586:42
+    [1m[96m|[0m
+[1m[96m586[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m587[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m588[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m586[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m587[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:587:44
+    [1m[96m|[0m
+[1m[96m587[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m588[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m587[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m588[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mSome errors have detailed explanations: E0425, E0560, E0609, E0716.[0m
+[1m[97mFor more information about an error, try `rustc --explain E0425`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 6 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0599][0m[1m[97m: no method named `clone` found for struct `std::sync::MutexGuard<'_, ApprovedScope>` in the current scope[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1608:29
+     [1m[96m|[0m
+[1m[96m1608[0m [1m[96m|[0m     let mut scratch = scope.clone();
+     [1m[96m|[0m                             [1m[91m^^^^^[0m [1m[91mmethod not found in `std::sync::MutexGuard<'_, ApprovedScope>`[0m
+     [1m[96m|[0m
+     [1m[96m= [0m[1m[97mhelp[0m: items from traits can only be used if the trait is implemented and in scope
+     [1m[96m= [0m[1m[97mnote[0m: the following trait defines an item `clone`, perhaps you need to implement it:
+             candidate #1: `Clone`
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:586:42
+    [1m[96m|[0m
+[1m[96m586[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m587[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m588[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m586[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m587[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:587:44
+    [1m[96m|[0m
+[1m[96m587[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m588[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m587[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m588[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mSome errors have detailed explanations: E0599, E0716.[0m
+[1m[97mFor more information about an error, try `rustc --explain E0599`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 3 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0599][0m[1m[97m: no method named `clone` found for struct `std::sync::MutexGuard<'_, ApprovedScope>` in the current scope[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1608:29
+     [1m[96m|[0m
+[1m[96m1608[0m [1m[96m|[0m     let mut scratch = scope.clone();
+     [1m[96m|[0m                             [1m[91m^^^^^[0m [1m[91mmethod not found in `std::sync::MutexGuard<'_, ApprovedScope>`[0m
+     [1m[96m|[0m
+     [1m[96m= [0m[1m[97mhelp[0m: items from traits can only be used if the trait is implemented and in scope
+     [1m[96m= [0m[1m[97mnote[0m: the following trait defines an item `clone`, perhaps you need to implement it:
+             candidate #1: `Clone`
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[0m[1m[97m: future cannot be sent between threads safely[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1593:1
+     [1m[96m|[0m
+[1m[96m1593[0m [1m[96m|[0m   #[tauri::command]
+     [1m[96m|[0m   [1m[91m^^^^^^^^^^^^^^^^^[0m [1m[91mfuture returned by `desktop_tool_execute` is not `Send`[0m
+     [1m[96m|[0m
+    [1m[96m::: [0msrc\main.rs:28:25
+     [1m[96m|[0m
+[1m[96m  28[0m [1m[96m|[0m           .invoke_handler(tauri::generate_handler![
+     [1m[96m|[0m [1m[96m _________________________-[0m
+[1m[96m  29[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_list,
+[1m[96m  30[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_pick,
+[1m[96m  31[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_rename,
+[1m[96m...[0m    [1m[96m|[0m
+[1m[96m  37[0m [1m[96m|[0m [1m[96m|[0m             desktop_tools::desktop_tool_execute
+[1m[96m  38[0m [1m[96m|[0m [1m[96m|[0m         ])
+     [1m[96m|[0m [1m[96m|_________-[0m [1m[96min this macro invocation[0m
+     [1m[96m|[0m
+     [1m[96m= [0m[1m[97mhelp[0m: within `impl std::future::Future<Output = Result<ToolResponse, std::string::String>>`, the trait `std::marker::Send` is not implemented for `std::sync::MutexGuard<'_, ApprovedScope>`
+[1m[92mnote[0m: future is not `Send` as this value is used across an await
+    [1m[96m--> [0msrc\desktop_tools.rs:1618:6
+     [1m[96m|[0m
+[1m[96m1603[0m [1m[96m|[0m     let mut scope = state
+     [1m[96m|[0m         [1m[96m---------[0m [1m[96mhas type `std::sync::MutexGuard<'_, ApprovedScope>` which is not `Send`[0m
+[1m[96m...[0m
+[1m[96m1618[0m [1m[96m|[0m     .await
+     [1m[96m|[0m      [1m[92m^^^^^[0m [1m[92mawait occurs here, with `mut scope` maybe used later[0m
+[1m[92mnote[0m: required by a bound in `tauri::ipc::private::ResultFutureTag::future`
+    [1m[96m--> [0mC:\Users\Vishnu\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-2.12.5\src\ipc\command.rs:326:42
+     [1m[96m|[0m
+[1m[96m 322[0m [1m[96m|[0m     pub async fn future<T, E, F>(self, value: F) -> Result<InvokeResponseBody, InvokeError>
+     [1m[96m|[0m                  [1m[96m------[0m [1m[96mrequired by a bound in this associated function[0m
+[1m[96m...[0m
+[1m[96m 326[0m [1m[96m|[0m       F: Future<Output = Result<T, E>> + Send,
+     [1m[96m|[0m                                          [1m[92m^^^^[0m [1m[92mrequired by this bound in `ResultFutureTag::future`[0m
+     [1m[96m= [0m[1m[97mnote[0m: this error originates in the macro `desktop_tools::__cmd__desktop_tool_execute` which comes from the expansion of the macro `tauri::generate_handler` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:586:42
+    [1m[96m|[0m
+[1m[96m586[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m587[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m588[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m586[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m587[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:587:44
+    [1m[96m|[0m
+[1m[96m587[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m588[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m587[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m588[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0716`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 4 previous errors; 1 warning emitted
+        Info File src-tauri\src\main.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+        Info File src-tauri\permissions\desktop-tools.toml changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 424/426: vupsrou…[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[0m[1m[97m: future cannot be sent between threads safely[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1593:1
+     [1m[96m|[0m
+[1m[96m1593[0m [1m[96m|[0m   #[tauri::command]
+     [1m[96m|[0m   [1m[91m^^^^^^^^^^^^^^^^^[0m [1m[91mfuture returned by `desktop_tool_execute` is not `Send`[0m
+     [1m[96m|[0m
+    [1m[96m::: [0msrc\main.rs:28:25
+     [1m[96m|[0m
+[1m[96m  28[0m [1m[96m|[0m           .invoke_handler(tauri::generate_handler![
+     [1m[96m|[0m [1m[96m _________________________-[0m
+[1m[96m  29[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_list,
+[1m[96m  30[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_pick,
+[1m[96m  31[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_rename,
+[1m[96m...[0m    [1m[96m|[0m
+[1m[96m  42[0m [1m[96m|[0m [1m[96m|[0m             desktop_tools::desktop_tool_approvals_cancel
+[1m[96m  43[0m [1m[96m|[0m [1m[96m|[0m         ])
+     [1m[96m|[0m [1m[96m|_________-[0m [1m[96min this macro invocation[0m
+     [1m[96m|[0m
+     [1m[96m= [0m[1m[97mhelp[0m: within `impl std::future::Future<Output = Result<ToolResponse, std::string::String>>`, the trait `std::marker::Send` is not implemented for `std::sync::MutexGuard<'_, ApprovedScope>`
+[1m[92mnote[0m: future is not `Send` as this value is used across an await
+    [1m[96m--> [0msrc\desktop_tools.rs:1618:6
+     [1m[96m|[0m
+[1m[96m1603[0m [1m[96m|[0m     let mut scope = state
+     [1m[96m|[0m         [1m[96m---------[0m [1m[96mhas type `std::sync::MutexGuard<'_, ApprovedScope>` which is not `Send`[0m
+[1m[96m...[0m
+[1m[96m1618[0m [1m[96m|[0m     .await
+     [1m[96m|[0m      [1m[92m^^^^^[0m [1m[92mawait occurs here, with `mut scope` maybe used later[0m
+[1m[92mnote[0m: required by a bound in `tauri::ipc::private::ResultFutureTag::future`
+    [1m[96m--> [0mC:\Users\Vishnu\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-2.12.5\src\ipc\command.rs:326:42
+     [1m[96m|[0m
+[1m[96m 322[0m [1m[96m|[0m     pub async fn future<T, E, F>(self, value: F) -> Result<InvokeResponseBody, InvokeError>
+     [1m[96m|[0m                  [1m[96m------[0m [1m[96mrequired by a bound in this associated function[0m
+[1m[96m...[0m
+[1m[96m 326[0m [1m[96m|[0m       F: Future<Output = Result<T, E>> + Send,
+     [1m[96m|[0m                                          [1m[92m^^^^[0m [1m[92mrequired by this bound in `ResultFutureTag::future`[0m
+     [1m[96m= [0m[1m[97mnote[0m: this error originates in the macro `desktop_tools::__cmd__desktop_tool_execute` which comes from the expansion of the macro `tauri::generate_handler` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:586:42
+    [1m[96m|[0m
+[1m[96m586[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m587[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m588[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m586[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m587[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:587:44
+    [1m[96m|[0m
+[1m[96m587[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m588[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m587[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m588[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0716`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 4 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[0m[1m[97m: future cannot be sent between threads safely[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1593:1
+     [1m[96m|[0m
+[1m[96m1593[0m [1m[96m|[0m   #[tauri::command]
+     [1m[96m|[0m   [1m[91m^^^^^^^^^^^^^^^^^[0m [1m[91mfuture returned by `desktop_tool_execute` is not `Send`[0m
+     [1m[96m|[0m
+    [1m[96m::: [0msrc\main.rs:28:25
+     [1m[96m|[0m
+[1m[96m  28[0m [1m[96m|[0m           .invoke_handler(tauri::generate_handler![
+     [1m[96m|[0m [1m[96m _________________________-[0m
+[1m[96m  29[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_list,
+[1m[96m  30[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_pick,
+[1m[96m  31[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_rename,
+[1m[96m...[0m    [1m[96m|[0m
+[1m[96m  42[0m [1m[96m|[0m [1m[96m|[0m             desktop_tools::desktop_tool_approvals_cancel
+[1m[96m  43[0m [1m[96m|[0m [1m[96m|[0m         ])
+     [1m[96m|[0m [1m[96m|_________-[0m [1m[96min this macro invocation[0m
+     [1m[96m|[0m
+     [1m[96m= [0m[1m[97mhelp[0m: within `impl std::future::Future<Output = Result<ToolResponse, std::string::String>>`, the trait `std::marker::Send` is not implemented for `std::sync::MutexGuard<'_, ApprovedScope>`
+[1m[92mnote[0m: future is not `Send` as this value is used across an await
+    [1m[96m--> [0msrc\desktop_tools.rs:1618:6
+     [1m[96m|[0m
+[1m[96m1603[0m [1m[96m|[0m     let mut scope = state
+     [1m[96m|[0m         [1m[96m---------[0m [1m[96mhas type `std::sync::MutexGuard<'_, ApprovedScope>` which is not `Send`[0m
+[1m[96m...[0m
+[1m[96m1618[0m [1m[96m|[0m     .await
+     [1m[96m|[0m      [1m[92m^^^^^[0m [1m[92mawait occurs here, with `mut scope` maybe used later[0m
+[1m[92mnote[0m: required by a bound in `tauri::ipc::private::ResultFutureTag::future`
+    [1m[96m--> [0mC:\Users\Vishnu\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-2.12.5\src\ipc\command.rs:326:42
+     [1m[96m|[0m
+[1m[96m 322[0m [1m[96m|[0m     pub async fn future<T, E, F>(self, value: F) -> Result<InvokeResponseBody, InvokeError>
+     [1m[96m|[0m                  [1m[96m------[0m [1m[96mrequired by a bound in this associated function[0m
+[1m[96m...[0m
+[1m[96m 326[0m [1m[96m|[0m       F: Future<Output = Result<T, E>> + Send,
+     [1m[96m|[0m                                          [1m[92m^^^^[0m [1m[92mrequired by this bound in `ResultFutureTag::future`[0m
+     [1m[96m= [0m[1m[97mnote[0m: this error originates in the macro `desktop_tools::__cmd__desktop_tool_execute` which comes from the expansion of the macro `tauri::generate_handler` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:586:42
+    [1m[96m|[0m
+[1m[96m586[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m587[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m588[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m586[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m587[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:587:44
+    [1m[96m|[0m
+[1m[96m587[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m588[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m587[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m588[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0716`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 4 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[0m[1m[97m: future cannot be sent between threads safely[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1593:1
+     [1m[96m|[0m
+[1m[96m1593[0m [1m[96m|[0m   #[tauri::command]
+     [1m[96m|[0m   [1m[91m^^^^^^^^^^^^^^^^^[0m [1m[91mfuture returned by `desktop_tool_execute` is not `Send`[0m
+     [1m[96m|[0m
+    [1m[96m::: [0msrc\main.rs:28:25
+     [1m[96m|[0m
+[1m[96m  28[0m [1m[96m|[0m           .invoke_handler(tauri::generate_handler![
+     [1m[96m|[0m [1m[96m _________________________-[0m
+[1m[96m  29[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_list,
+[1m[96m  30[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_pick,
+[1m[96m  31[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_rename,
+[1m[96m...[0m    [1m[96m|[0m
+[1m[96m  42[0m [1m[96m|[0m [1m[96m|[0m             desktop_tools::desktop_tool_approvals_cancel
+[1m[96m  43[0m [1m[96m|[0m [1m[96m|[0m         ])
+     [1m[96m|[0m [1m[96m|_________-[0m [1m[96min this macro invocation[0m
+     [1m[96m|[0m
+     [1m[96m= [0m[1m[97mhelp[0m: within `impl std::future::Future<Output = Result<ToolResponse, std::string::String>>`, the trait `std::marker::Send` is not implemented for `std::sync::MutexGuard<'_, ApprovedScope>`
+[1m[92mnote[0m: future is not `Send` as this value is used across an await
+    [1m[96m--> [0msrc\desktop_tools.rs:1618:6
+     [1m[96m|[0m
+[1m[96m1603[0m [1m[96m|[0m     let mut scope = state
+     [1m[96m|[0m         [1m[96m---------[0m [1m[96mhas type `std::sync::MutexGuard<'_, ApprovedScope>` which is not `Send`[0m
+[1m[96m...[0m
+[1m[96m1618[0m [1m[96m|[0m     .await
+     [1m[96m|[0m      [1m[92m^^^^^[0m [1m[92mawait occurs here, with `mut scope` maybe used later[0m
+[1m[92mnote[0m: required by a bound in `tauri::ipc::private::ResultFutureTag::future`
+    [1m[96m--> [0mC:\Users\Vishnu\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-2.12.5\src\ipc\command.rs:326:42
+     [1m[96m|[0m
+[1m[96m 322[0m [1m[96m|[0m     pub async fn future<T, E, F>(self, value: F) -> Result<InvokeResponseBody, InvokeError>
+     [1m[96m|[0m                  [1m[96m------[0m [1m[96mrequired by a bound in this associated function[0m
+[1m[96m...[0m
+[1m[96m 326[0m [1m[96m|[0m       F: Future<Output = Result<T, E>> + Send,
+     [1m[96m|[0m                                          [1m[92m^^^^[0m [1m[92mrequired by this bound in `ResultFutureTag::future`[0m
+     [1m[96m= [0m[1m[97mnote[0m: this error originates in the macro `desktop_tools::__cmd__desktop_tool_execute` which comes from the expansion of the macro `tauri::generate_handler` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:586:42
+    [1m[96m|[0m
+[1m[96m586[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m587[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m588[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m586[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m587[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:587:44
+    [1m[96m|[0m
+[1m[96m587[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m588[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m587[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m588[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[0m[1m[97m: future cannot be sent between threads safely[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1593:1
+     [1m[96m|[0m
+[1m[96m1593[0m [1m[96m|[0m   #[tauri::command]
+     [1m[96m|[0m   [1m[91m^^^^^^^^^^^^^^^^^[0m [1m[91mfuture returned by `desktop_tool_execute` is not `Send`[0m
+     [1m[96m|[0m
+    [1m[96m::: [0msrc\main.rs:28:25
+     [1m[96m|[0m
+[1m[96m  28[0m [1m[96m|[0m           .invoke_handler(tauri::generate_handler![
+     [1m[96m|[0m [1m[96m _________________________-[0m
+[1m[96m  29[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_list,
+[1m[96m  30[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_pick,
+[1m[96m  31[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_rename,
+[1m[96m...[0m    [1m[96m|[0m
+[1m[96m  42[0m [1m[96m|[0m [1m[96m|[0m             desktop_tools::desktop_tool_approvals_cancel
+[1m[96m  43[0m [1m[96m|[0m [1m[96m|[0m         ])
+     [1m[96m|[0m [1m[96m|_________-[0m [1m[96min this macro invocation[0m
+     [1m[96m|[0m
+     [1m[96m= [0m[1m[97mhelp[0m: within `impl std::future::Future<Output = Result<ToolResponse, std::string::String>>`, the trait `std::marker::Send` is not implemented for `std::sync::MutexGuard<'_, ApprovedScope>`
+[1m[92mnote[0m: future is not `Send` as this value is used across an await
+    [1m[96m--> [0msrc\desktop_tools.rs:1618:6
+     [1m[96m|[0m
+[1m[96m1603[0m [1m[96m|[0m     let mut scope = state
+     [1m[96m|[0m         [1m[96m---------[0m [1m[96mhas type `std::sync::MutexGuard<'_, ApprovedScope>` which is not `Send`[0m
+[1m[96m...[0m
+[1m[96m1618[0m [1m[96m|[0m     .await
+     [1m[96m|[0m      [1m[92m^^^^^[0m [1m[92mawait occurs here, with `mut scope` maybe used later[0m
+[1m[92mnote[0m: required by a bound in `tauri::ipc::private::ResultFutureTag::future`
+    [1m[96m--> [0mC:\Users\Vishnu\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-2.12.5\src\ipc\command.rs:326:42
+     [1m[96m|[0m
+[1m[96m 322[0m [1m[96m|[0m     pub async fn future<T, E, F>(self, value: F) -> Result<InvokeResponseBody, InvokeError>
+     [1m[96m|[0m                  [1m[96m------[0m [1m[96mrequired by a bound in this associated function[0m
+[1m[96m...[0m
+[1m[96m 326[0m [1m[96m|[0m       F: Future<Output = Result<T, E>> + Send,
+     [1m[96m|[0m                                          [1m[92m^^^^[0m [1m[92mrequired by this bound in `ResultFutureTag::future`[0m
+     [1m[96m= [0m[1m[97mnote[0m: this error originates in the macro `desktop_tools::__cmd__desktop_tool_execute` which comes from the expansion of the macro `tauri::generate_handler` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:586:42
+    [1m[96m|[0m
+[1m[96m586[0m [1m[96m|[0m     let root_parts: Vec<Component<'_>> = canonical_for_policy(root).components().collect();
+    [1m[96m|[0m                                          [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                          [1m[91m|[0m
+    [1m[96m|[0m                                          [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m587[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+[1m[96m588[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m     [1m[96m----------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m586[0m [92m~ [0m    [92mlet binding = canonical_for_policy(root);[0m
+[1m[96m587[0m [92m~     [0mlet root_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[91merror[E0716][0m[1m[97m: temporary value dropped while borrowed[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:587:44
+    [1m[96m|[0m
+[1m[96m587[0m [1m[96m|[0m     let target_parts: Vec<Component<'_>> = canonical_for_policy(target).components().collect();
+    [1m[96m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m                       [1m[96m-[0m [1m[96mtemporary value is freed at the end of this statement[0m
+    [1m[96m|[0m                                            [1m[91m|[0m
+    [1m[96m|[0m                                            [1m[91mcreates a temporary value which is freed while still in use[0m
+[1m[96m588[0m [1m[96m|[0m     root_parts.len() <= target_parts.len()
+    [1m[96m|[0m                         [1m[96m------------[0m [1m[96mborrow later used here[0m
+    [1m[96m|[0m
+[1m[96mhelp[0m: consider using a `let` binding to create a longer lived value
+    [1m[96m|[0m
+[1m[96m587[0m [92m~ [0m    [92mlet binding = canonical_for_policy(target);[0m
+[1m[96m588[0m [92m~     [0mlet target_parts: Vec<Component<'_>> = [92mbinding[0m.components().collect();
+    [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0716`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 4 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[0m[1m[97m: future cannot be sent between threads safely[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1595:1
+     [1m[96m|[0m
+[1m[96m1595[0m [1m[96m|[0m   #[tauri::command]
+     [1m[96m|[0m   [1m[91m^^^^^^^^^^^^^^^^^[0m [1m[91mfuture returned by `desktop_tool_execute` is not `Send`[0m
+     [1m[96m|[0m
+    [1m[96m::: [0msrc\main.rs:28:25
+     [1m[96m|[0m
+[1m[96m  28[0m [1m[96m|[0m           .invoke_handler(tauri::generate_handler![
+     [1m[96m|[0m [1m[96m _________________________-[0m
+[1m[96m  29[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_list,
+[1m[96m  30[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_pick,
+[1m[96m  31[0m [1m[96m|[0m [1m[96m|[0m             workspace::workspace_rename,
+[1m[96m...[0m    [1m[96m|[0m
+[1m[96m  42[0m [1m[96m|[0m [1m[96m|[0m             desktop_tools::desktop_tool_approvals_cancel
+[1m[96m  43[0m [1m[96m|[0m [1m[96m|[0m         ])
+     [1m[96m|[0m [1m[96m|_________-[0m [1m[96min this macro invocation[0m
+     [1m[96m|[0m
+     [1m[96m= [0m[1m[97mhelp[0m: within `impl std::future::Future<Output = Result<ToolResponse, std::string::String>>`, the trait `std::marker::Send` is not implemented for `std::sync::MutexGuard<'_, ApprovedScope>`
+[1m[92mnote[0m: future is not `Send` as this value is used across an await
+    [1m[96m--> [0msrc\desktop_tools.rs:1620:6
+     [1m[96m|[0m
+[1m[96m1605[0m [1m[96m|[0m     let mut scope = state
+     [1m[96m|[0m         [1m[96m---------[0m [1m[96mhas type `std::sync::MutexGuard<'_, ApprovedScope>` which is not `Send`[0m
+[1m[96m...[0m
+[1m[96m1620[0m [1m[96m|[0m     .await
+     [1m[96m|[0m      [1m[92m^^^^^[0m [1m[92mawait occurs here, with `mut scope` maybe used later[0m
+[1m[92mnote[0m: required by a bound in `tauri::ipc::private::ResultFutureTag::future`
+    [1m[96m--> [0mC:\Users\Vishnu\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-2.12.5\src\ipc\command.rs:326:42
+     [1m[96m|[0m
+[1m[96m 322[0m [1m[96m|[0m     pub async fn future<T, E, F>(self, value: F) -> Result<InvokeResponseBody, InvokeError>
+     [1m[96m|[0m                  [1m[96m------[0m [1m[96mrequired by a bound in this associated function[0m
+[1m[96m...[0m
+[1m[96m 326[0m [1m[96m|[0m       F: Future<Output = Result<T, E>> + Send,
+     [1m[96m|[0m                                          [1m[92m^^^^[0m [1m[92mrequired by this bound in `ResultFutureTag::future`[0m
+     [1m[96m= [0m[1m[97mnote[0m: this error originates in the macro `desktop_tools::__cmd__desktop_tool_execute` which comes from the expansion of the macro `tauri::generate_handler` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 2 previous errors; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused import: `HashSet`[0m
+ [1m[96m--> [0msrc\desktop_tools.rs:4:28
+  [1m[96m|[0m
+[1m[96m4[0m [1m[96m|[0m     collections::{HashMap, HashSet},
+  [1m[96m|[0m                            [1m[93m^^^^^^^[0m
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0277][0m[1m[97m: the `?` operator can only be used in a closure that returns `Result` or `Option` (or another type that implements `FromResidual`)[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1614:84
+     [1m[96m|[0m
+[1m[96m1611[0m [1m[96m|[0m     let response = tauri::async_runtime::spawn_blocking(move || {
+     [1m[96m|[0m                                                         [1m[96m-------[0m [1m[96mthis function should return `Result` or `Option` to accept `?`[0m
+[1m[96m...[0m
+[1m[96m1614[0m [1m[96m|[0m             .map_err(|_| "Filesystem permission state is unavailable.".to_string())?;
+     [1m[96m|[0m                                                                                    [1m[91m^[0m [1m[91mcannot use the `?` operator in a closure that returns `ToolResponse`[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0277][0m[1m[97m: the `?` operator can only be applied to values that implement `Try`[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1611:20
+     [1m[96m|[0m
+[1m[96m1611[0m [1m[96m|[0m       let response = tauri::async_runtime::spawn_blocking(move || {
+     [1m[96m|[0m [1m[91m ____________________^[0m
+[1m[96m1612[0m [1m[96m|[0m [1m[91m|[0m         let mut scope = scopes
+[1m[96m1613[0m [1m[96m|[0m [1m[91m|[0m             .lock()
+[1m[96m1614[0m [1m[96m|[0m [1m[91m|[0m             .map_err(|_| "Filesystem permission state is unavailable.".to_string())?;
+[1m[96m...[0m    [1m[91m|[0m
+[1m[96m1621[0m [1m[96m|[0m [1m[91m|[0m     .await
+[1m[96m1622[0m [1m[96m|[0m [1m[91m|[0m     .map_err(|_| "The Windows filesystem tool did not finish.".to_string())??;
+     [1m[96m|[0m [1m[91m|_____________________________________________________________________________^[0m [1m[91mthe `?` operator cannot be applied to type `ToolResponse`[0m
+     [1m[96m|[0m
+[1m[96mhelp[0m: the nightly-only, unstable trait `Try` is not implemented for `ToolResponse`
+    [1m[96m--> [0msrc\desktop_tools.rs:473:1
+     [1m[96m|[0m
+[1m[96m 473[0m [1m[96m|[0m pub struct ToolResponse {
+     [1m[96m|[0m [1m[96m^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0277][0m[1m[97m: the `?` operator can only be used in a closure that returns `Result` or `Option` (or another type that implements `FromResidual`)[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1614:84
+     [1m[96m|[0m
+[1m[96m1611[0m [1m[96m|[0m     let response = tauri::async_runtime::spawn_blocking(move || {
+     [1m[96m|[0m                                                         [1m[96m-------[0m [1m[96mthis function should return `Result` or `Option` to accept `?`[0m
+[1m[96m...[0m
+[1m[96m1614[0m [1m[96m|[0m             .map_err(|_| "Filesystem permission state is unavailable.".to_string())?;
+     [1m[96m|[0m                                                                                    [1m[91m^[0m [1m[91mcannot use the `?` operator in a closure that returns `ToolResponse`[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0277][0m[1m[97m: the `?` operator can only be applied to values that implement `Try`[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1611:20
+     [1m[96m|[0m
+[1m[96m1611[0m [1m[96m|[0m       let response = tauri::async_runtime::spawn_blocking(move || {
+     [1m[96m|[0m [1m[91m ____________________^[0m
+[1m[96m1612[0m [1m[96m|[0m [1m[91m|[0m         let mut scope = scopes
+[1m[96m1613[0m [1m[96m|[0m [1m[91m|[0m             .lock()
+[1m[96m1614[0m [1m[96m|[0m [1m[91m|[0m             .map_err(|_| "Filesystem permission state is unavailable.".to_string())?;
+[1m[96m...[0m    [1m[91m|[0m
+[1m[96m1621[0m [1m[96m|[0m [1m[91m|[0m     .await
+[1m[96m1622[0m [1m[96m|[0m [1m[91m|[0m     .map_err(|_| "The Windows filesystem tool did not finish.".to_string())??;
+     [1m[96m|[0m [1m[91m|_____________________________________________________________________________^[0m [1m[91mthe `?` operator cannot be applied to type `ToolResponse`[0m
+     [1m[96m|[0m
+[1m[96mhelp[0m: the nightly-only, unstable trait `Try` is not implemented for `ToolResponse`
+    [1m[96m--> [0msrc\desktop_tools.rs:473:1
+     [1m[96m|[0m
+[1m[96m 473[0m [1m[96m|[0m pub struct ToolResponse {
+     [1m[96m|[0m [1m[96m^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0277`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 2 previous errors
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0282][0m[1m[97m: type annotations needed[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1617:9
+     [1m[96m|[0m
+[1m[96m1617[0m [1m[96m|[0m         Ok(execute_tool_with(&policy, &request, &mut scope, |prompt| {
+     [1m[96m|[0m         [1m[91m^^[0m [1m[91mcannot infer type of the type parameter `E` declared on the enum `Result`[0m
+     [1m[96m|[0m
+[1m[96mhelp[0m: consider specifying the generic arguments
+     [1m[96m|[0m
+[1m[96m1617[0m [1m[96m| [0m        Ok[92m::<ToolResponse, E>[0m(execute_tool_with(&policy, &request, &mut scope, |prompt| {
+     [1m[96m|[0m           [92m+++++++++++++++++++[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0282`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 1 previous error
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0382][0m[1m[97m: borrow of moved value: `policy`[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1623:24
+     [1m[96m|[0m
+[1m[96m1601[0m [1m[96m|[0m     let policy = policy_of(&state)?;
+     [1m[96m|[0m         [1m[96m------[0m [1m[96mmove occurs because `policy` has type `ToolPolicy`, which does not implement the `Copy` trait[0m
+[1m[96m...[0m
+[1m[96m1611[0m [1m[96m|[0m     let response = tauri::async_runtime::spawn_blocking(move || -> Result<ToolResponse, String> {
+     [1m[96m|[0m                                                         [1m[96m---------------------------------------[0m [1m[96mvalue moved into closure here[0m
+[1m[96m...[0m
+[1m[96m1617[0m [1m[96m|[0m         Ok(execute_tool_with(&policy, &request, &mut scope, |prompt| {
+     [1m[96m|[0m                               [1m[96m------[0m [1m[96mvariable moved due to use in closure[0m
+[1m[96m...[0m
+[1m[96m1623[0m [1m[96m|[0m     append_audit(&app, &policy, &audit_request, &response);
+     [1m[96m|[0m                        [1m[91m^^^^^^^[0m [1m[91mvalue borrowed here after move[0m
+     [1m[96m|[0m
+[1m[96mhelp[0m: consider cloning the value before moving it into the closure
+     [1m[96m|[0m
+[1m[96m1611[0m [92m~ [0m    [92mlet value = policy.clone();[0m
+[1m[96m1612[0m [92m~     [0mlet response = tauri::async_runtime::spawn_blocking(move || -> Result<ToolResponse, String> {
+[1m[96m1613[0m [1m[96m|[0m         let mut scope = scopes
+ [1m[96m...[0m
+[1m[96m1617[0m [1m[96m|[0m         let app_for_prompt = scope_app.clone();
+[1m[96m1618[0m [92m~ [0m        Ok(execute_tool_with(&[92mvalue[0m, &request, &mut scope, |prompt| {
+     [1m[96m|[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: unused variable: `emitter`[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1606:9
+     [1m[96m|[0m
+[1m[96m1606[0m [1m[96m|[0m     let emitter = app.clone();
+     [1m[96m|[0m         [1m[93m^^^^^^^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_emitter`[0m
+     [1m[96m|[0m
+     [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0382`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 1 previous error; 1 warning emitted
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: field `approval_key` is never read[0m
+  [1m[96m--> [0msrc\desktop_tools.rs:93:5
+   [1m[96m|[0m
+[1m[96m90[0m [1m[96m|[0m struct PendingApproval {
+   [1m[96m|[0m        [1m[96m---------------[0m [1m[96mfield in this struct[0m
+[1m[96m...[0m
+[1m[96m93[0m [1m[96m|[0m     approval_key: String,
+   [1m[96m|[0m     [1m[93m^^^^^^^^^^^^[0m
+   [1m[96m|[0m
+   [1m[96m= [0m[1m[97mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: method `pending_ids` is never used[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:224:8
+    [1m[96m|[0m
+[1m[96m103[0m [1m[96m|[0m impl ApprovalBroker {
+    [1m[96m|[0m [1m[96m-------------------[0m [1m[96mmethod in this implementation[0m
+[1m[96m...[0m
+[1m[96m224[0m [1m[96m|[0m     fn pending_ids(&self) -> Vec<String> {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: field `summary` is never read[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:507:5
+    [1m[96m|[0m
+[1m[96m503[0m [1m[96m|[0m struct ResolvedRequest {
+    [1m[96m|[0m        [1m[96m---------------[0m [1m[96mfield in this struct[0m
+[1m[96m...[0m
+[1m[96m507[0m [1m[96m|[0m     summary: String,
+    [1m[96m|[0m     [1m[93m^^^^^^^[0m
+    [1m[96m|[0m
+    [1m[96m= [0m[1m[97mnote[0m: `ResolvedRequest` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: method `as_str` is never used[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:521:8
+    [1m[96m|[0m
+[1m[96m520[0m [1m[96m|[0m impl AccessScope {
+    [1m[96m|[0m [1m[96m----------------[0m [1m[96mmethod in this implementation[0m
+[1m[96m521[0m [1m[96m|[0m     fn as_str(self) -> &'static str {
+    [1m[96m|[0m        [1m[93m^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 4 warnings
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 24.23s
+[1m[92m     Running[0m `target\debug\vupsrouter.exe`
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m    Blocking[0m waiting for file lock on build directory
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: method `pending_ids` is never used[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:222:8
+    [1m[96m|[0m
+[1m[96m102[0m [1m[96m|[0m impl ApprovalBroker {
+    [1m[96m|[0m [1m[96m-------------------[0m [1m[96mmethod in this implementation[0m
+[1m[96m...[0m
+[1m[96m222[0m [1m[96m|[0m     fn pending_ids(&self) -> Vec<String> {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^[0m
+    [1m[96m|[0m
+    [1m[96m= [0m[1m[97mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on build directory
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 424/426: vupsrou…[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on build directory
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 424/426: vupsrou…[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0596][0m[1m[97m: cannot borrow `approve` as mutable, as it is not declared as mutable[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1439:13
+     [1m[96m|[0m
+[1m[96m1439[0m [1m[96m|[0m             approve(prompt)
+     [1m[96m|[0m             [1m[91m^^^^^^^[0m [1m[91mcannot borrow as mutable[0m
+     [1m[96m|[0m
+[1m[96mhelp[0m: consider changing this to be mutable
+     [1m[96m|[0m
+[1m[96m1428[0m [1m[96m| [0m    [92mmut [0mapprove: impl FnMut(&ApprovalPrompt) -> ApprovalDecision,
+     [1m[96m|[0m     [92m+++[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0596`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 1 previous error
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m    Blocking[0m waiting for file lock on build directory
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 424/426: vupsrou…[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 31.83s
+[1m[92m     Running[0m `target\debug\vupsrouter.exe`
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m    Blocking[0m waiting for file lock on build directory
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 424/426: vupsrou…[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 14.96s
+[1m[92m     Running[0m `target\debug\vupsrouter.exe`
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0308][0m[1m[97m: mismatched types[0m
+    [1m[96m--> [0msrc\desktop_tools.rs:1685:5
+     [1m[96m|[0m
+[1m[96m1678[0m [1m[96m|[0m ) -> Result<bool, String> {
+     [1m[96m|[0m      [1m[96m--------------------[0m [1m[96mexpected `Result<bool, std::string::String>` because of return type[0m
+[1m[96m...[0m
+[1m[96m1685[0m [1m[96m|[0m     scope.grants.revoke(&policy.owner, id.trim())
+     [1m[96m|[0m     [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m [1m[91mexpected `Result<bool, String>`, found `Option<FolderGrant>`[0m
+     [1m[96m|[0m
+     [1m[96m= [0m[1m[97mnote[0m: expected enum `[1m[35mResult<bool, std::string::String>[0m`
+                found enum `[1m[35mstd::option::Option<FolderGrant>[0m`
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0308`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 1 previous error
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on build directory
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 424/426: vupsrou…[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 12.74s
+[1m[92m     Running[0m `target\debug\vupsrouter.exe`
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m    Blocking[0m waiting for file lock on build directory
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 424/426: vupsrou…[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 18.20s
+[1m[92m     Running[0m `target\debug\vupsrouter.exe`
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0063][0m[1m[97m: missing field `access` in initializer of `ApprovalPrompt`[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:842:5
+    [1m[96m|[0m
+[1m[96m842[0m [1m[96m|[0m     ApprovalPrompt {
+    [1m[96m|[0m     [1m[91m^^^^^^^^^^^^^^[0m [1m[91mmissing `access`[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0063`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 1 previous error
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0063][0m[1m[97m: missing field `access` in initializer of `ApprovalPrompt`[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:851:5
+    [1m[96m|[0m
+[1m[96m851[0m [1m[96m|[0m     ApprovalPrompt {
+    [1m[96m|[0m     [1m[91m^^^^^^^^^^^^^^[0m [1m[91mmissing `access`[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0063`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 1 previous error
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 16.32s
+[1m[92m     Running[0m `target\debug\vupsrouter.exe`
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 424/426: vupsrou…[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 12.72s
+[1m[92m     Running[0m `target\debug\vupsrouter.exe`
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 8.18s
+[1m[92m     Running[0m `target\debug\vupsrouter.exe`
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 424/426: vupsrou…[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m[1m[97m: function `display_path` is never used[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:761:4
+    [1m[96m|[0m
+[1m[96m761[0m [1m[96m|[0m fn display_path(path: &Path) -> PathBuf {
+    [1m[96m|[0m    [1m[93m^^^^^^^^^^^^[0m
+    [1m[96m|[0m
+    [1m[96m= [0m[1m[97mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[93mwarning[0m: `vupsrouter` (bin "vupsrouter") generated 1 warning
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 18.55s
+[1m[92m     Running[0m `target\debug\vupsrouter.exe`
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0425][0m[1m[97m: cannot find function `with_path` in this scope[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:741:26
+    [1m[96m|[0m
+[1m[96m741[0m [1m[96m|[0m         .map_err(|error| with_path(io_failure(error), path))?;
+    [1m[96m|[0m                          [1m[91m^^^^^^^^^[0m [1m[91mnot found in this scope[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[E0425][0m[1m[97m: cannot find function `with_path` in this scope[0m
+   [1m[96m--> [0msrc\desktop_tools.rs:743:26
+    [1m[96m|[0m
+[1m[96m743[0m [1m[96m|[0m         .map_err(|error| with_path(io_failure(error), path))?;
+    [1m[96m|[0m                          [1m[91m^^^^^^^^^[0m [1m[91mnot found in this scope[0m
+
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[97mFor more information about this error, try `rustc --explain E0425`.[0m
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[91merror[0m: could not compile `vupsrouter` (bin "vupsrouter") due to 2 previous errors
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 18.36s
+[1m[92m     Running[0m `target\debug\vupsrouter.exe`
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 15.82s
+[1m[92m     Running[0m `target\debug\vupsrouter.exe`
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 17.95s
+[1m[92m     Running[0m `target\debug\vupsrouter.exe`
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 424/426: vupsrou…[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 14.40s
+[1m[92m     Running[0m `target\debug\vupsrouter.exe`
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 424/426: vupsrou…[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 7.11s
+[1m[92m     Running[0m `target\debug\vupsrouter.exe`
+        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 424/426: vupsrou…[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…        Info File src-tauri\src\desktop_tools.rs changed. Rebuilding application...
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[1m[92m   Compiling[0m vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+[1m[96m    Building[0m [=======================> ] 425/426: vupsrou…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 7.23s
+[1m[92m     Running[0m `target\debug\vupsrouter.exe`

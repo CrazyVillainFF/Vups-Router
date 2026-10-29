@@ -34,7 +34,12 @@ fn main() {
             workspace::workspace_read,
             desktop_tools::desktop_tool_set_policy,
             desktop_tools::desktop_tool_policy_status,
-            desktop_tools::desktop_tool_execute
+            desktop_tools::desktop_tool_execute,
+            desktop_tools::desktop_tool_respond,
+            desktop_tools::desktop_tool_grants_list,
+            desktop_tools::desktop_tool_grant_revoke,
+            desktop_tools::desktop_tool_grants_clear,
+            desktop_tools::desktop_tool_approvals_cancel
         ])
         .run(tauri::generate_context!())
         .expect("error while running VupsRouter");

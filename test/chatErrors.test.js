@@ -31,6 +31,44 @@ test("quota exhaustion is classified separately from a transient rate limit", ()
   assert.equal(classifyChatError(error({ message: "Too many requests. Please retry later.", status: 429 })), "rate_limit");
 });
 
+test("a transient upstream 429 that mentions quota is still a rate limit", () => {
+  const upstream = error({
+    code: "rate_limited",
+    status: 429,
+    model: "recursive/flint-v1.0:free",
+    message:
+      "Rate limit or quota exceeded (HTTP 429). Wait a moment and try again. Provider said: recursive/flint-v1.0:free is temporarily rate-limited upstream."
+  });
+  assert.equal(classifyChatError(upstream), "rate_limit");
+  const presentation = presentChatError(upstream);
+  assert.equal(presentation.title, "Model is busy");
+  assert.equal(presentation.model, "recursive/flint-v1.0:free");
+  assert.doesNotMatch(presentation.message, /usage limit|reset time/i);
+});
+
+test("explicit quota and shared-rate codes keep their own categories", () => {
+  assert.equal(
+    classifyChatError(error({ code: "quota_exhausted", status: 429, message: "Rate limit reached." })),
+    "quota"
+  );
+  assert.equal(
+    classifyChatError(error({ code: "shared_quota_exhausted", status: 429 })),
+    "quota"
+  );
+  assert.equal(
+    classifyChatError(error({ code: "quota_exceeded", status: 429 })),
+    "quota"
+  );
+  assert.equal(
+    classifyChatError(error({ code: "shared_model_rate_limited", status: 429 })),
+    "rate_limit"
+  );
+  assert.equal(
+    classifyChatError(error({ code: "omniroute_insufficient_credits", status: 402 })),
+    "quota"
+  );
+});
+
 test("authentication, context, model, network, and empty failures get distinct types", () => {
   assert.equal(classifyChatError(error({ code: "invalid_api_key", status: 401 })), "invalid_api_key");
   assert.equal(classifyChatError(error({ code: "context_length_exceeded" })), "context_limit");
@@ -65,7 +103,7 @@ test("quota errors show the affected model and never invent a reset time", () =>
   );
   assert.equal(presentation.title, "Usage limit reached");
   assert.equal(presentation.model, "free-model-x");
-  assert.match(presentation.message, /Reset time unavailable/i);
+  assert.match(presentation.message, /Reset time not provided by provider/i);
   assert.equal(presentation.resetAt, "");
   assert.equal(presentation.retry, false);
   assert.equal(presentation.canSwitchModel, true);

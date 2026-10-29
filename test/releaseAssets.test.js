@@ -97,6 +97,8 @@ test("6. a debug-only APK is never presented as a production release", () => {
   assert.match(merged.android.title, /test build/);
   assert.match(merged.android.description, /not a Play Store release/i);
   assert.match(merged.android.install.join(" "), /debug-signed/);
+  assert.match(merged.android.install.join(" "), /uninstall it first/i);
+  assert.match(merged.android.install.join(" "), /different key/i);
   assert.match(merged.android.target, /debug key|Test build/i);
 });
 
@@ -110,6 +112,8 @@ test("7. a release-signed APK wins over the debug build and reads as available",
   assert.equal(merged.android.downloadUrl, signed.assets[1].browser_download_url);
   assert.match(merged.android.format, /release-signed/);
   assert.match(merged.android.install.join(" "), /allow installs from this source/);
+  assert.match(merged.android.install.join(" "), /uninstall it first/i);
+  assert.match(merged.android.install.join(" "), /signing key matches/i);
 });
 
 test("8. only this repository's release assets are trusted", () => {

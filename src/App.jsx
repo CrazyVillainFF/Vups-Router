@@ -134,7 +134,8 @@ function AuthPage({ mode }) {
   }
 
     return <div className={`auth-layout${nativeShell ? " auth-layout--native" : ""}`}><div className="auth-art-panel"><Link to="/" className="brand auth-brand"><span className="brand-mark"><VupsLogo /></span><span>vups<span className="brand-light">router</span></span></Link><div className="auth-art-copy"><div className="eyebrow"><span className="eyebrow-line"/> FREE AI, MADE CLEAR</div><h1>Find your next<br/><span>AI model.</span></h1><p>Compare free access options and open models.</p><div className="auth-logo" aria-hidden="true"><VupsLogo className="auth-logo-image" sizes="220px" /></div><div className="auth-art-lines"><span/><span/><span/><span/><span/></div></div><div className="auth-art-foot"><span>FREE AI / CLEAR CHOICES</span><span>VUPSROUTER / 2026</span></div></div>
-    <div className="auth-form-panel"><Link to="/" className="back-home">{"\u2190"} Back to home</Link><div className="auth-form-wrap"><div className="auth-form-heading"><span className="auth-kicker">{isSignup ? "JOIN VUPSROUTER" : "GOOD TO HAVE YOU BACK"}</span><h2>{isSignup ? "Create your account" : "Welcome back"}</h2><p>{isSignup ? "Create an account to use your VupsRouter account features." : "Sign in to your VupsRouter account."}</p></div>
+    <div className="auth-form-panel"><Link to="/" className="back-home">{"\u2190"} Back to home</Link><div className="auth-form-wrap"><div className="auth-form-heading"><span className="auth-kicker">{nativeShell ? "VUPSROUTER FOR WINDOWS" : isSignup ? "JOIN VUPSROUTER" : "GOOD TO HAVE YOU BACK"}</span><h2>{nativeShell ? isSignup ? "Create your account" : "Sign in" : isSignup ? "Create your account" : "Welcome back"}</h2><p>{nativeShell ? "Account access opens securely in your browser." : isSignup ? "Create an account to use your VupsRouter account features." : "Sign in to your VupsRouter account."}</p></div>
+      {!nativeShell ? <>
       {error && <Alert severity="error" sx={{mb:2}}>{error}</Alert>}{message && <Alert severity="success" sx={{mb:2}}>{message}</Alert>}
       <form className="auth-form" onSubmit={handleSubmit}>
         {isSignup && <TextField label="Your name" value={form.name} onChange={update("name")} onBlur={markTouched("name")} error={Boolean(fieldError("name"))} helperText={fieldError("name")} autoComplete="name" autoFocus inputProps={{minLength:2,maxLength:80}} required />}
@@ -184,37 +185,46 @@ function AuthPage({ mode }) {
         {!isSignup && <div className="auth-forgot"><Link to="/forgot-password">Forgot password?</Link></div>}
         <Button type="submit" variant="contained" fullWidth disabled={busy} endIcon={busy ? <CircularProgress size={17} color="inherit"/> : <ArrowOutwardRoundedIcon />}>{busy ? "Please wait..." : isSignup ? "Create account" : "Sign in"}</Button>
       </form>
-      {nativeShell ? (
-        <div className="auth-external">
-          <div className="auth-external__divider"><span>or</span></div>
+      <div className="auth-switch">{isSignup ? "Already have an account?" : "New to VupsRouter?"} <Link to={isSignup ? "/signin" : "/signup"}>{isSignup ? "Sign in" : "Create an account"}</Link></div>
+      <p className="auth-terms">By continuing, you agree to our <Link to="/terms">Terms of Service</Link> and <Link to="/privacy-policy">Privacy Policy</Link>.</p>
+      </> : (
+        <div className="auth-external auth-external--native">
           <div className="auth-external__actions">
             <Button
               type="button"
-              variant="outlined"
+              variant="contained"
               fullWidth
-              disabled={busy || Boolean(externalBusy)}
+              disabled={Boolean(externalBusy)}
               endIcon={<ArrowOutwardRoundedIcon />}
               onClick={() => openExternalAuth("signin")}
             >
-              {externalBusy === "signin" ? "Opening browser..." : "Sign in in browser"}
+              {externalBusy === "signin" ? "Opening browser..." : "Sign in with browser"}
             </Button>
             <Button
               type="button"
               variant="outlined"
               fullWidth
-              disabled={busy || Boolean(externalBusy)}
+              disabled={Boolean(externalBusy)}
               endIcon={<ArrowOutwardRoundedIcon />}
               onClick={() => openExternalAuth("signup")}
             >
-              {externalBusy === "signup" ? "Opening browser..." : "Sign up in browser"}
+              {externalBusy === "signup" ? "Opening browser..." : "Create account in browser"}
+            </Button>
+            <Button
+              type="button"
+              variant="outlined"
+              fullWidth
+              disabled={Boolean(externalBusy)}
+              endIcon={<ArrowOutwardRoundedIcon />}
+              onClick={() => openExternalAuth("forgot")}
+            >
+              {externalBusy === "forgot" ? "Opening browser..." : "Reset password in browser"}
             </Button>
           </div>
           {externalError ? <Alert severity="error" sx={{mt:1.5}}>{externalError}</Alert> : null}
-          <p className="auth-external__note">Opens the VupsRouter website in your browser. Browser sign-in does not automatically sign in this desktop app.</p>
+          <p className="auth-external__note">The VupsRouter website opens in your system browser. This Windows build does not yet receive a browser session, so it cannot sign you in automatically.</p>
         </div>
-      ) : null}
-      <div className="auth-switch">{isSignup ? "Already have an account?" : "New to VupsRouter?"} <Link to={isSignup ? "/signin" : "/signup"}>{isSignup ? "Sign in" : "Create an account"}</Link></div>
-      <p className="auth-terms">By continuing, you agree to our <Link to="/terms">Terms of Service</Link> and <Link to="/privacy-policy">Privacy Policy</Link>.</p>
+      )}
     </div><div className="auth-side-note">OPEN MODELS <span>{"\u00b7"}</span> CHECK THE LIMITS</div></div></div>;
 }
 

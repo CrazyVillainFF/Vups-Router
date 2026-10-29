@@ -1,0 +1,42 @@
+
+> vupsrouter-client@1.0.1 prebuild
+> node scripts/check-api-config.mjs
+
+[api-config] Production API base URL: /api (Vercel proxy configured).
+
+> vupsrouter-client@1.0.1 build
+> node ./node_modules/vite/bin/vite.js build
+
+[36mvite v7.3.7 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32m✓[39m 14264 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mindex.html                     [39m[1m[2m    2.99 kB[22m[1m[22m[2m │ gzip:   0.89 kB[22m
+[2mdist/[22m[35massets/MotionLab-B4WCN2N7.css  [39m[1m[2m   24.41 kB[22m[1m[22m[2m │ gzip:   5.62 kB[22m
+[2mdist/[22m[35massets/index-D2XTpzVP.css      [39m[1m[2m  304.72 kB[22m[1m[22m[2m │ gzip:  53.32 kB[22m
+[2mdist/[22m[36massets/index-DFd2Eyui.js       [39m[1m[2m    0.13 kB[22m[1m[22m[2m │ gzip:   0.14 kB[22m
+[2mdist/[22m[36massets/MotionLab-Zv1EOzWe.js   [39m[1m[2m  169.83 kB[22m[1m[22m[2m │ gzip:  61.70 kB[22m
+[2mdist/[22m[36massets/index-rRUk_Xbg.js       [39m[1m[33m1,971.26 kB[39m[22m[2m │ gzip: 621.00 kB[22m
+[33m
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+[32m✓ built in 1m 1s[39m
+        Info Looking up installed tauri packages to check mismatched versions...
+   Compiling vupsrouter v1.0.0 (C:\project\Vups Router\client\src-tauri)
+    Finished `release` profile [optimized] target(s) in 3m 31s
+       Built application at: C:\project\Vups Router\client\src-tauri\target\release\vupsrouter.exe
+        Info Patching C:\project\Vups Router\client\src-tauri\target\release\vupsrouter.exe with bundle type information: nsis
+        Info Target: x64
+     Running makensis to produce C:\project\Vups Router\client\src-tauri\target\release\bundle\nsis\VupsRouter_1.0.1_x64-setup.exe
+        Info Patching C:\project\Vups Router\client\src-tauri\target\release\vupsrouter.exe with bundle type information: msi
+        Info Target: x64
+     Running candle for "C:\\project\\Vups Router\\client\\src-tauri\\target\\release\\wix\\x64\\main.wxs"
+     Running light to produce C:\project\Vups Router\client\src-tauri\target\release\bundle\msi\VupsRouter_1.0.1_x64_en-US.msi
+    Finished 2 bundles at:
+        C:\project\Vups Router\client\src-tauri\target\release\bundle\nsis\VupsRouter_1.0.1_x64-setup.exe (5.62 MiB)
+        C:\project\Vups Router\client\src-tauri\target\release\bundle\msi\VupsRouter_1.0.1_x64_en-US.msi (7.37 MiB)
+
+tauri build exit=0

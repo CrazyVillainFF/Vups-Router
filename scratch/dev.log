@@ -1,0 +1,39 @@
+
+> vupsrouter-client@1.0.1 dev
+> vite --host 0.0.0.0
+
+[2m1:03:35 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m Re-optimizing dependencies because lockfile has changed
+
+  [32m[1mVITE[22m v7.3.7[39m  [2mready in [0m[1m6915[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://192.168.56.1:[1m5173[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://192.168.1.8:[1m5173[22m/[39m
+[2m1:14:52 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc-tauri/target/release/build/vupsrouter-d1dc76c7c4cc690c/out/tauri-codegen-assets/5093a7725ca7568701a337598bc58b87e9090ae657afd466e97f81694d9c528e.html[22m
+[2m1:14:52 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc-tauri/target/release/build/vupsrouter-d1dc76c7c4cc690c/out/tauri-codegen-assets/62c3396e05e19cd00943d526ef39abc00c20f98406f43a6cba890a9487d9e4d5.html[22m
+[2m1:16:57 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mandroid/app/build/intermediates/assets/release/mergeReleaseAssets/public/index.html[22m
+[2m1:16:57 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mandroid/app/build/intermediates/assets/release/mergeReleaseAssets/public/offline.html[22m
+[2m1:17:17 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mandroid/build/reports/problems/problems-report.html[22m
+node:internal/fs/watchers:323
+    const error = new UVException({
+                  ^
+
+Error: EBUSY: resource busy or locked, watch 'C:\project\Vups Router\client\src-tauri\target\release\deps\vupsrouter.exe'
+    at FSWatcher.<computed> (node:internal/fs/watchers:323:19)
+    at Object.watch (node:fs:2609:36)
+    at createFsWatchInstance (file:///C:/project/Vups%20Router/client/node_modules/vite/dist/node/chunks/config.js:12958:16)
+    at setFsWatchListener (file:///C:/project/Vups%20Router/client/node_modules/vite/dist/node/chunks/config.js:13000:14)
+    at NodeFsHandler$1._watchWithNodeFs (file:///C:/project/Vups%20Router/client/node_modules/vite/dist/node/chunks/config.js:13114:20)
+    at NodeFsHandler$1._handleFile (file:///C:/project/Vups%20Router/client/node_modules/vite/dist/node/chunks/config.js:13158:24)
+    at NodeFsHandler$1._addToNodeFs (file:///C:/project/Vups%20Router/client/node_modules/vite/dist/node/chunks/config.js:13332:26)
+Emitted 'error' event on FSWatcher instance at:
+    at FSWatcher._handleError (file:///C:/project/Vups%20Router/client/node_modules/vite/dist/node/chunks/config.js:14133:148)
+    at NodeFsHandler$1._addToNodeFs (file:///C:/project/Vups%20Router/client/node_modules/vite/dist/node/chunks/config.js:13337:18) {
+  errno: -4082,
+  syscall: 'watch',
+  code: 'EBUSY',
+  path: 'C:\\project\\Vups Router\\client\\src-tauri\\target\\release\\deps\\vupsrouter.exe',
+  filename: 'C:\\project\\Vups Router\\client\\src-tauri\\target\\release\\deps\\vupsrouter.exe'
+}
+
+Node.js v24.20.0

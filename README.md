@@ -51,7 +51,7 @@ Installing a published build:
 
 ### Android
 
-`android/` is a real Capacitor 7 project (`com.vupsrouter.app`) that loads the same production site with `?native=android`. CI builds a **debug** APK and publishes it as `VupsRouter-android-test-debug.apk`, and the build is checked with `apksigner verify` before upload. A debug APK is signed with the Android debug key, is not Play-Store eligible, and is labelled a test build everywhere it appears — it is not advertised as the production download. Use it if you want the app in its own window on a real device; use *Add to Home Screen* if you would rather not sideload.
+`android/` is a real Capacitor 7 project (`com.vupsrouter.app`) that loads the same production site with `?native=android`. CI builds a **debug** APK and publishes it as `VupsRouter-android-test-debug.apk`, and the build is checked with `apksigner verify` before upload. A debug APK is signed with the Android debug key, is not Play-Store eligible, and is labelled a test build everywhere it appears — it is not advertised as the production download. Use it if you want the app in its own window on a real device; use *Add to Home Screen* if you would rather not sideload. If VupsRouter is already installed, uninstall it before installing a build signed with a different key; Android reports that update as "app not installed".
 
 A release APK needs a keystore that this repository does not have. The workflow reads these secrets and only runs the signed build when all four are present — leave them unset and the signed job is skipped rather than producing a broken package:
 

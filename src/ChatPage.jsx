@@ -28,6 +28,7 @@ import {
 import PromptBar from "./components/reactbits/PromptBar.jsx";
 import NativeChatControls from "./native/NativeChatControls.jsx";
 import NativePermissionDialog from "./native/NativePermissionDialog.jsx";
+import InChatPermissionCard from "./native/InChatPermissionCard.jsx";
 import HoldToDeleteDialog from "./components/HoldToDeleteDialog.jsx";
 import { NATIVE_SHELLS, detectNativeShell } from "./native/shell.js";
 import {
@@ -85,7 +86,12 @@ import {
 } from "./chat/attachments.js";
 import { streamChatResponse } from "./services/chat.js";
 import { runDesktopToolChat } from "./services/desktopChat.js";
-import { setDesktopToolPolicy } from "./native/desktopTools.js";
+import {
+  cancelDesktopToolApprovals,
+  onDesktopToolApproval,
+  respondDesktopToolApproval,
+  setDesktopToolPolicy
+} from "./native/desktopTools.js";
 import { presentSaveWarning, settleTurnFromError } from "./chat/turnOutcome.js";
 import { resolveTurnNotice, TURN_NOTICE } from "./chat/turnPresentation.js";
 import {
@@ -1112,6 +1118,12 @@ export default function ChatPage() {
   );
   const [permissionRequest, setPermissionRequest] = useState(null);
   const pendingPermissionResolve = useRef(null);
+  const [approvalRequests, setApprovalRequests] = useState([]);
+  const [approvalBusyId, setApprovalBusyId] = useState("");
+  const [approvalError, setApprovalError] = useState("");
+  const seenApprovalKeys = useRef(new Set());
+  const streamingIdRef = useRef(null);
+  const activityRunIdRef = useRef("run");
   const [nativeToolBridgeError, setNativeToolBridgeError] = useState("");
   const [fullAccessPending, setFullAccessPending] = useState(false);
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
@@ -1363,6 +1375,89 @@ export default function ChatPage() {
     const request = permissionRequest;
     setPermissionRequest(null);
     request?.resolve?.(allowed);
+  }
+
+  // The native tool layer pauses the file operation until this card is
+  // answered, so the card can only ever say "waiting": it grants nothing itself.
+  useEffect(() => {
+    if (nativeShell !== NATIVE_SHELLS.windows) return undefined;
+    return onDesktopToolApproval(prompt => {
+      if (seenApprovalKeys.current.has(prompt.approvalKey)) return;
+      seenApprovalKeys.current.add(prompt.approvalKey);
+      setApprovalError("");
+      setApprovalRequests((prev) =>
+        prev.some((entry) => entry.requestId === prompt.requestId) ? prev : [...prev, prompt]
+      );
+      const targetId = streamingIdRef.current;
+      if (targetId) {
+        setMessages((prev) =>
+          recordTurnActivity(
+            prev,
+            targetId,
+            {
+              phase: "desktop_tool",
+              message: `Waiting for approval to read ${prompt.scopeName || "a folder"}`
+            },
+            { runId: activityRunIdRef.current }
+          )
+        );
+      }
+    });
+  }, [nativeShell]);
+
+  useEffect(() => {
+    return () => {
+      seenApprovalKeys.current.clear();
+      setApprovalRequests([]);
+    };
+  }, []);
+
+  function forgetApproval(request) {
+    if (!request) return;
+    seenApprovalKeys.current.delete(request.approvalKey || request.requestId);
+    setApprovalRequests((prev) => prev.filter((entry) => entry.requestId !== request.requestId));
+  }
+
+  async function handleApprovalRespond(requestId, decision) {
+    const request = approvalRequests.find((entry) => entry.requestId === requestId) || { requestId };
+    setApprovalBusyId(requestId);
+    setApprovalError("");
+    try {
+      await respondDesktopToolApproval(requestId, decision);
+      forgetApproval(request);
+      const targetId = streamingIdRef.current;
+      if (targetId) {
+        setMessages((prev) =>
+          recordTurnActivity(
+            prev,
+            targetId,
+            {
+              phase: "desktop_tool",
+              message:
+                decision === "deny"
+                  ? "Denied — the blocked file operation was cancelled"
+                  : `Access granted — ${request.summary || "resuming the local operation"}`
+            },
+            { runId: activityRunIdRef.current }
+          )
+        );
+      }
+    } catch (error) {
+      const message = error?.message || "That permission request could not be delivered.";
+      // The native request already expired or was answered elsewhere, so keeping
+      // the card up would only offer a decision that can no longer be made.
+      if (/already|expired|unknown|not pending/i.test(message)) forgetApproval(request);
+      else setApprovalError(message);
+    } finally {
+      setApprovalBusyId("");
+    }
+  }
+
+  function clearApprovals() {
+    seenApprovalKeys.current.clear();
+    setApprovalRequests([]);
+    setApprovalBusyId("");
+    setApprovalError("");
   }
 
   async function beforeComposerSend(text, attachments) {
@@ -1747,6 +1842,11 @@ export default function ChatPage() {
     ]);
     setLoading(true);
     setStreamingId(assistantId);
+    streamingIdRef.current = assistantId;
+    activityRunIdRef.current = activityRunId;
+    // A card left over from the previous turn can only be answered against a
+    // tool call that no longer exists.
+    clearApprovals();
 
     const { controller, seq } = beginRequest();
     const inlineRequested = wantsInlineCode(text);
@@ -1774,6 +1874,7 @@ export default function ChatPage() {
         temperature: EFFORT_TEMPERATURE[chosenEffort] ?? 0.7,
         signal: controller.signal,
         assistantMessageId: assistantId,
+        userText: requestText || text,
         onMeta: ({ conversationId, messageId }) => {
           if (!isCurrentRequest(seq)) return;
           if (String(activeConvId || "").startsWith("local-")) {
@@ -1857,14 +1958,19 @@ export default function ChatPage() {
         return;
       }
       const partial = typeof error.partialContent === "string" ? error.partialContent : "";
+      // The native tool already read the real data. A model that then refused,
+      // went busy or failed must not take that answer down with it, so the turn
+      // keeps the local results and still shows the model error honestly.
+      const preservedLocal = typeof error.localSummary === "string" ? error.localSummary : "";
+      const fallbackContent = partial || preservedLocal;
       if (error.conversationId) syncTaskParam(error.conversationId);
       setMessages((prev) =>
         settleTurnFromError(prev, assistantId, {
           error,
           modelLabel: selectedRow?.name || modelKey,
-          content: partial,
+          content: fallbackContent,
           recoverArtifact: (status) =>
-            partial && !inlineRequested ? artifactFromResponse(partial, { status }) : null
+            fallbackContent && !inlineRequested ? artifactFromResponse(fallbackContent, { status }) : null
         }).messages
       );
       await refreshConversations();
@@ -1873,6 +1979,7 @@ export default function ChatPage() {
         sendingRef.current = false;
         setLoading(false);
         setStreamingId(null);
+        if (streamingIdRef.current === assistantId) streamingIdRef.current = null;
         abortRef.current = null;
         refreshUsage();
       }
@@ -1880,6 +1987,11 @@ export default function ChatPage() {
   }
 
   function handleStop() {
+    // Cancelling must reach the paused native call, not just the spinner.
+    if (nativeShell === NATIVE_SHELLS.windows) {
+      cancelDesktopToolApprovals().catch(() => {});
+      clearApprovals();
+    }
     abortRef.current?.abort();
   }
 
@@ -2091,6 +2203,20 @@ export default function ChatPage() {
             contextHandoffState={handoffState}
           />
         )}
+
+        {approvalRequests.length > 0 ? (
+          <div className="vr-permission-slot" aria-live="polite">
+            {approvalRequests.map((request) => (
+              <InChatPermissionCard
+                key={request.requestId}
+                request={request}
+                busy={approvalBusyId === request.requestId}
+                error={approvalBusyId === request.requestId ? "" : approvalError}
+                onRespond={(decision) => handleApprovalRespond(request.requestId, decision)}
+              />
+            ))}
+          </div>
+        ) : null}
 
         <footer className="vr-composer" role="region" aria-label="Chat composer">
           {(imageGenerating || generatedImage || imageError) && (

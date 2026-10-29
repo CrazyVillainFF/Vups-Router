@@ -23,6 +23,7 @@ const expectedAppId = flag("expected-app-id");
 const minBytes = Number(flag("min-bytes") || 0);
 const buildTools = flag("build-tools");
 const expectDebugKey = has("expect-debug-key");
+const expectedCertSha256 = flag("expected-cert-sha256");
 
 const failures = [];
 const check = (ok, label, detail = "") => {
@@ -71,7 +72,16 @@ const run = (toolRef, argv) => {
 if (!apkPath || !outDir || !checksDir || !assetName || !expectedAppId) {
   console.error(
     "usage: verify-android-artifact.mjs --apk <file> --out-dir <dir> --checks-dir <dir> " +
-      "--asset-name <name> --expected-app-id <id> [--min-bytes n] [--expect-debug-key] --build-tools <dir>"
+      "--asset-name <name> --expected-app-id <id> [--min-bytes n] [--expect-debug-key] " +
+      "[--expected-cert-sha256 <hex>] --build-tools <dir>"
+  );
+  process.exit(2);
+}
+// A release build that is merely "not debug" can still rotate to a new key and
+// break every existing install. The published release identity is pinned.
+if (!expectDebugKey && !expectedCertSha256) {
+  console.error(
+    "release builds must pin --expected-cert-sha256; otherwise a rotated signing key would publish an APK that cannot update existing installs."
   );
   process.exit(2);
 }
@@ -150,6 +160,13 @@ check(
   expectDebugKey ? "the test build is signed with the debug key" : "the build is not signed with an Android debug key",
   signer || "no certificate"
 );
+if (expectedCertSha256) {
+  check(
+    certSha256.toLowerCase() === expectedCertSha256.toLowerCase(),
+    "the signer certificate matches the pinned release identity",
+    certSha256 || "no certificate"
+  );
+}
 
 // 7. Alignment. Unaligned resources make some installers reject the package.
 const zipalign = tool("zipalign");

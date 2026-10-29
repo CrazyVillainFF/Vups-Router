@@ -1,7 +1,37 @@
 import { contextModelName, isContextLimitError } from "./contextLimit.js";
 
-const QUOTA_PATTERN = /quota|credits? (?:are )?(?:exhausted|depleted|used up)|insufficient (?:quota|credits?|balance|funds)|billing|payment required|usage limit|out of tokens|allowance/i;
+// A provider can say "rate limit or quota" in one sentence without meaning
+// that the account is out of quota. Only explicit exhaustion wording counts;
+// the machine-readable code is checked first below.
+const QUOTA_PATTERN = /insufficient (?:quota|credits?|balance|funds)|credits? (?:are )?(?:exhausted|depleted|used up)|credit balance|billing (?:hard )?limit|payment required|exceeded (?:your|the) (?:current )?quota|quota (?:is )?(?:exhausted|depleted)|out of quota|usage limit|out of tokens|allowance|free-models-per-day|free models per day|requests per day|tokens per day|\bRPD\b|\bTPD\b|monthly limit|daily limit|per[- ]day/i;
 const RATE_PATTERN = /rate.?limit|too many requests|requests per|try again (?:in|shortly)|overloaded|concurrency limit|token-per-minute/i;
+const QUOTA_CODES = new Set([
+  "insufficient_quota",
+  "insufficient_credits",
+  "quota_exhausted",
+  "quota_exceeded",
+  "daily_quota_exceeded",
+  "free_quota_exhausted",
+  "shared_quota_exhausted",
+  "vups_quota_exhausted",
+  "omniroute_insufficient_credits",
+  "billing_error",
+  "billing_hard_limit",
+  "payment_required"
+]);
+const RATE_CODES = new Set([
+  "rate_limited",
+  "rate_limit_error",
+  "rate_limit_requests",
+  "rate_limit_tokens",
+  "concurrency_limit",
+  "ambiguous_rate_limit",
+  "shared_model_rate_limited",
+  "vups_rate_limited",
+  "vups_token_rate_limited",
+  "vups_concurrency_limited",
+  "omniroute_rate_limited"
+]);
 // Match credential failures, not every sentence that happens to mention a key.
 // The proxy's bare HTTP 400 fallback says "Check the API key, model ID, and API
 // base URL"; that is a generic rejection, not evidence of a missing key.
@@ -145,12 +175,14 @@ export function classifyChatError(error) {
   if (code === "connection_unavailable" || code === "network_error") return "network_error";
   if (code === "timeout" || code === "request_timeout" || code === "vups_timeout" || status === 504) return "timeout";
   if (OVERSIZE_CODES.has(code) || status === 413 || hasPattern(combined, OVERSIZE_PATTERN)) return "oversize";
-  if (hasPattern(combined, QUOTA_PATTERN) || ["insufficient_quota", "insufficient_credits", "quota_exhausted", "billing_error", "vups_quota_exhausted"].includes(code)) {
-    return "quota";
-  }
-  if (status === 429 || hasPattern(combined, RATE_PATTERN) || code === "rate_limited" || code === "rate_limit_error") {
-    return "rate_limit";
-  }
+  // Codes are authoritative. A provider's 429 message often mentions both
+  // "rate limit" and "quota"; only an explicit exhaustion code or status 402
+  // may become the quota card. This prevents a transient upstream 429 from
+  // being reported as a fabricated usage limit.
+  if (status === 402 || QUOTA_CODES.has(code)) return "quota";
+  if (RATE_CODES.has(code)) return "rate_limit";
+  if (hasPattern(combined, QUOTA_PATTERN)) return "quota";
+  if (status === 429 || hasPattern(combined, RATE_PATTERN)) return "rate_limit";
   // Before the credential branch: an unallowlisted app origin answers 403, but
   // no provider key or permission is involved.
   if (hasPattern(message, ORIGIN_BLOCKED_PATTERN)) return "origin_blocked";
@@ -225,7 +257,7 @@ export function presentChatError(error, { modelLabel = "", now = new Date() } = 
     title = "Usage limit reached";
     message = resetText
       ? `This model's usage limit is reached. It should reset ${resetText}.`
-      : "This model's usage limit is reached. Reset time unavailable.";
+      : "This model's usage limit is reached. Reset time not provided by provider.";
     retry = false;
   } else if (category === "rate_limit") {
     title = "Model is busy";
@@ -332,6 +364,8 @@ export function presentChatError(error, { modelLabel = "", now = new Date() } = 
     retry,
     canSwitchModel,
     apiKey,
-    requestId: typeof error?.requestId === "string" ? error.requestId : ""
+    requestId: typeof error?.requestId === "string" ? error.requestId : "",
+    resetSource: typeof error?.resetSource === "string" ? error.resetSource : "",
+    retryAfterSeconds: Number.isFinite(error?.retryAfterSeconds) ? error.retryAfterSeconds : null
   };
 }

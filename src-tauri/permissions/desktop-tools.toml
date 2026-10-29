@@ -1,8 +1,13 @@
 [[permission]]
 identifier = "allow-desktop-tools"
-description = "Allow the VupsRouter desktop tool bridge to set a permission policy and execute approved read-only Windows filesystem tools."
+description = "Allow the VupsRouter desktop tool bridge to set a permission policy, answer in-chat filesystem approvals, and manage scoped folder grants."
 commands.allow = [
   "desktop_tool_set_policy",
   "desktop_tool_policy_status",
-  "desktop_tool_execute"
+  "desktop_tool_execute",
+  "desktop_tool_respond",
+  "desktop_tool_grants_list",
+  "desktop_tool_grant_revoke",
+  "desktop_tool_grants_clear",
+  "desktop_tool_approvals_cancel"
 ]

@@ -240,11 +240,13 @@ export function androidRelease(release, base = DOWNLOADS.android) {
     install: signed
       ? [
           `Download the APK from release ${version || "latest"} and open it on the device.`,
+          "If the debug test build is already installed, uninstall it first: Android only updates an app when the signing key matches.",
           "Android asks you to allow installs from this source; confirm once and the app installs.",
           "The app opens the live VupsRouter site, so it needs internet and always shows the current UI."
         ]
       : [
           "This APK is debug-signed: it is for testing, is not Play-Store eligible, and may be replaced by a signed build later.",
+          "If VupsRouter is already installed, uninstall it first: Android refuses an update signed with a different key and reports \"app not installed\".",
           `Download it from release ${version || "latest"}, open it, and allow installs from this source once.`,
           "Prefer no sideload? Use Chrome → Add to Home Screen on the web app instead.",
           "The APK opens the live VupsRouter site, so it always shows the current web UI."

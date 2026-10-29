@@ -240,6 +240,6 @@ test("rate limits, timeouts, image failures, and oversized requests are not misl
 test("quota notices do not invent reset times", () => {
   const presentation = presentChatError({ code: "quota_exhausted", status: 429 });
   assert.equal(presentation.title, "Usage limit reached");
-  assert.match(presentation.message, /Reset time unavailable/i);
+  assert.match(presentation.message, /Reset time not provided by provider/i);
   assert.equal(presentation.resetAt, "");
 });

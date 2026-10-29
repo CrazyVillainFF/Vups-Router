@@ -43,6 +43,16 @@ test("1. every Android build passes the verifier before it can be uploaded", () 
     const upload = body.indexOf("actions/upload-artifact");
     assert.ok(verify < upload, `${job} must verify before uploading`);
   }
+  assert.match(
+    jobBody("android-release"),
+    /--expected-cert-sha256 "\$ANDROID_RELEASE_CERT_SHA256"/,
+    "the release job must pin the certificate Android updates are tied to"
+  );
+  assert.doesNotMatch(
+    jobBody("android-debug"),
+    /--expected-cert-sha256/,
+    "the debug job cannot pin the release certificate because its key is generated per runner"
+  );
 });
 
 test("2. the verifier uses the real SDK tools, not hand-rolled substitutes", () => {
@@ -61,6 +71,13 @@ test("3. a debug key can never be published as a release build", () => {
   assert.match(jobBody("android-debug"), /--expect-debug-key/);
   assert.doesNotMatch(jobBody("android-release"), /--expect-debug-key/);
   assert.match(apkGate, /androiddebugkey\|CN=Android Debug/i);
+  assert.match(
+    workflow,
+    /ANDROID_RELEASE_CERT_SHA256: 486cf30b77ea2cba1ba397b07740fbef62244a8663cc20f91f7c21cd90e2eeb1/,
+    "the workflow must pin the documented release certificate"
+  );
+  assert.match(apkGate, /expected-cert-sha256/, "the verifier must accept the pinned certificate");
+  assert.match(apkGate, /certSha256\.toLowerCase\(\) === expectedCertSha256\.toLowerCase\(\)/);
   // The publish job re-checks the recorded result, so a weakened build job cannot
   // slip through on its own.
   assert.match(jobBody("github-release"), /ANDROID_RELEASE_IS_RELEASE_KEY/);

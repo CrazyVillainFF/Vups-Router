@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -88,8 +88,9 @@ test("external auth helpers use only the verified production routes", () => {
   assert.equal(PRODUCTION_SITE_URL, "https://vups-router-three.vercel.app");
   assert.equal(authUrl("signin"), "https://vups-router-three.vercel.app/signin");
   assert.equal(authUrl("signup"), "https://vups-router-three.vercel.app/signup");
+  assert.equal(authUrl("forgot"), "https://vups-router-three.vercel.app/forgot-password");
   assert.throws(() => authUrl("callback"), /Unknown authentication page/);
-  assert.deepEqual(Object.keys(AUTH_ROUTE_PATHS).sort(), ["signin", "signup"]);
+  assert.deepEqual(Object.keys(AUTH_ROUTE_PATHS).sort(), ["forgot", "signin", "signup"]);
 });
 
 test("external auth rejects any origin or scheme outside the approved allowlist", () => {

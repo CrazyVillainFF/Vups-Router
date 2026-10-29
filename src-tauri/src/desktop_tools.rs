@@ -1,13 +1,14 @@
-use serde::{Deserialize, Serialize};
+﻿use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
+    collections::HashMap,
     fs,
     io::{ErrorKind, Write},
     path::{Component, Path, PathBuf},
-    sync::Mutex,
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    sync::{Arc, Condvar, Mutex},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::workspace;
 
@@ -21,17 +22,384 @@ const MAX_PATH_CHARS: usize = 4_096;
 const MAX_QUERY_CHARS: usize = 120;
 const MAX_AUDIT_BYTES: u64 = 1_000_000;
 
-const DESKTOP_TOOL_NAMES: [&str; 5] = [
+const DESKTOP_TOOL_NAMES: [&str; 6] = [
     "get_windows_known_folder",
     "list_directory",
+    "list_recent_files",
     "read_file",
     "search_files",
     "read_file_metadata",
 ];
 
+/// How long an unanswered in-chat approval stays live before it is dropped.
+const APPROVAL_TIMEOUT: Duration = Duration::from_secs(120);
+/// A one-time approval covers its folder for the rest of the task, not forever.
+const SESSION_GRANT_TTL: Duration = Duration::from_secs(15 * 60);
+const MAX_GRANTS: usize = 200;
+const MAX_RECENT_FILES: usize = 50;
+
+/// Read-only operations share one approval per folder: listing a directory and
+/// reading the metadata of its children are the same question ("may the assistant
+/// see what is in here?"), so asking twice is noise, not safety.
+const READ_SCOPE: &str = "read";
+const CONTENT_SCOPE: &str = "contents";
+
 #[derive(Default)]
 pub struct DesktopToolState {
     policy: Mutex<Option<ToolPolicy>>,
+    broker: Arc<ApprovalBroker>,
+    scopes: Arc<Mutex<ApprovedScope>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+enum ApprovalDecision {
+    Denied,
+    Once,
+    AlwaysFolder,
+}
+
+impl ApprovalDecision {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "deny" | "denied" | "cancel" => Ok(Self::Denied),
+            "once" | "allow_once" => Ok(Self::Once),
+            "always" | "always_folder" | "allow_always" => Ok(Self::AlwaysFolder),
+            _ => Err("Unrecognized permission decision.".to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ApprovalPrompt {
+    request_id: String,
+    /// Identifies the pending approval so identical concurrent requests join it
+    /// instead of opening a second card.
+    approval_key: String,
+    tool: String,
+    action: String,
+    /// The folder the decision actually covers.
+    scope_path: String,
+    scope_name: String,
+    summary: String,
+    /// `read` or `contents`, so the card can name the access being granted.
+    access: String,
+    read_only: bool,
+    expires_at: i64,
+}
+
+#[derive(Default)]
+struct PendingApproval {
+    request_id: String,
+    owner: String,
+    decision: Mutex<Option<ApprovalDecision>>,
+    ready: Condvar,
+}
+
+#[derive(Default)]
+pub struct ApprovalBroker {
+    pending: Mutex<HashMap<String, Arc<PendingApproval>>>,
+}
+
+impl ApprovalBroker {
+    /// Blocks until the user answers, the request expires, or an identical
+    /// request that is already pending answers. Concurrent duplicates share one
+    /// decision, so one logical request can never raise two cards.
+    fn request(&self, app: &AppHandle, owner: &str, prompt: &ApprovalPrompt) -> ApprovalDecision {
+        let key = prompt.approval_key.clone();
+        let mut guard = match self.pending.lock() {
+            Ok(guard) => guard,
+            Err(_) => return ApprovalDecision::Denied,
+        };
+        if let Some(existing) = guard.get(&key) {
+            let joined = existing.clone();
+            drop(guard);
+            return Self::await_decision(&joined, APPROVAL_TIMEOUT);
+        }
+        let entry = Arc::new(PendingApproval {
+            request_id: prompt.request_id.clone(),
+            owner: owner.to_string(),
+            decision: Mutex::new(None),
+            ready: Condvar::new(),
+        });
+        guard.insert(key.clone(), entry.clone());
+        drop(guard);
+
+        if app.emit("desktop-tool:approval", prompt).is_err() {
+            self.drop_entry(&key, &entry);
+            return ApprovalDecision::Denied;
+        }
+        let decision = Self::await_decision(&entry, APPROVAL_TIMEOUT);
+        self.drop_entry(&key, &entry);
+        decision
+    }
+
+    fn await_decision(entry: &Arc<PendingApproval>, timeout: Duration) -> ApprovalDecision {
+        let Ok(mut guard) = entry.decision.lock() else {
+            return ApprovalDecision::Denied;
+        };
+        let deadline = Instant::now() + timeout;
+        while guard.is_none() {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return ApprovalDecision::Denied;
+            }
+            let (next, wait) = match entry.ready.wait_timeout(guard, remaining) {
+                Ok(result) => result,
+                Err(_) => return ApprovalDecision::Denied,
+            };
+            guard = next;
+            if guard.is_none() && wait.timed_out() {
+                return ApprovalDecision::Denied;
+            }
+        }
+        guard.unwrap_or(ApprovalDecision::Denied)
+    }
+
+    fn drop_entry(&self, key: &str, entry: &Arc<PendingApproval>) {
+        if let Ok(mut guard) = self.pending.lock() {
+            if guard
+                .get(key)
+                .map(|existing| Arc::ptr_eq(existing, entry))
+                .unwrap_or(false)
+            {
+                guard.remove(key);
+            }
+        }
+    }
+
+    /// Resolves a pending request. Only an id the broker issued, that is still
+    /// pending and that belongs to `owner` can be answered, so a stale or forged
+    /// frontend response authorizes nothing.
+    fn respond(&self, owner: &str, request_id: &str, decision: ApprovalDecision) -> Result<(), String> {
+        let mut guard = self
+            .pending
+            .lock()
+            .map_err(|_| "Permission state is unavailable.".to_string())?;
+        let matched = guard
+            .iter()
+            .find(|(_, entry)| entry.request_id == request_id)
+            .map(|(key, entry)| {
+                if !owner.is_empty() && !entry.owner.is_empty() && entry.owner != owner {
+                    return Err("That permission request belongs to another account.".to_string());
+                }
+                Ok((key.clone(), entry.clone()))
+            });
+        let Some(resolved) = matched else {
+            return Err("That permission request is no longer pending.".to_string());
+        };
+        let (key, entry) = resolved?;
+        guard.remove(&key);
+        let mut current = entry
+            .decision
+            .lock()
+            .map_err(|_| "Permission state is unavailable.".to_string())?;
+        if current.is_some() {
+            return Err("That permission request was already answered.".to_string());
+        }
+        *current = Some(decision);
+        drop(current);
+        entry.ready.notify_all();
+        Ok(())
+    }
+
+    fn cancel_all(&self) -> Vec<String> {
+        let Ok(mut guard) = self.pending.lock() else {
+            return Vec::new();
+        };
+        let cancelled: Vec<String> = guard
+            .values()
+            .map(|entry| entry.request_id.clone())
+            .collect();
+        for entry in guard.values() {
+            if let Ok(mut current) = entry.decision.lock() {
+                if current.is_none() {
+                    *current = Some(ApprovalDecision::Denied);
+                }
+            }
+            entry.ready.notify_all();
+        }
+        guard.clear();
+        cancelled
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct FolderGrant {
+    id: String,
+    owner: String,
+    root: String,
+    scope: String,
+    created_at: i64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GrantFile {
+    version: u32,
+    grants: Vec<FolderGrant>,
+}
+
+#[derive(Clone, Default)]
+struct GrantStore {
+    loaded: bool,
+    directory: Option<PathBuf>,
+    grants: Vec<FolderGrant>,
+}
+
+impl GrantStore {
+    fn ensure_loaded(&mut self, app: &AppHandle) {
+        if self.loaded {
+            return;
+        }
+        self.loaded = true;
+        let Ok(directory) = app.path().app_data_dir() else {
+            return;
+        };
+        self.directory = Some(directory.clone());
+        let Ok(raw) = fs::read(directory.join("desktop-tool-grants.json")) else {
+            return;
+        };
+        if let Ok(file) = serde_json::from_slice::<GrantFile>(&raw) {
+            self.grants = file
+                .grants
+                .into_iter()
+                .filter(|grant| {
+                    (grant.scope == READ_SCOPE || grant.scope == CONTENT_SCOPE)
+                        && !grant.owner.trim().is_empty()
+                        && !grant.root.trim().is_empty()
+                })
+                .take(MAX_GRANTS)
+                .collect();
+        }
+    }
+
+    fn persist(&self) -> Result<(), String> {
+        let Some(directory) = &self.directory else {
+            return Ok(());
+        };
+        fs::create_dir_all(directory).map_err(|_| "Could not store the permission grant.".to_string())?;
+        let file = GrantFile {
+            version: 1,
+            grants: self.grants.clone(),
+        };
+        let rendered =
+            serde_json::to_vec_pretty(&file).map_err(|_| "Could not store the permission grant.".to_string())?;
+        let path = directory.join("desktop-tool-grants.json");
+        let tmp = directory.join("desktop-tool-grants.json.tmp");
+        fs::write(&tmp, rendered).map_err(|_| "Could not store the permission grant.".to_string())?;
+        fs::rename(&tmp, path).map_err(|_| "Could not store the permission grant.".to_string())?;
+        Ok(())
+    }
+
+    fn insert(&mut self, grant: FolderGrant) -> Result<(), String> {
+        self.grants.retain(|existing| existing.id != grant.id);
+        self.grants
+            .retain(|existing| !(existing.owner == grant.owner && existing.root == grant.root));
+        self.grants.push(grant);
+        if self.grants.len() > MAX_GRANTS {
+            let overflow = self.grants.len() - MAX_GRANTS;
+            self.grants.drain(0..overflow);
+        }
+        self.persist()
+    }
+
+    fn revoke(&mut self, owner: &str, id: &str) -> Option<FolderGrant> {
+        let index = self
+            .grants
+            .iter()
+            .position(|grant| grant.owner == owner && grant.id == id)?;
+        Some(self.grants.remove(index))
+    }
+
+    fn clear(&mut self, owner: &str) -> Result<usize, String> {
+        let before = self.grants.len();
+        self.grants.retain(|grant| grant.owner != owner);
+        let removed = before - self.grants.len();
+        self.persist()?;
+        Ok(removed)
+    }
+
+    /// Covers `target` only when a stored root is a real ancestor of it *after*
+    /// canonicalization, so a sibling like `DownloadsOld` can never inherit the
+    /// grant given to `Downloads`.
+    fn covers(&self, owner: &str, scope: &str, target: &Path) -> bool {
+        self.grants.iter().any(|grant| {
+            grant.owner == owner
+                && grant.scope == scope
+                && path_within(Path::new(&grant.root), target)
+        })
+    }
+
+    fn for_owner(&self, owner: &str) -> Vec<FolderGrant> {
+        self.grants
+            .iter()
+            .filter(|grant| grant.owner == owner)
+            .cloned()
+            .collect()
+    }
+}
+
+#[derive(Clone)]
+struct SessionEntry {
+    seen: Instant,
+    root: String,
+    scope: String,
+}
+
+/// Approvals given for the current task only. Nothing here reaches the disk, and
+/// revoking a saved grant drops the matching entries so a revocation takes
+/// effect immediately rather than when the task happens to end.
+#[derive(Clone, Default)]
+struct SessionScope {
+    owner: String,
+    approved: HashMap<String, SessionEntry>,
+}
+
+impl SessionScope {
+    fn remember(&mut self, owner: &str, prompt: &ApprovalPrompt) {
+        if self.owner != owner {
+            self.owner = owner.to_string();
+            self.approved.clear();
+        }
+        self.prune();
+        self.approved.insert(
+            prompt.approval_key.clone(),
+            SessionEntry {
+                seen: Instant::now(),
+                root: prompt.scope_path.clone(),
+                scope: access_scope_for(&prompt.action).to_string(),
+            },
+        );
+    }
+
+    fn covers(&mut self, owner: &str, key: &str) -> bool {
+        if self.owner != owner {
+            return false;
+        }
+        self.prune();
+        self.approved.contains_key(key)
+    }
+
+    fn forget_within(&mut self, owner: &str, root: &str, scope: &str) {
+        if self.owner != owner {
+            return;
+        }
+        let boundary = Path::new(root);
+        self.approved.retain(|_, entry| {
+            !(entry.scope == scope && path_within(boundary, Path::new(&entry.root)))
+        });
+    }
+
+    fn reset(&mut self) {
+        self.owner.clear();
+        self.approved.clear();
+    }
+
+    fn prune(&mut self) {
+        self.approved.retain(|_, entry| entry.seen.elapsed() < SESSION_GRANT_TTL);
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -155,9 +523,27 @@ struct ResolvedRequest {
     tool: String,
     args: Value,
     target: PathBuf,
-    summary: String,
     requires_approval: bool,
+    approval: ApprovalPrompt,
 }
+
+/// `read` covers enumerating a folder and reading entry metadata. `contents`
+/// covers the bytes inside one file and is never implied by a folder grant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AccessScope {
+    Read,
+    Contents,
+}
+
+impl AccessScope {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Read => READ_SCOPE,
+            Self::Contents => CONTENT_SCOPE,
+        }
+    }
+}
+
 
 fn now_millis() -> i64 {
     SystemTime::now()
@@ -171,7 +557,7 @@ fn truncate_text(value: &str, limit: usize) -> String {
 }
 
 fn path_text(path: &Path) -> String {
-    path.to_string_lossy().to_string()
+    display_path(path).to_string_lossy().to_string()
 }
 
 fn is_network_path(raw: &str) -> bool {
@@ -203,7 +589,36 @@ fn is_sensitive_file(name: &str) -> bool {
 }
 
 fn canonical_for_policy(path: &Path) -> PathBuf {
-    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+    fs::canonicalize(path)
+        .map(|canonical| display_path(&canonical))
+        .unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn component_eq(left: &Component<'_>, right: &Component<'_>) -> bool {
+    left.as_os_str()
+        .to_string_lossy()
+        .eq_ignore_ascii_case(&right.as_os_str().to_string_lossy())
+}
+
+/// Component-wise containment on canonical paths. Deliberately not a string
+/// prefix test: `C:\Users\V\DownloadsEvil` must not match a grant over
+/// `C:\Users\V\Downloads`, and a case difference must not defeat one.
+fn path_within(root: &Path, target: &Path) -> bool {
+    let root_canonical = canonical_for_policy(root);
+    let target_canonical = canonical_for_policy(target);
+    let root_parts: Vec<Component<'_>> = root_canonical.components().collect();
+    let target_parts: Vec<Component<'_>> = target_canonical.components().collect();
+    root_parts.len() <= target_parts.len()
+        && root_parts
+            .iter()
+            .zip(target_parts.iter())
+            .all(|(a, b)| component_eq(a, b))
+}
+
+fn folder_display_name(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| path_text(path))
 }
 
 fn system_paths() -> Vec<PathBuf> {
@@ -259,7 +674,7 @@ fn path_requires_approval(policy: &ToolPolicy, path: &Path) -> bool {
         ToolMode::Workspace => policy
             .workspace_root
             .as_ref()
-            .map(|root| !canonical_for_policy(path).starts_with(root))
+            .map(|root| !path_within(root, path))
             .unwrap_or(true),
         ToolMode::Full => {
             is_protected_system_path(path)
@@ -324,39 +739,90 @@ fn resolve_existing_path(raw: &str, want_dir: bool) -> Result<PathBuf, ToolFailu
         });
     }
     reject_symlink_components(path)?;
-    let canonical = fs::canonicalize(path).map_err(io_failure)?;
-    let metadata = fs::metadata(&canonical).map_err(io_failure)?;
+    let canonical =
+        fs::canonicalize(path).map_err(|error| with_path(io_failure(error), path))?;
+    let readable = display_path(&canonical);
+    let metadata =
+        fs::metadata(&canonical).map_err(|error| with_path(io_failure(error), path))?;
     if want_dir && !metadata.is_dir() {
         return Err(ToolFailure {
             code: "not_a_directory".into(),
-            message: "That path is not a directory.".into(),
+            message: format!("That path is not a directory: {}.", path_text(&readable)),
         });
     }
     if !want_dir && !metadata.is_file() {
         return Err(ToolFailure {
             code: "not_a_file".into(),
-            message: "That path is not a file.".into(),
+            message: format!("That path is not a file: {}.", path_text(&readable)),
         });
     }
-    Ok(canonical)
+    Ok(readable)
 }
 
+/// Windows reports `fs::canonicalize` results as verbatim paths
+/// (`\\?\C:\Users\...`). Those are real paths but they are unreadable in a
+/// permission prompt, and they hid the fact that the folder was the ordinary
+/// Downloads directory.
+fn display_path(path: &Path) -> PathBuf {
+    let raw = path.to_string_lossy();
+    if let Some(stripped) = raw.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{stripped}"));
+    }
+    if let Some(stripped) = raw.strip_prefix(r"\\?\") {
+        return PathBuf::from(stripped);
+    }
+    path.to_path_buf()
+}
+
+/// Keeps the real Windows failure next to our own wording. The OS description is
+/// the only evidence that separates a genuine access denial from a missing
+/// folder, and dropping it is what let the model invent permission advice.
 fn io_failure(error: std::io::Error) -> ToolFailure {
+    let detail = error.to_string();
+    let reported = if detail.trim().is_empty() {
+        "no further detail".to_string()
+    } else {
+        truncate_text(detail.trim(), 180)
+    };
+    eprintln!(
+        "[vupsrouter] filesystem tool error kind={:?} raw_os_error={:?} detail={}",
+        error.kind(),
+        error.raw_os_error(),
+        reported
+    );
     match error.kind() {
         ErrorKind::NotFound => ToolFailure {
             code: "path_not_found".into(),
-            message: "That path does not exist or is unavailable.".into(),
+            message: format!(
+                "That path does not exist for the signed-in Windows user. Windows reported: {reported}."
+            ),
         },
         ErrorKind::PermissionDenied => ToolFailure {
             code: "access_denied".into(),
-            message: "Windows denied access to that path. VupsRouter does not bypass Windows permissions."
-                .into(),
+            message: format!(
+                "Windows itself refused this read for the signed-in user's own account, so it is not a \
+                 VupsRouter setting. No elevation or permission change was attempted. Windows reported: \
+                 {reported}."
+            ),
+        },
+        ErrorKind::InvalidInput => ToolFailure {
+            code: "invalid_path".into(),
+            message: format!("Windows rejected that path. Windows reported: {reported}."),
         },
         _ => ToolFailure {
             code: "filesystem_error".into(),
-            message: "Windows could not complete that filesystem request.".into(),
+            message: format!(
+                "Windows could not complete the filesystem request. Windows reported: {reported}."
+            ),
         },
     }
+}
+
+/// Names the path the failure happened on, so an actionable error can be acted
+/// on instead of read as a generic warning.
+fn with_path(mut failure: ToolFailure, path: &Path) -> ToolFailure {
+    failure.message = format!("{} Path: {}", failure.message, path_text(path));
+    failure
 }
 
 fn system_known_folder(name: &str) -> Option<PathBuf> {
@@ -393,6 +859,68 @@ fn known_folder_path(
     Ok((normalized, path))
 }
 
+/// Builds the approval question. It is always phrased around the folder the
+/// decision covers, never around the single child file that happened to be
+/// requested first, because approving a listing authorizes that folder's
+/// metadata anyway.
+fn build_prompt(
+    policy: &ToolPolicy,
+    tool: &str,
+    action: &str,
+    target: &Path,
+    scope_root: &Path,
+    access: AccessScope,
+    detail: Option<&str>,
+) -> ApprovalPrompt {
+    let scope_text = path_text(scope_root);
+    let summary = match action {
+        "locate" => format!(
+            "Find the Windows {} folder location",
+            folder_display_name(scope_root).to_ascii_lowercase()
+        ),
+        "list" => format!("List the files and folders in {}", scope_text),
+        "recent" => format!(
+            "List the most recent files in {}{}",
+            scope_text,
+            detail.map(|value| format!(" ({})", value)).unwrap_or_default()
+        ),
+        "search" => format!(
+            "Search file names in {}{}",
+            scope_text,
+            detail.map(|value| format!(" for \"{}\"", value)).unwrap_or_default()
+        ),
+        "metadata" => format!("Read file dates and sizes in {}", scope_text),
+        "contents" => format!("Read the contents of {}", path_text(target)),
+        _ => format!("Read {}", scope_text),
+    };
+    let scope_key = match access {
+        AccessScope::Read => format!("{}|read|{}", policy.owner, scope_text.to_ascii_lowercase()),
+        AccessScope::Contents => format!(
+            "{}|contents|{}",
+            policy.owner,
+            path_text(target).to_ascii_lowercase()
+        ),
+    };
+    ApprovalPrompt {
+        request_id: uuid::Uuid::new_v4().to_string(),
+        approval_key: scope_key,
+        tool: tool.to_string(),
+        action: action.to_string(),
+        scope_path: match access {
+            AccessScope::Read => scope_text,
+            AccessScope::Contents => path_text(target),
+        },
+        scope_name: match access {
+            AccessScope::Read => folder_display_name(scope_root),
+            AccessScope::Contents => folder_display_name(target),
+        },
+        summary,
+        access: access.label().to_string(),
+        read_only: true,
+        expires_at: now_millis() + APPROVAL_TIMEOUT.as_millis() as i64,
+    }
+}
+
 fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<ResolvedRequest, ToolFailure> {
     if !DESKTOP_TOOL_NAMES.contains(&request.tool.as_str()) {
         return Err(ToolFailure {
@@ -401,7 +929,7 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
         });
     }
     let args = request.args.clone();
-    let (target, summary) = match request.tool.as_str() {
+    let (target, action, scope_root, access, detail) = match request.tool.as_str() {
         "get_windows_known_folder" => {
             let name = args
                 .get("name")
@@ -411,8 +939,8 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
                     message: "The known-folder tool needs a folder name.".into(),
                 })?;
             let (normalized, path) = known_folder_path(name, system_known_folder)?;
-            let summary = format!("Read the Windows {} folder location", normalized);
-            (path, summary)
+            let _ = normalized;
+            (path.clone(), "locate", path, AccessScope::Read, None)
         }
         "list_directory" => {
             let path = args
@@ -423,8 +951,25 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
                     message: "The directory tool needs an absolute path.".into(),
                 })?;
             let target = resolve_existing_path(path, true)?;
-            let summary = format!("List files in {}", path_text(&target));
-            (target, summary)
+            (target, "list", PathBuf::new(), AccessScope::Read, None)
+        }
+        "list_recent_files" => {
+            let path = args
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or_else(|| ToolFailure {
+                    code: "invalid_arguments".into(),
+                    message: "The recent-files tool needs an absolute directory path.".into(),
+                })?;
+            let target = resolve_existing_path(path, true)?;
+            let limit = recent_limit(&args);
+            (
+                target,
+                "recent",
+                PathBuf::new(),
+                AccessScope::Read,
+                Some(format!("newest {} files", limit)),
+            )
         }
         "read_file" => {
             let path = args
@@ -445,8 +990,7 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
                     message: "That file is excluded to protect credentials and secrets.".into(),
                 });
             }
-            let summary = format!("Read {}", path_text(&target));
-            (target, summary)
+            (target, "contents", PathBuf::new(), AccessScope::Contents, None)
         }
         "read_file_metadata" => {
             let path = args
@@ -467,8 +1011,11 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
                     message: "That file is excluded to protect credentials and secrets.".into(),
                 });
             }
-            let summary = format!("Read metadata for {}", path_text(&target));
-            (target, summary)
+            let scope_root = target
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| target.clone());
+            (target, "metadata", scope_root, AccessScope::Read, None)
         }
         "search_files" => {
             let root = args
@@ -494,22 +1041,81 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
                 });
             }
             let target = resolve_existing_path(root, true)?;
-            let summary = format!("Search for \"{}\" under {}", query, path_text(&target));
-            (target, summary)
+            (target, "search", PathBuf::new(), AccessScope::Read, Some(query.to_string()))
         }
         _ => unreachable!(),
     };
+    let scope_root = if scope_root.as_os_str().is_empty() {
+        target.clone()
+    } else {
+        scope_root
+    };
+    let approval = build_prompt(
+        policy,
+        &request.tool,
+        action,
+        &target,
+        &scope_root,
+        access,
+        detail.as_deref(),
+    );
+    // Resolving a known folder returns a path Windows already exposes and reads
+    // no directory entry, so it is not an access request and must not cost the
+    // user a prompt before the operation they actually asked for.
+    let requires_approval = action != "locate" && path_requires_approval(policy, &target);
     Ok(ResolvedRequest {
         tool: request.tool.clone(),
         args,
-        requires_approval: path_requires_approval(policy, &target),
+        requires_approval,
         target,
-        summary,
+        approval,
     })
 }
 
+fn recent_limit(args: &Value) -> usize {
+    args.get("limit")
+        .and_then(Value::as_u64)
+        .map(|value| value as usize)
+        .unwrap_or(5)
+        .clamp(1, MAX_RECENT_FILES)
+}
+
+fn modified_millis(metadata: &fs::Metadata) -> Option<i64> {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as i64)
+}
+
+/// Windows marks folder-customization and thumbnail caches as hidden system
+/// entries. They are noise in every ordinary listing and were the single
+/// biggest source of redundant permission prompts.
+fn is_system_noise(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "desktop.ini" | "thumbs.db" | ".ds_store" | "$recycle.bin" | "ehthumbs.db"
+    )
+}
+
+fn hidden_attributes(metadata: &fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+        const FILE_ATTRIBUTE_SYSTEM: u32 = 0x4;
+        let attributes = metadata.file_attributes();
+        attributes & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM) != 0
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = metadata;
+        false
+    }
+}
+
 fn list_directory(path: &Path) -> Result<Value, ToolFailure> {
-    let read_dir = fs::read_dir(path).map_err(io_failure)?;
+    let read_dir = fs::read_dir(path).map_err(|error| with_path(io_failure(error), path))?;
     let mut entries = Vec::new();
     let mut truncated = false;
     for child in read_dir {
@@ -521,7 +1127,7 @@ fn list_directory(path: &Path) -> Result<Value, ToolFailure> {
         let name = child.file_name().to_string_lossy().to_string();
         let child_path = child.path();
         let Ok(metadata) = fs::symlink_metadata(&child_path) else {
-            continue;
+            continue
         };
         if metadata.file_type().is_symlink() {
             continue;
@@ -534,7 +1140,12 @@ fn list_directory(path: &Path) -> Result<Value, ToolFailure> {
         let mut entry = json!({
             "name": name,
             "kind": kind,
-            "path": path_text(&child_path)
+            "path": path_text(&child_path),
+            // Sorted answers must come from this call: without a timestamp the
+            // model has to ask for metadata once per file, which means one
+            // permission decision per file.
+            "modifiedAt": modified_millis(&metadata),
+            "systemEntry": is_system_noise(&name) || hidden_attributes(&metadata)
         });
         if !is_dir {
             entry["size"] = json!(metadata.len());
@@ -567,15 +1178,100 @@ fn list_directory(path: &Path) -> Result<Value, ToolFailure> {
     }))
 }
 
+/// Answers "what are the N newest files here" in one privileged call: enumerate,
+/// drop directories and hidden/system entries, sort by modification time. The
+/// model used to do this with one metadata call per file, which meant one
+/// permission decision per file.
+fn list_recent_files(path: &Path, args: &Value) -> Result<Value, ToolFailure> {
+    let limit = recent_limit(args);
+    let include_system = args
+        .get("includeSystemEntries")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let read_dir = fs::read_dir(path).map_err(|error| with_path(io_failure(error), path))?;
+    let mut candidates: Vec<(Option<i64>, Value)> = Vec::new();
+    let mut skipped = 0usize;
+    let mut scanned = 0usize;
+    for child in read_dir {
+        let Ok(child) = child else { continue };
+        scanned += 1;
+        if scanned > MAX_LIST_ENTRIES {
+            break;
+        }
+        let name = child.file_name().to_string_lossy().to_string();
+        let child_path = child.path();
+        let Ok(metadata) = fs::symlink_metadata(&child_path) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            continue;
+        }
+        if is_sensitive_file(&name) {
+            continue;
+        }
+        if !include_system && (is_system_noise(&name) || hidden_attributes(&metadata)) {
+            skipped += 1;
+            continue;
+        }
+        let modified = modified_millis(&metadata);
+        candidates.push((
+            modified,
+            json!({
+                "name": name,
+                "path": path_text(&child_path),
+                "kind": "file",
+                "size": metadata.len(),
+                "modifiedAt": modified,
+                "extension": child_path
+                    .extension()
+                    .map(|value| value.to_string_lossy().to_ascii_lowercase())
+                    .unwrap_or_default()
+            }),
+        ));
+    }
+    // Newest first; entries Windows did not give a timestamp for sort last
+    // rather than pretending to be recent.
+    candidates.sort_by(|left, right| match (left.0, right.0) {
+        (Some(a), Some(b)) => b.cmp(&a),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    });
+    let files: Vec<Value> = candidates
+        .into_iter()
+        .take(limit)
+        .map(|(_, entry)| entry)
+        .collect();
+    let oldest = files
+        .iter()
+        .filter_map(|entry| entry.get("modifiedAt").and_then(Value::as_i64))
+        .min();
+    let newest = files
+        .iter()
+        .filter_map(|entry| entry.get("modifiedAt").and_then(Value::as_i64))
+        .max();
+    Ok(json!({
+        "path": path_text(path),
+        "files": files,
+        "returned": files.len(),
+        "matched": scanned,
+        "skippedSystemEntries": skipped,
+        "sortedBy": "lastModified",
+        "newestModifiedAt": newest,
+        "oldestModifiedAt": oldest,
+        "note": "Ordered by last-modified time, newest first. Windows does not record a separate download time, so a file copied or edited later appears as newer."
+    }))
+}
+
 fn read_file(path: &Path) -> Result<Value, ToolFailure> {
-    let metadata = fs::metadata(path).map_err(io_failure)?;
+    let metadata = fs::metadata(path).map_err(|error| with_path(io_failure(error), path))?;
     if metadata.len() > MAX_READ_BYTES {
         return Err(ToolFailure {
             code: "file_too_large".into(),
             message: "That file is larger than the 256 KB read limit.".into(),
         });
     }
-    let bytes = fs::read(path).map_err(io_failure)?;
+    let bytes = fs::read(path).map_err(|error| with_path(io_failure(error), path))?;
     if bytes.contains(&0) {
         return Err(ToolFailure {
             code: "binary_file".into(),
@@ -595,7 +1291,7 @@ fn read_file(path: &Path) -> Result<Value, ToolFailure> {
 }
 
 fn read_metadata(path: &Path) -> Result<Value, ToolFailure> {
-    let metadata = fs::metadata(path).map_err(io_failure)?;
+    let metadata = fs::metadata(path).map_err(|error| with_path(io_failure(error), path))?;
     let modified = metadata
         .modified()
         .ok()
@@ -661,7 +1357,10 @@ fn search_directory(state: &mut SearchState<'_>, directory: &Path, depth: usize)
             let Ok(canonical) = fs::canonicalize(&child_path) else {
                 continue;
             };
-            if !canonical.starts_with(state.root) {
+            // `fs::canonicalize` answers in Windows verbatim form while the
+            // search root arrives as a display path, so a bare `starts_with`
+            // compares two encodings of the same folder and matches nothing.
+            if !path_within(state.root, &canonical) {
                 continue;
             }
             search_directory(state, &canonical, depth + 1);
@@ -674,7 +1373,7 @@ fn search_directory(state: &mut SearchState<'_>, directory: &Path, depth: usize)
             state.entries.push(json!({
                 "name": name,
                 "kind": "file",
-                "path": path_text(&child_path),
+                "path": path_text(&display_path(&child_path)),
                 "size": metadata.len()
             }));
             if state.entries.len() >= state.max_results {
@@ -749,6 +1448,7 @@ fn run_resolved(request: &ResolvedRequest) -> Result<Value, ToolFailure> {
             }))
         }
         "list_directory" => list_directory(&request.target),
+        "list_recent_files" => list_recent_files(&request.target, &request.args),
         "read_file" => read_file(&request.target),
         "read_file_metadata" => read_metadata(&request.target),
         "search_files" => search_files(&request.target, &request.args),
@@ -759,36 +1459,93 @@ fn run_resolved(request: &ResolvedRequest) -> Result<Value, ToolFailure> {
     }
 }
 
-fn confirm_native(summary: &str) -> bool {
-    let description = format!(
-        "{}\n\nVupsRouter will read only the requested location. This does not grant writes, shell commands, administrator rights, or access that Windows denies.",
-        summary
-    );
-    matches!(
-        rfd::MessageDialog::new()
-            .set_title("Allow filesystem access?")
-            .set_description(description)
-            .set_buttons(rfd::MessageButtons::YesNo)
-            .set_level(rfd::MessageLevel::Warning)
-            .show(),
-        rfd::MessageDialogResult::Yes
-    )
+/// The approvals already given for this account: an expiring in-memory set for
+/// "allow once" and the on-disk folder grants for "always allow".
+#[derive(Clone, Default)]
+struct ApprovedScope {
+    session: SessionScope,
+    grants: GrantStore,
 }
 
+impl ApprovedScope {
+    fn covers(&mut self, policy: &ToolPolicy, prompt: &ApprovalPrompt) -> bool {
+        if self.session.covers(&policy.owner, &prompt.approval_key) {
+            return true;
+        }
+        let target = Path::new(&prompt.scope_path);
+        self.grants
+            .covers(&policy.owner, access_scope_for(&prompt.action), target)
+    }
+
+    /// A one-time approval is never written to disk, and an always-folder
+    /// approval is stored at the scope the user was actually shown.
+    fn remember(
+        &mut self,
+        policy: &ToolPolicy,
+        prompt: &ApprovalPrompt,
+        decision: ApprovalDecision,
+    ) -> Result<(), String> {
+        match decision {
+            ApprovalDecision::Denied => Ok(()),
+            ApprovalDecision::Once => {
+                self.session.remember(&policy.owner, prompt);
+                Ok(())
+            }
+            ApprovalDecision::AlwaysFolder => {
+                self.session.remember(&policy.owner, prompt);
+                self.grants.insert(FolderGrant {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    owner: policy.owner.clone(),
+                    root: prompt.scope_path.clone(),
+                    scope: access_scope_for(&prompt.action).to_string(),
+                    created_at: now_millis(),
+                })
+            }
+        }
+    }
+}
+
+fn access_scope_for(action: &str) -> &'static str {
+    if action == "contents" {
+        CONTENT_SCOPE
+    } else {
+        READ_SCOPE
+    }
+}
+
+/// `approve` is the only path to a decision. Production passes the in-chat
+/// broker; tests pass a stub, which is what keeps the authorization order
+/// (resolve, then gate, then approve, then touch the disk) under unit test.
 fn execute_tool_with(
     policy: &ToolPolicy,
     request: &ToolRequest,
-    approve: impl Fn(&str) -> bool,
+    scope: &mut ApprovedScope,
+    mut approve: impl FnMut(&ApprovalPrompt) -> ApprovalDecision,
 ) -> ToolResponse {
     let resolved = match resolve_request(policy, request) {
         Ok(resolved) => resolved,
         Err(error) => return ToolResponse::failure(&error.code, error.message),
     };
-    if resolved.requires_approval && !approve(&resolved.summary) {
-        return ToolResponse::failure(
-            "approval_denied",
-            "The user denied this filesystem request. No files were read.",
-        );
+    if resolved.requires_approval {
+        let prompt = &resolved.approval;
+        if scope.covers(policy, prompt) {
+            // Already authorized: recording it again would let a revocation be
+            // shadowed by a copy of its own approval.
+        } else {
+            let granted = approve(prompt);
+            if granted == ApprovalDecision::Denied {
+                return ToolResponse::failure(
+                    "approval_denied",
+                    format!(
+                        "The user did not allow this access to {}. No files were read.",
+                        prompt.scope_path
+                    ),
+                );
+            }
+            if let Err(message) = scope.remember(policy, prompt, granted) {
+                return ToolResponse::failure("grant_store_failed", message);
+            }
+        }
     }
     match run_resolved(&resolved) {
         Ok(data) => ToolResponse::success(data),
@@ -833,6 +1590,33 @@ fn append_audit(app: &AppHandle, policy: &ToolPolicy, request: &ToolRequest, res
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RespondInput {
+    request_id: String,
+    decision: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrantView {
+    id: String,
+    path: String,
+    name: String,
+    scope: String,
+    created_at: i64,
+}
+
+fn policy_of(state: &State<'_, DesktopToolState>) -> Result<ToolPolicy, String> {
+    let guard = state
+        .policy
+        .lock()
+        .map_err(|_| "Filesystem permission state is unavailable.".to_string())?;
+    guard
+        .clone()
+        .ok_or_else(|| "Choose a filesystem permission mode before using local tools.".to_string())
+}
+
 #[tauri::command]
 pub async fn desktop_tool_set_policy(
     app: AppHandle,
@@ -852,7 +1636,7 @@ pub async fn desktop_tool_set_policy(
         None
     };
     let policy = ToolPolicy {
-        owner,
+        owner: owner.clone(),
         mode,
         workspace_root,
     };
@@ -861,7 +1645,20 @@ pub async fn desktop_tool_set_policy(
         .policy
         .lock()
         .map_err(|_| "Filesystem permission state is unavailable.".to_string())?;
+    let replaced_owner = guard.as_ref().map(|existing| existing.owner.clone());
     *guard = Some(policy);
+    drop(guard);
+    // Switching account or mode invalidates every approval given under the old
+    // one, and any card still on screen would describe a decision the user is no
+    // longer being asked for.
+    if replaced_owner.as_deref() != Some(owner.as_str()) || mode != ToolMode::Ask {
+        state.broker.cancel_all();
+        if let Ok(mut scopes) = state.scopes.lock() {
+            if replaced_owner.as_deref() != Some(owner.as_str()) {
+                scopes.session.reset();
+            }
+        }
+    }
     Ok(status)
 }
 
@@ -869,14 +1666,7 @@ pub async fn desktop_tool_set_policy(
 pub async fn desktop_tool_policy_status(
     state: State<'_, DesktopToolState>,
 ) -> Result<PolicyStatus, String> {
-    let guard = state
-        .policy
-        .lock()
-        .map_err(|_| "Filesystem permission state is unavailable.".to_string())?;
-    guard
-        .as_ref()
-        .map(ToolPolicy::status)
-        .ok_or_else(|| "Choose a filesystem permission mode before using local tools.".to_string())
+    Ok(policy_of(&state)?.status())
 }
 
 #[tauri::command]
@@ -885,24 +1675,113 @@ pub async fn desktop_tool_execute(
     state: State<'_, DesktopToolState>,
     request: ToolRequest,
 ) -> Result<ToolResponse, String> {
-    let policy = {
-        let guard = state
-            .policy
+    let policy = policy_of(&state)?;
+    let audit_request = request.clone();
+    let broker = state.broker.clone();
+    let scopes = state.scopes.clone();
+    let owner = policy.owner.clone();
+    let scope_app = app.clone();
+    let policy_for_execute = policy.clone();
+    // The scope lock is taken inside the blocking task and held across the
+    // approval wait on purpose: a concurrent duplicate then finds the decision
+    // already recorded instead of asking a second time.
+    let response = tauri::async_runtime::spawn_blocking(move || -> Result<ToolResponse, String> {
+        let mut scope = scopes
             .lock()
             .map_err(|_| "Filesystem permission state is unavailable.".to_string())?;
-        guard
-            .clone()
-            .ok_or_else(|| "Choose a filesystem permission mode before using local tools.".to_string())?
-    };
-    let audit_request = request.clone();
-    let policy_for_execute = policy.clone();
-    let response = tauri::async_runtime::spawn_blocking(move || {
-        execute_tool_with(&policy_for_execute, &request, confirm_native)
+        scope.grants.ensure_loaded(&scope_app);
+        let app_for_prompt = scope_app.clone();
+        Ok(execute_tool_with(&policy_for_execute, &request, &mut scope, |prompt| {
+            broker.request(&app_for_prompt, &owner, prompt)
+        }))
     })
     .await
-    .map_err(|_| "The Windows filesystem tool did not finish.".to_string())?;
+    .map_err(|_| "The Windows filesystem tool did not finish.".to_string())??;
     append_audit(&app, &policy, &audit_request, &response);
     Ok(response)
+}
+
+#[tauri::command]
+pub async fn desktop_tool_respond(
+    state: State<'_, DesktopToolState>,
+    input: RespondInput,
+) -> Result<bool, String> {
+    let policy = policy_of(&state)?;
+    let decision = ApprovalDecision::parse(&input.decision)?;
+    state
+        .broker
+        .respond(&policy.owner, input.request_id.trim(), decision)?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn desktop_tool_grants_list(
+    app: AppHandle,
+    state: State<'_, DesktopToolState>,
+) -> Result<Vec<GrantView>, String> {
+    let policy = policy_of(&state)?;
+    let mut scope = state
+        .scopes
+        .lock()
+        .map_err(|_| "Filesystem permission state is unavailable.".to_string())?;
+    scope.grants.ensure_loaded(&app);
+    Ok(scope
+        .grants
+        .for_owner(&policy.owner)
+        .into_iter()
+        .map(|grant| GrantView {
+            id: grant.id,
+            path: grant.root.clone(),
+            name: folder_display_name(Path::new(&grant.root)),
+            scope: grant.scope,
+            created_at: grant.created_at,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn desktop_tool_grant_revoke(
+    app: AppHandle,
+    state: State<'_, DesktopToolState>,
+    id: String,
+) -> Result<bool, String> {
+    let policy = policy_of(&state)?;
+    let mut scope = state
+        .scopes
+        .lock()
+        .map_err(|_| "Filesystem permission state is unavailable.".to_string())?;
+    scope.grants.ensure_loaded(&app);
+    let Some(grant) = scope.grants.revoke(&policy.owner, id.trim()) else {
+        return Ok(false);
+    };
+    // A revocation that the current task could override by re-asking would not
+    // be a revocation, so the matching in-memory approvals go too.
+    scope.session.forget_within(&policy.owner, &grant.root, &grant.scope);
+    scope.grants.persist()?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn desktop_tool_grants_clear(
+    app: AppHandle,
+    state: State<'_, DesktopToolState>,
+) -> Result<usize, String> {
+    let policy = policy_of(&state)?;
+    state.broker.cancel_all();
+    let mut scope = state
+        .scopes
+        .lock()
+        .map_err(|_| "Filesystem permission state is unavailable.".to_string())?;
+    scope.grants.ensure_loaded(&app);
+    scope.session.reset();
+    scope.grants.clear(&policy.owner)
+}
+
+#[tauri::command]
+pub async fn desktop_tool_approvals_cancel(
+    state: State<'_, DesktopToolState>,
+) -> Result<Vec<String>, String> {
+    Ok(state.broker.cancel_all())
 }
 
 #[cfg(test)]
@@ -913,7 +1792,11 @@ mod tests {
     fn temp_root() -> PathBuf {
         let root = std::env::temp_dir().join(format!("vupsrouter-tools-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&root).expect("create test root");
-        fs::canonicalize(root).expect("canonicalize test root")
+        // Tests compare against the strings the tools echo back, and those are
+        // display paths rather than Windows verbatim paths.
+        display_path(
+            &fs::canonicalize(&root).unwrap_or_else(|_| panic!("canonicalize {}", root.display())),
+        )
     }
 
     fn write(path: &Path, content: &[u8]) {
@@ -947,6 +1830,34 @@ mod tests {
     fn windows_known_folders_resolve_on_this_machine() {
         assert!(system_known_folder("downloads").is_some());
         assert!(system_known_folder("documents").is_some());
+    }
+
+    /// Runs the real task on this machine's own Downloads folder: one
+    /// enumeration, newest first, names/dates/sizes only, never file bytes.
+    #[cfg(windows)]
+    #[test]
+    fn the_real_downloads_folder_answers_the_five_file_task() {
+        let downloads = system_known_folder("downloads").expect("Downloads resolves here");
+        assert!(downloads.is_dir(), "{} is a directory", downloads.display());
+        let data = list_recent_files(
+            &downloads,
+            &json!({ "path": downloads.to_string_lossy(), "limit": 5 }),
+        )
+        .expect("one enumeration of the real Downloads folder");
+        let files = data["files"].as_array().expect("files array");
+        assert!(files.len() <= 5, "at most the requested five");
+        for entry in files {
+            let name = entry["name"].as_str().unwrap_or_default();
+            assert!(!is_system_noise(name), "{name} is not a real download");
+            assert!(entry.get("content").is_none(), "no file bytes are read");
+            eprintln!(
+                "[real-downloads] {} · {} bytes · modified {}",
+                name,
+                entry["size"],
+                entry["modifiedAt"]
+            );
+        }
+        assert_eq!(data["sortedBy"].as_str(), Some("lastModified"));
     }
 
     #[test]
@@ -1068,24 +1979,24 @@ mod tests {
         let root = temp_root();
         let file = root.join("notes.txt");
         write(&file, b"hello");
+        let request = ToolRequest {
+            tool: "read_file".into(),
+            args: json!({ "path": file.to_string_lossy() }),
+        };
         let response = execute_tool_with(
             &policy(ToolMode::Ask, Some(&root)),
-            &ToolRequest {
-                tool: "read_file".into(),
-                args: json!({ "path": file.to_string_lossy() }),
-            },
-            |_| false,
+            &request,
+            &mut ApprovedScope::default(),
+            |_| ApprovalDecision::Denied,
         );
         assert!(!response.ok);
         assert_eq!(response.error.as_ref().unwrap().code, "approval_denied");
 
         let response = execute_tool_with(
             &policy(ToolMode::Ask, Some(&root)),
-            &ToolRequest {
-                tool: "read_file".into(),
-                args: json!({ "path": file.to_string_lossy() }),
-            },
-            |_| true,
+            &request,
+            &mut ApprovedScope::default(),
+            |_| ApprovalDecision::Once,
         );
         assert!(response.ok);
         assert_eq!(response.data.unwrap()["content"], "hello");
@@ -1110,7 +2021,8 @@ mod tests {
                 tool: "read_file".into(),
                 args: json!({ "path": inside.to_string_lossy() }),
             },
-            |_| false,
+            &mut ApprovedScope::default(),
+            |_| ApprovalDecision::Denied,
         );
         assert!(inside_response.ok);
 
@@ -1120,7 +2032,8 @@ mod tests {
                 tool: "read_file".into(),
                 args: json!({ "path": outside.to_string_lossy() }),
             },
-            |_| false,
+            &mut ApprovedScope::default(),
+            |_| ApprovalDecision::Denied,
         );
         assert!(!outside_response.ok);
         assert_eq!(
@@ -1140,7 +2053,8 @@ mod tests {
                 tool: "run_shell".into(),
                 args: json!({}),
             },
-            |_| true,
+            &mut ApprovedScope::default(),
+            |_| ApprovalDecision::Once,
         );
         assert!(!response.ok);
         assert_eq!(response.error.as_ref().unwrap().code, "unknown_tool");
@@ -1151,9 +2065,606 @@ mod tests {
                 tool: "read_file".into(),
                 args: json!({}),
             },
-            |_| true,
+            &mut ApprovedScope::default(),
+            |_| ApprovalDecision::Once,
         );
         assert!(!response.ok);
         assert_eq!(response.error.as_ref().unwrap().code, "invalid_arguments");
+    }
+
+    fn tool(tool: &str, args: Value) -> ToolRequest {
+        ToolRequest {
+            tool: tool.into(),
+            args,
+        }
+    }
+
+    #[test]
+    fn one_folder_approval_covers_every_child_metadata_read_in_that_task() {
+        let root = temp_root();
+        let downloads = root.join("Downloads");
+        write(&downloads.join("a.txt"), b"a");
+        write(&downloads.join("b.txt"), b"b");
+        write(&downloads.join("desktop.ini"), b"[.ShellClassInfo]");
+
+        let policy = policy(ToolMode::Ask, None);
+        let mut scope = ApprovedScope::default();
+        let mut asked = 0usize;
+        for name in ["a.txt", "b.txt", "desktop.ini"] {
+            let request = tool(
+                "read_file_metadata",
+                json!({ "path": downloads.join(name).to_string_lossy() }),
+            );
+            let response = execute_tool_with(&policy, &request, &mut scope, |prompt| {
+                asked += 1;
+                assert!(
+                    prompt.scope_path.eq_ignore_ascii_case(&path_text(&downloads)),
+                    "the decision is about the folder, not one file"
+                );
+                ApprovalDecision::Once
+            });
+            assert!(response.ok, "{}", name);
+        }
+        assert_eq!(asked, 1, "three metadata reads, one prompt");
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn a_one_time_approval_is_never_written_to_disk() {
+        let root = temp_root();
+        let file = root.join("notes.txt");
+        write(&file, b"hello");
+        let policy = policy(ToolMode::Ask, None);
+        let mut scope = ApprovedScope::default();
+        let request = tool(
+            "read_file_metadata",
+            json!({ "path": file.to_string_lossy() }),
+        );
+        execute_tool_with(&policy, &request, &mut scope, |_| ApprovalDecision::Once);
+        assert!(scope.grants.grants.is_empty());
+        assert_eq!(scope.session.approved.len(), 1);
+
+        // A fresh scope (new task after the session grant expires, or an app
+        // restart) has to ask again.
+        let mut fresh = ApprovedScope::default();
+        let mut asked = 0usize;
+        execute_tool_with(&policy, &request, &mut fresh, |_| {
+            asked += 1;
+            ApprovalDecision::Denied
+        });
+        assert_eq!(asked, 1, "a restart has to ask again");
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn an_always_folder_grant_survives_and_is_revocable() {
+        let root = temp_root();
+        let folder = root.join("Downloads");
+        write(&folder.join("a.txt"), b"a");
+        let policy = policy(ToolMode::Ask, None);
+        let request = tool(
+            "list_directory",
+            json!({ "path": folder.to_string_lossy() }),
+        );
+
+        let mut scope = ApprovedScope::default();
+        let mut asked = 0usize;
+        for _ in 0..3 {
+            let response = execute_tool_with(&policy, &request, &mut scope, |prompt| {
+                asked += 1;
+                assert_eq!(prompt.action, "list");
+                ApprovalDecision::AlwaysFolder
+            });
+            assert!(response.ok);
+        }
+        assert_eq!(asked, 1, "the always grant is reused");
+        assert_eq!(scope.grants.grants.len(), 1);
+        assert_eq!(scope.grants.grants[0].scope, READ_SCOPE);
+
+        // A restart keeps the persisted grant: the session set is gone but the
+        // folder is still authorized.
+        let mut restarted = ApprovedScope {
+            session: SessionScope::default(),
+            grants: scope.grants.clone(),
+        };
+        let mut asked_on_restart = 0usize;
+        assert!(execute_tool_with(&policy, &request, &mut restarted, |_| {
+            asked_on_restart += 1;
+            ApprovalDecision::Denied
+        })
+        .ok);
+        assert_eq!(asked_on_restart, 0, "the saved grant covers the restart");
+
+        // Revoking brings the prompt back.
+        let id = restarted.grants.grants[0].id.clone();
+        restarted.grants.revoke(&policy.owner, &id).expect("revoke");
+        restarted.session.forget_within(&policy.owner, &path_text(&folder), READ_SCOPE);
+        assert!(restarted.grants.grants.is_empty());
+        let mut asked_after = 0usize;
+        execute_tool_with(&policy, &request, &mut restarted, |_| {
+            asked_after += 1;
+            ApprovalDecision::Denied
+        });
+        assert_eq!(asked_after, 1);
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn a_folder_grant_cannot_reach_a_sibling_or_the_parent() {
+        let root = temp_root();
+        let downloads = root.join("Downloads");
+        let sibling = root.join("DownloadsEvil");
+        write(&downloads.join("a.txt"), b"a");
+        write(&sibling.join("secret.txt"), b"s");
+
+        let mut grants = GrantStore::default();
+        grants.grants.push(FolderGrant {
+            id: "g1".into(),
+            owner: "user_123".into(),
+            root: path_text(&downloads),
+            scope: READ_SCOPE.into(),
+            created_at: 0,
+        });
+        assert!(grants.covers("user_123", READ_SCOPE, &downloads.join("a.txt")));
+        assert!(!grants.covers("user_123", READ_SCOPE, &sibling.join("secret.txt")));
+        assert!(!grants.covers("user_123", READ_SCOPE, &root));
+        // Case differences must not defeat containment either.
+        assert!(grants.covers("user_123", READ_SCOPE, &downloads.join("A.TXT")));
+        // Another account's identical path gets nothing.
+        assert!(!grants.covers("user_999", READ_SCOPE, &downloads.join("a.txt")));
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn a_read_grant_never_unlocks_file_contents() {
+        let root = temp_root();
+        let file = root.join("notes.txt");
+        write(&file, b"hello");
+        let policy = policy(ToolMode::Ask, None);
+        let mut scope = ApprovedScope::default();
+        let listing = tool("list_directory", json!({ "path": root.to_string_lossy() }));
+        execute_tool_with(&policy, &listing, &mut scope, |_| {
+            ApprovalDecision::AlwaysFolder
+        });
+
+        let mut asked = 0usize;
+        let response = execute_tool_with(
+            &policy,
+            &tool("read_file", json!({ "path": file.to_string_lossy() })),
+            &mut scope,
+            |prompt| {
+                asked += 1;
+                assert_eq!(prompt.action, "contents");
+                assert_eq!(prompt.scope_path, path_text(&file));
+                ApprovalDecision::Denied
+            },
+        );
+        assert_eq!(asked, 1, "listing a folder is not reading its files");
+        assert_eq!(response.error.as_ref().unwrap().code, "approval_denied");
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn recent_files_sorts_newest_first_and_drops_system_noise() {
+        let root = temp_root();
+        write(&root.join("old.txt"), b"old");
+        write(&root.join("new.txt"), b"new");
+        write(&root.join("desktop.ini"), b"[.ShellClassInfo]");
+        write(&root.join("Thumbs.db"), b"thumb");
+        fs::create_dir_all(root.join("sub")).expect("create sub");
+
+        let touched = SystemTime::now() - Duration::from_secs(3_600);
+        let file = root.join("old.txt");
+        let handle = fs::OpenOptions::new().write(true).open(&file).expect("open");
+        handle.set_modified(touched).expect("set modified");
+        drop(handle);
+
+        let result = list_recent_files(&root, &json!({ "limit": 5 })).expect("recent");
+        let files = result.get("files").and_then(Value::as_array).unwrap();
+        assert_eq!(files.len(), 2, "only the two real files");
+        assert_eq!(files[0]["name"], "new.txt", "newest first");
+        assert_eq!(files[1]["name"], "old.txt");
+        assert!(files[0]["modifiedAt"].as_i64().unwrap() > files[1]["modifiedAt"].as_i64().unwrap());
+        assert!(files[0]["size"].as_u64().is_some());
+        assert!(
+            result["skippedSystemEntries"]
+                .as_u64()
+                .map(|count| count >= 1)
+                .unwrap_or(false),
+            "folder noise is counted, not silently dropped"
+        );
+        let names: Vec<&str> = files
+            .iter()
+            .map(|entry| entry["name"].as_str().unwrap())
+            .collect();
+        assert!(!names.contains(&"desktop.ini"));
+        assert!(!names.contains(&"Thumbs.db"));
+        assert_eq!(result["sortedBy"], "lastModified");
+
+        let with_system = list_recent_files(
+            &root,
+            &json!({ "limit": 5, "includeSystemEntries": true }),
+        )
+        .expect("recent with system");
+        let names: Vec<&str> = with_system["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["name"].as_str().unwrap())
+            .collect();
+        assert!(names.contains(&"desktop.ini"));
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn recent_files_limit_is_bounded_and_metadata_needs_no_extra_call() {
+        let root = temp_root();
+        for index in 0..8 {
+            write(&root.join(format!("f{}.txt", index)), b"x");
+        }
+        let result = list_recent_files(&root, &json!({ "limit": 3 })).expect("recent");
+        assert_eq!(result["files"].as_array().unwrap().len(), 3);
+        assert_eq!(result["returned"], 3);
+
+        let listed = list_directory(&root).expect("list");
+        let entries = listed["entries"].as_array().unwrap();
+        assert!(
+            entries
+                .iter()
+                .all(|entry| entry.get("modifiedAt").is_some()),
+            "a listing must carry the timestamp so the model never asks per file"
+        );
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn the_broker_answers_one_pending_request_exactly_once() {
+        let broker = ApprovalBroker::default();
+        let entry = Arc::new(PendingApproval {
+            request_id: "req-1".into(),
+            owner: "user_123".into(),
+            decision: Mutex::new(None),
+            ready: Condvar::new(),
+        });
+        broker
+            .pending
+            .lock()
+            .unwrap()
+            .insert("k".into(), entry.clone());
+
+        // A joiner waits on the same entry the leader is waiting on.
+        let joined = entry.clone();
+        let waiter = std::thread::spawn(move || ApprovalBroker::await_decision(&joined, Duration::from_secs(5)));
+        std::thread::sleep(Duration::from_millis(50));
+        broker
+            .respond("user_123", "req-1", ApprovalDecision::Once)
+            .expect("respond");
+        assert_eq!(waiter.join().unwrap(), ApprovalDecision::Once);
+
+        // The entry is gone, so the same id can never authorize anything again.
+        assert!(broker.respond("user_123", "req-1", ApprovalDecision::Once).is_err());
+        assert!(broker.respond("user_123", "req-unknown", ApprovalDecision::Once).is_err());
+    }
+
+    #[test]
+    fn another_account_cannot_answer_a_pending_request() {
+        let broker = ApprovalBroker::default();
+        let entry = Arc::new(PendingApproval {
+            request_id: "req-2".into(),
+            owner: "user_123".into(),
+            decision: Mutex::new(None),
+            ready: Condvar::new(),
+        });
+        broker
+            .pending
+            .lock()
+            .unwrap()
+            .insert("k2".into(), entry.clone());
+        assert!(broker
+            .respond("user_999", "req-2", ApprovalDecision::Once)
+            .is_err());
+        assert!(entry.decision.lock().unwrap().is_none());
+        assert!(broker.pending.lock().unwrap().contains_key("k2"));
+    }
+
+    #[test]
+    fn an_unanswered_request_expires_as_a_denial() {
+        let entry = Arc::new(PendingApproval {
+            request_id: "req-3".into(),
+            owner: "user_123".into(),
+            decision: Mutex::new(None),
+            ready: Condvar::new(),
+        });
+        let joined = entry.clone();
+        assert_eq!(
+            ApprovalBroker::await_decision(&joined, Duration::from_millis(40)),
+            ApprovalDecision::Denied
+        );
+    }
+
+    #[test]
+    fn cancelling_pending_approvals_denies_them() {
+        let broker = ApprovalBroker::default();
+        let entry = Arc::new(PendingApproval {
+            request_id: "req-4".into(),
+            owner: "user_123".into(),
+            decision: Mutex::new(None),
+            ready: Condvar::new(),
+        });
+        let joined = entry.clone();
+        broker
+            .pending
+            .lock()
+            .unwrap()
+            .insert("k4".into(), entry);
+        assert_eq!(broker.cancel_all(), vec!["req-4".to_string()]);
+        assert_eq!(
+            ApprovalBroker::await_decision(&joined, Duration::from_millis(40)),
+            ApprovalDecision::Denied
+        );
+    }
+
+    #[test]
+    fn a_session_grant_stops_at_its_account_and_its_folder() {
+        let root = temp_root();
+        let folder = root.join("Downloads");
+        fs::create_dir_all(&folder).expect("create folder");
+        let policy = policy(ToolMode::Ask, None);
+        let resolved = resolve_request(
+            &policy,
+            &tool("list_directory", json!({ "path": path_text(&folder) })),
+        )
+        .expect("resolve");
+        let key = resolved.approval.approval_key.clone();
+
+        let mut session = SessionScope::default();
+        session.remember(&policy.owner, &resolved.approval);
+        assert!(session.covers(&policy.owner, &key));
+        assert!(!session.covers("user_999", &key), "another account gains nothing");
+
+        session.forget_within(&policy.owner, &path_text(&folder), READ_SCOPE);
+        assert!(!session.covers(&policy.owner, &key), "revoking reaches the session");
+
+        session.remember(&policy.owner, &resolved.approval);
+        session.forget_within(&policy.owner, &path_text(&root.join("Other")), READ_SCOPE);
+        assert!(
+            session.covers(&policy.owner, &key),
+            "revoking an unrelated folder must not clear this one"
+        );
+
+        session.reset();
+        assert!(!session.covers(&policy.owner, &key));
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn a_denied_request_prompts_again_rather_than_staying_silent() {
+        let root = temp_root();
+        let folder = root.join("Downloads");
+        write(&folder.join("a.txt"), b"a");
+        let policy = policy(ToolMode::Ask, None);
+        let mut scope = ApprovedScope::default();
+        let request = tool(
+            "list_directory",
+            json!({ "path": folder.to_string_lossy() }),
+        );
+        for round in 0..2 {
+            let mut asked = 0usize;
+            let response = execute_tool_with(&policy, &request, &mut scope, |_| {
+                asked += 1;
+                ApprovalDecision::Denied
+            });
+            assert_eq!(asked, 1, "denial is not cached as a grant (round {})", round);
+            assert_eq!(response.error.as_ref().unwrap().code, "approval_denied");
+        }
+        assert!(scope.session.approved.is_empty());
+        assert!(scope.grants.grants.is_empty());
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn prompts_name_the_folder_scope_and_the_read_only_action() {
+        let root = temp_root();
+        let folder = root.join("Downloads");
+        write(&folder.join("a.txt"), b"a");
+        let policy = policy(ToolMode::Ask, None);
+        let resolved = resolve_request(
+            &policy,
+            &tool("read_file_metadata", json!({ "path": folder.join("a.txt").to_string_lossy() })),
+        )
+        .expect("resolve");
+        assert_eq!(resolved.approval.action, "metadata");
+        assert!(resolved.approval.read_only);
+        assert_eq!(resolved.approval.scope_path, path_text(&folder));
+        assert!(resolved.approval.summary.contains(&path_text(&folder)));
+        assert!(!resolved.approval.request_id.is_empty());
+        assert!(resolved.approval.expires_at > now_millis() - 1_000);
+
+        let recent = resolve_request(
+            &policy,
+            &tool("list_recent_files", json!({ "path": folder.to_string_lossy(), "limit": 5 })),
+        )
+        .expect("resolve recent");
+        assert_eq!(recent.approval.action, "recent");
+        assert!(recent.approval.summary.contains("newest 5 files"));
+        assert_eq!(recent.approval.scope_path, path_text(&folder));
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn resolving_a_known_folder_path_asks_for_no_permission() {
+        // The 45-second stall the user saw was a modal waiting on a click for a
+        // request that only asked Windows where the Downloads folder is.
+        let policy = policy(ToolMode::Ask, None);
+        let resolved = resolve_request(
+            &policy,
+            &tool("get_windows_known_folder", json!({ "name": "downloads" })),
+        )
+        .expect("resolve known folder");
+        assert!(!resolved.requires_approval, "a path lookup reads no file");
+        assert_eq!(resolved.approval.action, "locate");
+        assert_eq!(resolved.approval.access, READ_SCOPE);
+    }
+
+    #[test]
+    fn the_recent_files_fast_path_prompts_once_for_the_folder() {
+        let root = temp_root();
+        let folder = root.join("Downloads");
+        for name in ["a.txt", "b.txt", "c.txt", "d.txt", "e.txt", "f.txt", "desktop.ini"] {
+            write(&folder.join(name), b"x");
+        }
+        let policy = policy(ToolMode::Ask, None);
+        let mut scope = ApprovedScope::default();
+        let mut asked = 0usize;
+        let recent = execute_tool_with(
+            &policy,
+            &tool("list_recent_files", json!({ "path": folder.to_string_lossy(), "limit": 5 })),
+            &mut scope,
+            |prompt| {
+                asked += 1;
+                assert_eq!(prompt.action, "recent");
+                assert_eq!(prompt.scope_path, path_text(&folder));
+                ApprovalDecision::Once
+            },
+        );
+        assert!(recent.ok, "one enumeration answers the task");
+        assert_eq!(asked, 1, "seven entries, one prompt");
+        let data = recent.data.expect("recent data");
+        assert_eq!(data["returned"].as_u64(), Some(5));
+        assert!(
+            data["files"]
+                .as_array()
+                .expect("files")
+                .iter()
+                .all(|entry| !is_system_noise(entry["name"].as_str().unwrap_or_default())),
+            "system noise never reaches the answer"
+        );
+        assert_eq!(
+            data["skippedSystemEntries"].as_u64(),
+            Some(1),
+            "the skipped entry is reported, not silently dropped"
+        );
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn a_denied_folder_approval_runs_no_filesystem_read() {
+        let root = temp_root();
+        let folder = root.join("Downloads");
+        write(&folder.join("a.txt"), b"secret");
+        let policy = policy(ToolMode::Ask, None);
+        let mut scope = ApprovedScope::default();
+        let response = execute_tool_with(
+            &policy,
+            &tool("list_recent_files", json!({ "path": folder.to_string_lossy(), "limit": 5 })),
+            &mut scope,
+            |_| ApprovalDecision::Denied,
+        );
+        assert!(!response.ok);
+        assert_eq!(response.error.as_ref().expect("error").code, "approval_denied");
+        assert!(scope.grants.grants.is_empty());
+        assert!(scope.session.approved.is_empty(), "a denial grants nothing");
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn verbatim_windows_paths_never_reach_the_user() {
+        assert_eq!(
+            path_text(&display_path(Path::new(r"\\?\C:\Users\Vishnu\Downloads"))),
+            r"C:\Users\Vishnu\Downloads"
+        );
+        assert_eq!(
+            path_text(&display_path(Path::new(r"\\?\UNC\fileserv\Downloads"))),
+            r"\\fileserv\Downloads"
+        );
+        assert_eq!(
+            path_text(&display_path(Path::new(r"D:\OneDrive\Downloads"))),
+            r"D:\OneDrive\Downloads"
+        );
+    }
+
+    #[test]
+    fn a_genuine_access_denial_keeps_the_windows_detail() {
+        let failure = io_failure(std::io::Error::from_raw_os_error(5));
+        assert_eq!(failure.code, "access_denied");
+        assert!(
+            failure.message.contains("os error 5"),
+            "the OS wording is the evidence: {}",
+            failure.message
+        );
+        assert!(failure.message.contains("not a VupsRouter setting"));
+        assert!(failure.message.contains("No elevation or permission change was attempted"));
+
+        let detailed = with_path(failure, Path::new(r"D:\OneDrive\Downloads"));
+        assert!(
+            detailed.message.ends_with(r"Path: D:\OneDrive\Downloads"),
+            "{}",
+            detailed.message
+        );
+    }
+
+    #[test]
+    fn a_missing_folder_is_denied_nothing_and_prompts_nobody() {
+        let root = temp_root();
+        let missing = root.join("Nope");
+        let mut asked = 0usize;
+        let response = execute_tool_with(
+            &policy(ToolMode::Ask, None),
+            &tool("list_recent_files", json!({ "path": missing.to_string_lossy(), "limit": 5 })),
+            &mut ApprovedScope::default(),
+            |_| {
+                asked += 1;
+                ApprovalDecision::Once
+            },
+        );
+        assert!(!response.ok);
+        let failure = response.error.expect("failure");
+        assert_eq!(failure.code, "path_not_found");
+        assert!(
+            failure.message.contains("os error 2"),
+            "Windows detail preserved: {}",
+            failure.message
+        );
+        assert_eq!(asked, 0, "a path that does not exist is not a permission event");
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn a_file_asked_as_a_directory_names_the_path_it_rejected() {
+        let root = temp_root();
+        let file = root.join("notes.txt");
+        write(&file, b"x");
+        let response = execute_tool_with(
+            &policy(ToolMode::Ask, None),
+            &tool(
+                "list_recent_files",
+                json!({ "path": file.to_string_lossy(), "limit": 5 }),
+            ),
+            &mut ApprovedScope::default(),
+            |_| ApprovalDecision::Once,
+        );
+        let failure = response.error.expect("failure");
+        assert_eq!(failure.code, "not_a_directory");
+        assert!(failure.message.contains(&path_text(&file)), "{}", failure.message);
+        assert!(
+            !failure.message.contains(r"\\?\"),
+            "verbatim paths stay out of user-facing text: {}",
+            failure.message
+        );
+
+        fs::remove_dir_all(root).expect("remove test root");
     }
 }

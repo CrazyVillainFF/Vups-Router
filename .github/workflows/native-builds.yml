@@ -34,6 +34,9 @@ env:
   # Android resolves updates by package name plus signing certificate, so both
   # are asserted on every build instead of assumed to still be what they were.
   ANDROID_APP_ID: com.vupsrouter.app
+  # The release keystore is fixed: rotating it would make every existing install
+  # impossible to update, so the release job pins the certificate it must match.
+  ANDROID_RELEASE_CERT_SHA256: 486cf30b77ea2cba1ba397b07740fbef62244a8663cc20f91f7c21cd90e2eeb1
   # A truncated upload, an HTML error page saved as .apk and an empty file all
   # look like "a file exists" to a naive check. Real builds are far above these.
   MIN_ARTIFACT_BYTES: 1048576
@@ -477,6 +480,7 @@ jobs:
             --checks-dir ../release-checks \
             --asset-name "$ANDROID_RELEASE_ASSET" \
             --expected-app-id "$ANDROID_APP_ID" \
+            --expected-cert-sha256 "$ANDROID_RELEASE_CERT_SHA256" \
             --min-bytes "$MIN_ARTIFACT_BYTES" \
             --build-tools "$BUILD_TOOLS"
       - uses: actions/upload-artifact@v4

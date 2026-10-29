@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -11,6 +11,12 @@ import {
   WarningCircle
 } from "@phosphor-icons/react";
 import HoldToDeleteDialog from "../components/HoldToDeleteDialog.jsx";
+import {
+  clearDesktopToolGrants,
+  listDesktopToolGrants,
+  revokeDesktopToolGrant
+} from "../native/desktopTools.js";
+import { isTauriRuntime } from "../native/shell.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import {
   AUTOMATION_SCHEDULES,
@@ -65,6 +71,121 @@ function ToggleRow({ title, description, checked, onChange, disabled = false }) 
         disabled={disabled}
       />
     </label>
+  );
+}
+
+function FolderAccessSection() {
+  const [grants, setGrants] = useState([]);
+  const [status, setStatus] = useState("loading");
+  const [error, setError] = useState("");
+  const [busyId, setBusyId] = useState("");
+
+  const load = useCallback(async () => {
+    setStatus("loading");
+    setError("");
+    if (!isTauriRuntime()) {
+      setStatus("web");
+      return;
+    }
+    try {
+      setGrants(await listDesktopToolGrants());
+      setStatus("ready");
+    } catch (cause) {
+      setError(cause?.message || "Could not read the saved folder permissions.");
+      setStatus("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function revoke(id) {
+    setBusyId(id);
+    setError("");
+    try {
+      await revokeDesktopToolGrant(id);
+      setGrants(prev => prev.filter(grant => grant.id !== id));
+    } catch (cause) {
+      setError(cause?.message || "That folder permission could not be revoked.");
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  async function clearAll() {
+    setBusyId("clear");
+    setError("");
+    try {
+      await clearDesktopToolGrants();
+      setGrants([]);
+    } catch (cause) {
+      setError(cause?.message || "The saved folder permissions could not be cleared.");
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  return (
+    <section className="vr-settings-group">
+      <h2>Local file access</h2>
+      <p className="vr-page-note">
+        Folders you approved with &quot;Always allow for this folder&quot;. Revoking one makes the next read
+        ask again inside the chat. These entries store a folder path and a read scope only &mdash; no keys,
+        no file contents, and no permission to modify or delete anything.
+      </p>
+      {status === "web" ? (
+        <p className="vr-setting-hint">
+          Folder permissions are managed by the Windows desktop app; the web app has no local file access.
+        </p>
+      ) : null}
+      {status === "error" ? (
+        <p className="vr-msg-error" role="alert">
+          <WarningCircle size={16} aria-hidden="true" />
+          <span>{error}</span>
+        </p>
+      ) : null}
+      {status !== "web" ? (
+        grants.length === 0 ? (
+          <p className="vr-setting-hint">
+            {status === "loading" ? "Checking this device…" : "No folders are remembered — every read asks first."}
+          </p>
+        ) : (
+          <ul className="vr-grant-list">
+            {grants.map(grant => (
+              <li key={grant.id} className="vr-setting-row">
+                <span className="vr-setting-copy">
+                  <strong>{grant.name || grant.path}</strong>
+                  <span title={grant.path}>{grant.path}</span>
+                  <span>
+                    {grant.scope === "contents" ? "Reads one file" : "Lists files and reads their names, sizes and dates"}
+                    {grant.createdAt ? ` · since ${new Date(grant.createdAt).toLocaleDateString()}` : ""}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className="vr-secondary-small"
+                  disabled={busyId === grant.id || busyId === "clear"}
+                  onClick={() => revoke(grant.id)}
+                >
+                  Revoke
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : null}
+      {status === "ready" && grants.length > 0 ? (
+        <button
+          type="button"
+          className="vr-secondary-small"
+          disabled={busyId !== ""}
+          onClick={clearAll}
+        >
+          {busyId === "clear" ? "Clearing…" : "Revoke all folders"}
+        </button>
+      ) : null}
+    </section>
   );
 }
 
@@ -127,6 +248,8 @@ export function AppSettingsPage() {
           onChange={value => update("startSidebarCollapsed", value)}
         />
       </section>
+
+      <FolderAccessSection />
 
       <section className="vr-settings-group">
         <h2>Shortcuts</h2>
