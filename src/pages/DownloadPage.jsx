@@ -19,6 +19,7 @@ import {
 import PageMeta from "../components/PageMeta.jsx";
 import SiteHeader from "../components/SiteHeader.jsx";
 import LandingFooter from "../components/LandingFooter.jsx";
+import ExternalAnchor from "../components/ExternalLink.jsx";
 import { Reveal, StaggerGroup, StaggerItem } from "../components/motion/primitives.jsx";
 import PreviewVisual from "../download/PreviewVisual.jsx";
 import usePwaInstall from "../download/usePwaInstall.js";
@@ -67,9 +68,9 @@ function DownloadCard({ id, platform, release, installButton, checking }) {
       <div className="dl-card__action">
         {installButton || (
           hasArtifact ? (
-            <a className="dl-btn dl-btn--primary" href={release.downloadUrl} target="_blank" rel="noreferrer">
+            <ExternalAnchor className="dl-btn dl-btn--primary" href={release.downloadUrl}>
               <Download size={16} /> Download
-            </a>
+            </ExternalAnchor>
           ) : (
             <button className="dl-btn dl-btn--disabled" type="button" disabled>
               <X size={15} /> {checking ? "Checking release…" : "Not published yet"}
@@ -84,7 +85,7 @@ function DownloadCard({ id, platform, release, installButton, checking }) {
           {release.install.map(note => <li key={note}>{note}</li>)}
         </ul>
         {release.releaseNotesUrl
-          ? <a className="dl-inline-link" href={release.releaseNotesUrl} target="_blank" rel="noreferrer">Release notes <ExternalLink size={13} /></a>
+          ? <ExternalAnchor className="dl-inline-link" href={release.releaseNotesUrl}>Release notes <ExternalLink size={13} /></ExternalAnchor>
           : <span className="dl-card__muted">Release notes will be linked only after the artifact is published.</span>}
       </div>
       <span className="dl-card__target">{release.target}</span>
@@ -195,9 +196,9 @@ export default function DownloadPage() {
                   <span><LockKeyhole size={13} /> No keys in app bundles</span>
                   <span><ShieldCheck size={13} /> Verified artifacts only</span>
                 </div>
-                <a className="dl-inline-link" href={RELEASES_PAGE_URL} target="_blank" rel="noreferrer">
+                <ExternalAnchor className="dl-inline-link" href={RELEASES_PAGE_URL}>
                   All GitHub releases <ExternalLink size={13} />
-                </a>
+                </ExternalAnchor>
               </div>
             </Reveal>
           </div>
@@ -262,9 +263,9 @@ export default function DownloadPage() {
                     <button className="dl-btn dl-btn--primary" type="button" onClick={handleInstall} disabled={busy || installed}>
                       <Download size={16} /> {installed ? "Installed on this device" : busy ? "Opening install…" : canInstall ? "Install Web App" : "See install steps"}
                     </button>
-                    <a className="dl-btn" href={WEBSITE_URL} target="_blank" rel="noreferrer">
+                    <ExternalAnchor className="dl-btn" href={WEBSITE_URL}>
                       Open web app <ExternalLink size={14} />
-                    </a>
+                    </ExternalAnchor>
                   </div>
                 )}
               />

@@ -34,7 +34,9 @@ export const PROVIDERS = [
     docsUrl: "https://openrouter.ai/docs",
     pricingUrl: "https://openrouter.ai/models",
     note: "One key for hundreds of hosted models, including free and paid tiers. Model discovery is supported.",
-    cost: "Free and paid models — check the official catalog for current $0 models."
+    cost: "Free and paid models — check the official catalog for current $0 models.",
+    recommended: true,
+    recommendation: "Access supported models from multiple providers through one API."
   },
   {
     id: "litellm",
@@ -156,11 +158,14 @@ export const PROVIDERS = [
     status: "supported",
     baseUrl: "https://api.qoder.com/api/v1/cloud",
     website: "https://qoder.com/",
-    keysUrl: "",
+    keysUrl: "https://qoder.com/account/integrations",
+    keysLabel: "Create a token",
     docsUrl: "https://docs.qoder.com/cloud-agents/api/conventions/overview",
     pricingUrl: "",
-    note: "Official Cloud Agents API. Paste a Personal Access Token from your Qoder console (Settings → Personal Access Tokens); VupsRouter creates the session's environment and agent and streams the reply back.",
-    cost: "Billed in credits on your Qoder account; no VupsRouter fee."
+    note: "Official Cloud Agents API. Choose the Global (api.qoder.com / openapi.qoder.sh) or China mainland (api.qoder.com.cn / openapi.qoder.com.cn) region. Authenticate with a Personal Access Token from your Qoder console (Settings → Personal Access Tokens), or a service account key — the backend exchanges the latter for a short-lived token and never sends it to the business API. VupsRouter creates the session's environment and agent and streams the reply back.",
+    cost: "Billed in credits on your Qoder account; no VupsRouter fee.",
+    recommended: true,
+    recommendation: "A recommended option for users who want to configure the Qoder API."
   },
 
   // ─── Direct model providers ─────────────────────────────────────────────
@@ -475,7 +480,6 @@ export const PROVIDERS = [
     status: "supported",
     baseUrl: "http://localhost:20128/v1",
     website: "https://github.com/theRizwan/FlagshipRouter",
-    keysUrl: "https://github.com/theRizwan/FlagshipRouter",
     docsUrl: "https://github.com/theRizwan/FlagshipRouter",
     pricingUrl: "https://github.com/theRizwan/FlagshipRouter",
     note: "Community local gateway (OpenAI-compatible). IMPORTANT: a localhost URL only works from the machine running the gateway. The deployed VupsRouter backend cannot reach your computer — expose the gateway via a public HTTPS tunnel (ngrok, Cloudflare Tunnel) and paste that URL instead, or run VupsRouter locally. VupsRouter rejects localhost/private URLs on production with this explanation instead of blaming your API key.",
@@ -490,11 +494,12 @@ export const PROVIDERS = [
     status: "supported",
     baseUrl: "http://localhost:11434/v1",
     website: "https://ollama.com/",
-    keysUrl: "https://ollama.com/download",
     docsUrl: "https://docs.ollama.com/",
     pricingUrl: "https://ollama.com/",
     note: "Run open-weight models locally. Same localhost rule: reachable only from the gateway's own machine unless tunnelled.",
-    cost: "Free and local; your hardware is the limit."
+    cost: "Free and local; your hardware is the limit.",
+    recommended: true,
+    recommendation: "Run supported models locally, or use its supported cloud options."
   },
   {
     id: "vllm",
@@ -505,7 +510,6 @@ export const PROVIDERS = [
     status: "supported",
     baseUrl: "http://localhost:8000/v1",
     website: "https://docs.vllm.ai/",
-    keysUrl: "https://docs.vllm.ai/",
     docsUrl: "https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html",
     pricingUrl: "https://docs.vllm.ai/",
     note: "High-throughput self-hosting with an OpenAI-compatible server. Same localhost rule: reachable only from the server's own machine unless tunnelled.",
@@ -520,7 +524,6 @@ export const PROVIDERS = [
     status: "supported",
     baseUrl: "http://localhost:8080/v1",
     website: "https://localai.io/",
-    keysUrl: "https://localai.io/",
     docsUrl: "https://localai.io/basics/getting_started/",
     pricingUrl: "https://localai.io/",
     note: "Drop-in OpenAI-compatible local server. Same localhost rule: reachable only from the server's own machine unless tunnelled.",
@@ -535,7 +538,6 @@ export const PROVIDERS = [
     status: "supported",
     baseUrl: "http://localhost:1234/v1",
     website: "https://lmstudio.ai/",
-    keysUrl: "https://lmstudio.ai/",
     docsUrl: "https://lmstudio.ai/docs/app/api",
     pricingUrl: "https://lmstudio.ai/",
     note: "Desktop app that serves loaded models over an OpenAI-compatible API. Same localhost rule: reachable only from this computer unless tunnelled.",

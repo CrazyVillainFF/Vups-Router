@@ -84,6 +84,12 @@ test("native shells launch directly into chat", () => {
   assert.equal(capacitor.server.url, "https://vups-router-three.vercel.app/chat?native=android");
 });
 
+test("the desktop bundle rebuilds the frontend instead of packaging a stale dist", () => {
+  const tauri = JSON.parse(read("src-tauri/tauri.conf.json"));
+  assert.equal(tauri.build.beforeBuildCommand, "npm run build");
+  assert.equal(tauri.build.frontendDist, "../dist");
+});
+
 test("external auth helpers use only the verified production routes", () => {
   assert.equal(PRODUCTION_SITE_URL, "https://vups-router-three.vercel.app");
   assert.equal(authUrl("signin"), "https://vups-router-three.vercel.app/signin");
@@ -255,6 +261,13 @@ test("the capability governing the loopback origin grants every bridge command",
     entry => typeof entry === "object" && entry.identifier === "opener:allow-open-url"
   );
   assert.ok(opener, "opener:allow-open-url missing from the loopback capability");
-  assert.deepEqual(opener.allow.map(entry => entry.url), [`${PRODUCTION_SITE_URL}/*`]);
+  // Guide links point at whatever provider the user configured, so the native
+  // allowlist covers secure web and mail links only; the shared opener in
+  // externalLinks.js rejects every other scheme before this command is called.
+  assert.deepEqual(opener.allow.map(entry => entry.url).sort(), ["https://*", "mailto:*"]);
+  assert.ok(
+    opener.allow.some(entry => entry.url.startsWith("https://")),
+    `the sign-in page at ${PRODUCTION_SITE_URL} stays openable`
+  );
 });
 

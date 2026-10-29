@@ -1,12 +1,13 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import SiteHeader from "../components/SiteHeader.jsx";
+import ExternalAnchor from "../components/ExternalLink.jsx";
 import SiteFooter from "../components/SiteFooter.jsx";
 import PageMeta from "../components/PageMeta.jsx";
 import { LEGAL, LEGAL_PLACEHOLDER_MARKER } from "./config.js";
 import "./legal.css";
 
-const contactLink = <a href={`mailto:${LEGAL.contactEmail}`}>{LEGAL.contactEmail}</a>;
+const contactLink = <ExternalAnchor href={`mailto:${LEGAL.contactEmail}`}>{LEGAL.contactEmail}</ExternalAnchor>;
 
 function isUnconfigured() {
   return (

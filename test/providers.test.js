@@ -87,7 +87,8 @@ test("Qoder Cloud Agents is supported through its documented session protocol", 
   assert.equal(entry.compatibility, "qoder");
   assert.equal(entry.baseUrl, "https://api.qoder.com/api/v1/cloud");
   assert.equal(entry.docsUrl, "https://docs.qoder.com/cloud-agents/api/conventions/overview");
-  assert.equal(entry.keysUrl, "", "the console path is documented, its URL is not — nothing is guessed");
+  assert.equal(entry.keysUrl, "https://qoder.com/account/integrations", "the token page is linked, not guessed");
+  assert.equal(entry.keysLabel, "Create a token");
   assert.match(entry.note, /Personal Access Token/);
   assert.match(entry.note, /Qoder console/);
   assert.match(entry.note, /streams the reply/i);
@@ -99,7 +100,7 @@ test("external links are https, and base URLs are https or local http", () => {
   for (const entry of PROVIDERS) {
     for (const field of URL_FIELDS) {
       const value = entry[field];
-      if (value === "") continue;
+      if (!value) continue;
       if (field === "baseUrl" && /^http:\/\/(localhost|127\.0\.0\.1)[:/]/.test(value)) continue;
       assert.ok(typeof value === "string" && value.startsWith("https://"), `${entry.id}.${field} must be https`);
     }
