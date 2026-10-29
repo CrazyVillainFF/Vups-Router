@@ -67,6 +67,7 @@
 .settings-badge--warn{border-color:#e0b46c55;color:#e0b46c}
 .settings-badge--error{border-color:#e0858555;color:#e8b0b0}
 .settings-badge--neutral{color:#9aa8bd}
+.settings-badge--recommended{border-color:var(--accent-line);color:var(--accent);background:var(--accent-soft);flex:none;white-space:nowrap}
 .settings-filter-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:18px}
 .settings-cat-row{display:flex;gap:8px;flex-wrap:wrap}
 .settings-cat-chip{font:11px var(--mono);color:#a9b1a4;background:#111c2e;border:1px solid #243247;border-radius:999px;padding:7px 12px;cursor:pointer}
@@ -76,6 +77,7 @@
 .settings-provider-grid>.settings-empty{grid-column:1/-1}
 .settings-provider-card{display:flex;flex-direction:column;gap:8px;min-width:0;border:1px solid var(--line);border-radius:14px;padding:16px;background:#0b1322}
 .settings-provider-note{margin:0;font-size:12.5px;line-height:1.7;color:#9aa8bd;overflow-wrap:anywhere}
+.settings-provider-recommendation{margin:0;font-size:12px;line-height:1.6;color:#c9d3e3;overflow-wrap:anywhere}
 .settings-provider-cost{margin:0;font-size:11.5px;color:#71819a}
 .settings-provider-actions{margin-top:auto;display:flex;gap:8px;flex-wrap:wrap}
 .settings-guides-links{display:flex;gap:12px;flex-wrap:wrap;font-size:12px}
@@ -127,3 +129,42 @@
 .settings-skeleton-card{padding:16px;border:1px solid var(--line);border-radius:14px;background:#0b1322;display:flex;flex-direction:column;gap:10px}
 .settings-skeleton-row{display:flex;gap:10px;flex-wrap:wrap}
 @media(max-width:760px){.settings-page .settings-alert{padding:12px 40px 12px 36px}.settings-page .settings-provider-spot{padding:14px}}
+
+/* ── Redesign pass: section rhythm and action hierarchy ───────────────────── */
+/* The header divider plus the paragraph's own margin produced ~70px of empty
+   space between a section label and its first sentence. Tighten the pair. */
+.settings-presets {
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+}
+
+.settings-presets .settings-models-label {
+  margin-bottom: 0;
+  color: var(--text-tertiary, #8494ab);
+  letter-spacing: 0.14em;
+}
+
+.settings-presets + .settings-empty {
+  margin-top: 0;
+}
+
+.settings-empty {
+  color: var(--text-tertiary, #8494ab);
+}
+
+/* One destructive control per provider row, pushed away from the routine
+   actions so "Remove" never sits shoulder-to-shoulder with "Test model". */
+.settings-saved-actions .settings-remove-action {
+  margin-left: auto;
+  border-radius: var(--radius-xs, 6px);
+}
+
+.settings-saved-actions .settings-remove-action:hover {
+  background: var(--danger-soft, rgba(224, 133, 133, 0.1));
+}
+
+@media (max-width: 760px) {
+  .settings-saved-actions .settings-remove-action {
+    margin-left: 0;
+  }
+}

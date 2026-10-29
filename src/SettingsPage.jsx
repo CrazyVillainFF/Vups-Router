@@ -18,6 +18,7 @@ import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import SiteHeader from "./components/SiteHeader.jsx";
+import ExternalLink from "./components/ExternalLink.jsx";
 import HoldToDeleteDialog from "./components/HoldToDeleteDialog.jsx";
 import { Alert as LwAlert } from "./components/lightswind/alert";
 import { Badge as LwBadge } from "./components/lightswind/badge";
@@ -25,7 +26,8 @@ import { Skeleton } from "./components/lightswind/skeleton";
 import AnimatedContent from "./components/reactbits/AnimatedContent/AnimatedContent.jsx";
 import SpotlightCard from "./components/reactbits/SpotlightCard/SpotlightCard.jsx";
 import { capabilityLabels } from "./chat/modelCatalog.js";
-import { PROVIDER_CATEGORIES, filterProviders, providerById } from "./providers/registry.js";
+import { PROVIDER_CATEGORIES, PROVIDERS, filterProviders, providerById } from "./providers/registry.js";
+import { QODER_AUTH_MODES, QODER_REGIONS, formDiffersFromSaved, qoderRegionFor } from "./settings/qoderForm.js";
 import {
   activateProvider,
   createManagedProvider,
@@ -42,6 +44,7 @@ import {
   testProviderConnection,
   testProviderModel
 } from "./services/api.js";
+import { RecommendedBadge } from "./settings/RecommendedBadge.jsx";
 import "./settings.css";
 
 function capabilityTitle(model) {
@@ -75,6 +78,8 @@ const EMPTY_FORM = {
   model: "",
   providerType: "openai_compatible",
   compatibility: "openai",
+  authMode: "pat",
+  openapiBaseUrl: "",
   status: "supported",
   registryId: ""
 };
@@ -106,7 +111,7 @@ function protocolHelp(type) {
   if (type === "openai_responses") return "OpenAI Responses API. Use the base URL before /responses, e.g. https://api.openai.com/v1.";
   if (type === "azure_openai") return "Azure OpenAI v1 endpoint, e.g. https://{resource}.openai.azure.com/openai/v1. The key is sent in the api-key header and the model ID is your deployment name.";
   if (type === "watsonx") return "IBM watsonx: use your regional cluster URL plus ?project_id=YOUR_PROJECT_ID. The IBM Cloud API key is exchanged for an IAM token automatically.";
-  if (type === "qoder_cloud_agents") return "Qoder Cloud Agents: keep the base URL https://api.qoder.com/api/v1/cloud and paste a Personal Access Token from the Qoder console (Settings → Personal Access Tokens). Model IDs come from Qoder's own model list, for example \"ultimate\". Each message starts a new Qoder session — earlier turns are sent along with it, so Qoder's session memory is not carried over.";
+  if (type === "qoder_cloud_agents") return "Qoder Cloud Agents. Choose your region — Global (api.qoder.com / openapi.qoder.sh) or China mainland (api.qoder.com.cn / openapi.qoder.com.cn) — then use either a Personal Access Token, or a service account key which the backend exchanges at the region's OpenAPI host for a short-lived access token (about an hour, renewed automatically). The connection check lists models and falls back to a read-only agents probe; it never creates a session. Each chat message starts a new Qoder session — earlier turns are sent along with it.";
   if (type === "local_gateway") return "Ollama, LM Studio, vLLM, or another local OpenAI-compatible gateway. The deployed backend cannot reach localhost.";
   if (type === "native") return "A provider-specific API that is not one of the implemented adapters. Saving and chat are disabled for this option.";
   return "OpenAI Chat Completions API. Use the base URL before /chat/completions, e.g. https://api.example.com/v1.";
@@ -121,19 +126,41 @@ function slugify(name) {
     .slice(0, 60) || "provider";
 }
 
+// Saved configs sometimes carry a name-derived providerId ("qoder-cloud-agents")
+// instead of the registry id, so fall back to the exact display name.
+function registryEntryForSavedProvider(provider) {
+  if (!provider) return null;
+  const direct = providerById(provider.providerId);
+  if (direct) return direct;
+  const name = String(provider.provider || "").trim().toLowerCase();
+  if (!name) return null;
+  return PROVIDERS.find(entry =>
+    entry.name.toLowerCase() === name
+    || entry.id === name
+    || (Array.isArray(entry.aliases) && entry.aliases.some(alias => String(alias).toLowerCase() === name))
+  ) || null;
+}
+
 function statusLabel(provider) {
   const last = provider.lastTest;
   if (last) {
     if (last.status === "connected") return { label: "Connection verified", tone: "ok" };
     if (last.status === "reachable") return { label: "Endpoint reachable — test a model", tone: "warn" };
-    if (last.status === "invalid_key") return { label: "Last test: invalid key", tone: "error" };
+    if (last.status === "invalid_key") return { label: "Last test: authentication failed", tone: "error" };
+    if (last.status === "insufficient_scope") return { label: "Last test: permission or scope insufficient", tone: "error" };
+    if (last.status === "incorrect_region") return { label: "Last test: endpoint and region do not match", tone: "error" };
+    if (last.status === "not_found") return { label: "Last test: endpoint not found — check region and base URL", tone: "error" };
+    if (last.status === "invalid_response") return { label: "Last test: invalid response from Qoder", tone: "error" };
+    if (last.status === "rate_limited") return { label: "Last test: rate limited — try again shortly", tone: "warn" };
+    if (last.status === "provider_unavailable") return { label: "Last test: Qoder service unavailable", tone: "error" };
+    if (last.status === "bad_request") return { label: "Last test: endpoint rejected the request", tone: "error" };
     if (last.status === "insufficient_balance") return { label: "Last test: insufficient balance", tone: "warn" };
     if (last.status === "restricted") return { label: "Last test: restricted to official client", tone: "warn" };
     if (last.status === "unsupported") return { label: "Last test: protocol not supported", tone: "warn" };
     if (last.status === "model_unavailable") return { label: "Last test: model unavailable", tone: "warn" };
     if (last.status === "quota_exhausted") return { label: "Last test: free quota exhausted — wait for reset", tone: "warn" };
     if (last.status === "region_restricted") return { label: "Last test: region not eligible for free tier", tone: "warn" };
-    if (last.status === "unreachable") return { label: "Last test: unreachable", tone: "error" };
+    if (last.status === "unreachable") return { label: "Last test: network or DNS error", tone: "error" };
     if (last.status === "timeout") return { label: "Last test: timed out", tone: "error" };
     return { label: "Last test failed", tone: "error" };
   }
@@ -150,6 +177,8 @@ function formFromProvider(provider, registryEntry) {
     model: provider?.model || provider?.defaultModel || "",
     providerType: provider?.providerType || COMPATIBILITY_PROTOCOL[registryEntry?.compatibility] || "openai_compatible",
     compatibility: registryEntry?.compatibility || "openai",
+    authMode: provider?.authMode || "pat",
+    openapiBaseUrl: provider?.openapiBaseUrl || "",
     status: registryEntry?.status || (provider ? "supported" : "listed"),
     registryId: registryEntry?.id || ""
   };
@@ -157,7 +186,7 @@ function formFromProvider(provider, registryEntry) {
 
 function GuideLinks({ entry }) {
   const links = [
-    entry?.keysUrl && { href: entry.keysUrl, label: "Create a key" },
+    entry?.keysUrl && { href: entry.keysUrl, label: entry.keysLabel || "Create a key" },
     entry?.docsUrl && { href: entry.docsUrl, label: "API docs" },
     entry?.pricingUrl && { href: entry.pricingUrl, label: "Pricing" },
     entry?.website && { href: entry.website, label: "Website" }
@@ -166,9 +195,9 @@ function GuideLinks({ entry }) {
   return (
     <div className="settings-guides-links">
       {links.map(link => (
-        <a key={`${link.label}:${link.href}`} href={link.href} target="_blank" rel="noopener noreferrer">
+        <ExternalLink key={`${link.label}:${link.href}`} href={link.href}>
           {link.label} <OpenInNewRoundedIcon fontSize="inherit" />
-        </a>
+        </ExternalLink>
       ))}
     </div>
   );
@@ -270,6 +299,28 @@ export default function SettingsPage({ embedded = false }) {
     ? providers.find(provider => provider.configId === form.configId) || null
     : null;
 
+  const formDirty = formDiffersFromSaved(form, savedProvider);
+  const isQoderForm = form?.providerType === "qoder_cloud_agents";
+  const qoderRegion = isQoderForm ? qoderRegionFor(form.baseUrl) : "global";
+
+  function applyQoderRegion(regionId) {
+    const region = QODER_REGIONS.find(item => item.id === regionId);
+    if (!region) return;
+    setForm(current => ({
+      ...current,
+      baseUrl: region.businessUrl,
+      openapiBaseUrl: region.openapiUrl
+    }));
+  }
+
+  function setQoderAuthMode(authMode) {
+    setForm(current => ({
+      ...current,
+      authMode,
+      openapiBaseUrl: current.openapiBaseUrl || (qoderRegionFor(current.baseUrl) === "cn" ? "https://openapi.qoder.com.cn" : "https://openapi.qoder.sh")
+    }));
+  }
+
   const registryEntry = useMemo(() => {
     if (!form) return null;
     return providerById(form.registryId) || null;
@@ -362,7 +413,13 @@ export default function SettingsPage({ embedded = false }) {
         baseUrl: form.baseUrl.trim(),
         apiKey: form.apiKey.trim(),
         model: form.model.trim(),
-        providerType: form.providerType
+        providerType: form.providerType,
+        ...(form.providerType === "qoder_cloud_agents"
+          ? {
+              authMode: form.authMode || "pat",
+              openapiBaseUrl: form.openapiBaseUrl.trim()
+            }
+          : {})
       };
       const result = savedProvider
         ? await saveManagedProvider(savedProvider.configId, payload)
@@ -372,6 +429,9 @@ export default function SettingsPage({ embedded = false }) {
         ...current,
         configId: result.config.configId || current.configId,
         providerId: result.config.providerId || current.providerId,
+        baseUrl: result.config.baseUrl || current.baseUrl,
+        authMode: result.config.authMode || current.authMode,
+        openapiBaseUrl: result.config.openapiBaseUrl ?? current.openapiBaseUrl,
         apiKey: ""
       }));
       setAlert({ severity: "success", message: `${result.message} Key: ${result.config.apiKeyMasked || "saved"}.` });
@@ -398,7 +458,13 @@ export default function SettingsPage({ embedded = false }) {
       const payload = {
         baseUrl: form.baseUrl.trim(),
         apiKey: form.apiKey.trim() || undefined,
-        providerType: form.providerType
+        providerType: form.providerType,
+        ...(form.providerType === "qoder_cloud_agents"
+          ? {
+              authMode: form.authMode || "pat",
+              openapiBaseUrl: form.openapiBaseUrl.trim()
+            }
+          : {})
       };
       const result = savedProvider
         ? await testManagedProvider(savedProvider.configId, payload)
@@ -442,7 +508,13 @@ export default function SettingsPage({ embedded = false }) {
         baseUrl: form.baseUrl.trim(),
         apiKey: form.apiKey.trim() || undefined,
         providerType: form.providerType,
-        model
+        model,
+        ...(form.providerType === "qoder_cloud_agents"
+          ? {
+              authMode: form.authMode || "pat",
+              openapiBaseUrl: form.openapiBaseUrl.trim()
+            }
+          : {})
       };
       const result = savedProvider
         ? await testManagedProviderModel(savedProvider.configId, payload)
@@ -718,19 +790,26 @@ export default function SettingsPage({ embedded = false }) {
             )}
             <div className="settings-saved-list">
               {providers.map(provider => {
-                const status = statusLabel(provider);
+                const status = form && form.configId === provider.configId && formDirty
+                  ? { label: "Unsaved changes — retest needed", tone: "warn" }
+                  : statusLabel(provider);
                 const isActive = provider.configId === activeConfigId;
+                const registryEntry = registryEntryForSavedProvider(provider);
                 return (
                   <div key={provider.configId || provider.providerId} className={`settings-saved-card${isActive ? " is-active" : ""}`}>
                     <div className="settings-saved-card-main">
                       <div className="settings-provider-name">
                         {provider.provider}
+                        <RecommendedBadge show={Boolean(registryEntry?.recommended)} />
                         {isActive && <StatusBadge tone="ok">ACTIVE</StatusBadge>}
                         <StatusBadge tone={status.tone} dot>{status.label}</StatusBadge>
                       </div>
                       <div className="settings-provider-meta">
                         <span className="settings-provider-url">{provider.baseUrl}</span>
                         <span>{provider.providerType || "openai_compatible"}</span>
+                        {provider.providerType === "qoder_cloud_agents" && (
+                          <span>{provider.authMode === "service_account" ? "service account key" : "personal access token"}</span>
+                        )}
                         <span><KeyRoundedIcon fontSize="inherit" /> {provider.apiKeyMasked || "saved"}</span>
                         <span>{provider.models?.length || 0} saved model{provider.models?.length === 1 ? "" : "s"}</span>
                         <span>Default: {provider.defaultModel || provider.model || "none"}</span>
@@ -778,7 +857,15 @@ export default function SettingsPage({ embedded = false }) {
                       >
                         Test model
                       </Button>
-                      <Button size="small" color="error" variant="text" disabled={Boolean(busy)} startIcon={<DeleteOutlineRoundedIcon />} onClick={() => requestDelete(provider)}>
+                      <Button
+                        size="small"
+                        color="error"
+                        variant="text"
+                        className="settings-remove-action"
+                        disabled={Boolean(busy)}
+                        startIcon={<DeleteOutlineRoundedIcon />}
+                        onClick={() => requestDelete(provider)}
+                      >
                         Remove
                       </Button>
                     </div>
@@ -835,6 +922,7 @@ export default function SettingsPage({ embedded = false }) {
                     <article className="settings-provider-card settings-provider-card--bare">
                       <div className="settings-provider-name">
                         {entry.name}
+                        <RecommendedBadge show={Boolean(entry.recommended)} />
                         {saved && (
                           <StatusBadge tone="ok">
                             SAVED{savedConfigs.length > 1 ? ` ×${savedConfigs.length}` : ""}
@@ -855,6 +943,9 @@ export default function SettingsPage({ embedded = false }) {
                         </StatusBadge>
                       </div>
                       <p className="settings-provider-note">{entry.note}</p>
+                      {entry.recommended && entry.recommendation && (
+                        <p className="settings-provider-recommendation">{entry.recommendation}</p>
+                      )}
                       <p className="settings-provider-cost">{entry.cost}</p>
                       <GuideLinks entry={entry} />
                       <div className="settings-provider-actions">
@@ -890,6 +981,14 @@ export default function SettingsPage({ embedded = false }) {
                   )}
                 </LwAlert>
               )}
+              {formDirty && savedProvider?.lastTest && (
+                <LwAlert variant="warning" size="sm" withIcon className="settings-alert settings-alert--warning">
+                  <p>
+                    Unsaved changes to the endpoint or authentication mode. The saved result (“{statusLabel(savedProvider).label}”) no longer describes this
+                    configuration — save, then run the connection check again.
+                  </p>
+                </LwAlert>
+              )}
               <div className="settings-form-grid">
                 <TextField
                   label="Provider name"
@@ -905,11 +1004,13 @@ export default function SettingsPage({ embedded = false }) {
                   onChange={event => setForm(current => ({ ...current, baseUrl: event.target.value }))}
                   placeholder="https://gateway.example.com/v1"
                   helperText={
-                    form.providerType === "watsonx"
-                      ? "Regional watsonx cluster URL plus ?project_id=YOUR_PROJECT_ID, e.g. https://us-south.ml.cloud.ibm.com?project_id=…"
-                      : form.providerType === "azure_openai"
-                        ? "Azure OpenAI v1 endpoint, e.g. https://{resource}.openai.azure.com/openai/v1. Enter it manually."
-                        : "OpenAI-compatible base URL. Extra /chat/completions suffixes are stripped automatically. Localhost only works when the backend runs on the same machine — the deployed backend rejects it with an explanation."
+                    form.providerType === "qoder_cloud_agents"
+                      ? "Regional business endpoint. Global: https://api.qoder.com/api/v1/cloud — China mainland: https://api.qoder.com.cn/api/v1/cloud. Duplicate /api/v1 or /cloud segments are normalized, never silently switched to another region."
+                      : form.providerType === "watsonx"
+                        ? "Regional watsonx cluster URL plus ?project_id=YOUR_PROJECT_ID, e.g. https://us-south.ml.cloud.ibm.com?project_id=…"
+                        : form.providerType === "azure_openai"
+                          ? "Azure OpenAI v1 endpoint, e.g. https://{resource}.openai.azure.com/openai/v1. Enter it manually."
+                          : "OpenAI-compatible base URL. Extra /chat/completions suffixes are stripped automatically. Localhost only works when the backend runs on the same machine — the deployed backend rejects it with an explanation."
                   }
                   inputProps={{ maxLength: 500 }}
                   required
@@ -918,7 +1019,19 @@ export default function SettingsPage({ embedded = false }) {
                   select
                   label="API protocol"
                   value={form.providerType}
-                  onChange={event => setForm(current => ({ ...current, providerType: event.target.value }))}
+                  onChange={event => {
+                    const providerType = event.target.value;
+                    setForm(current => {
+                      if (providerType !== "qoder_cloud_agents") return { ...current, providerType };
+                      const region = QODER_REGIONS.find(item => item.id === qoderRegionFor(current.baseUrl)) || QODER_REGIONS[0];
+                      return {
+                        ...current,
+                        providerType,
+                        baseUrl: String(current.baseUrl || "").trim() ? current.baseUrl : region.businessUrl,
+                        openapiBaseUrl: current.openapiBaseUrl || region.openapiUrl
+                      };
+                    });
+                  }}
                   helperText={protocolHelp(form.providerType)}
                   SelectProps={{ native: true }}
                 >
@@ -926,6 +1039,49 @@ export default function SettingsPage({ embedded = false }) {
                     <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </TextField>
+                {isQoderForm && (
+                  <TextField
+                    select
+                    label="Qoder region"
+                    value={qoderRegion}
+                    onChange={event => applyQoderRegion(event.target.value)}
+                    helperText="Sets both the business endpoint and the OpenAPI host. VupsRouter never swaps regions silently."
+                    SelectProps={{ native: true }}
+                  >
+                    {QODER_REGIONS.map(region => (
+                      <option key={region.id} value={region.id}>{region.label}</option>
+                    ))}
+                    {qoderRegion === "custom" && <option value="custom">Custom endpoint</option>}
+                  </TextField>
+                )}
+                {isQoderForm && (
+                  <TextField
+                    select
+                    label="Qoder authentication"
+                    value={form.authMode || "pat"}
+                    onChange={event => setQoderAuthMode(event.target.value)}
+                    helperText={
+                      form.authMode === "service_account"
+                        ? "The service account key stays on the server and is exchanged for a short-lived token; it is never sent to the business API directly."
+                        : "A Personal Access Token is sent as a bearer token to the business API."
+                    }
+                    SelectProps={{ native: true }}
+                  >
+                    {QODER_AUTH_MODES.map(mode => (
+                      <option key={mode.value} value={mode.value}>{mode.label}</option>
+                    ))}
+                  </TextField>
+                )}
+                {isQoderForm && form.authMode === "service_account" && (
+                  <TextField
+                    label="Qoder OpenAPI base URL"
+                    value={form.openapiBaseUrl}
+                    onChange={event => setForm(current => ({ ...current, openapiBaseUrl: event.target.value }))}
+                    placeholder="https://openapi.qoder.sh"
+                    helperText="Host used only for the service-token exchange. Must be the same region as the business endpoint — Global: https://openapi.qoder.sh · China mainland: https://openapi.qoder.com.cn."
+                    inputProps={{ maxLength: 500 }}
+                  />
+                )}
                 <TextField
                   label="API key"
                   type={showKey ? "text" : "password"}
