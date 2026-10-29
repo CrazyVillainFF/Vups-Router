@@ -117,4 +117,129 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
 .auth-external__actions .MuiButton-root{min-height:40px;border-color:#2b3a52;color:#dbe5f4;font-size:12.5px}
 .auth-external__actions .MuiButton-root:hover{border-color:var(--accent);background:rgba(108,155,255,.06)}
 .auth-external__note{margin:11px 0 0;color:#71819a;font-size:10.5px;line-height:1.55;text-align:center}
+.auth-external__handoff-actions{display:flex;gap:8px;justify-content:center;margin-top:8px}
 @media(max-width:650px){.auth-external{margin-top:18px;padding-top:15px}}
+
+/* ── Design system: semantic layer ───────────────────────────────────────────
+   The primitives at the top of this file (--bg, --surface-2, --accent, …) stay
+   the single source of colour truth. The aliases below name intent so screens
+   reference roles (text-tertiary, surface-raised, duration-base) instead of
+   repeating hex values, which is what made earlier pages drift apart. */
+:root {
+  --font-sans: "Outfit", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-2xs: 10.5px;
+  --text-xs: 11.5px;
+  --text-sm: 12.5px;
+  --text-base: 13.5px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 24px;
+  --text-2xl: clamp(2rem, 3.6vw, 2.9rem);
+  --text-3xl: clamp(2.5rem, 5vw, 3.6rem);
+  --leading-tight: 1.12;
+  --leading-snug: 1.45;
+  --leading-relaxed: 1.75;
+  --tracking-tight: -0.02em;
+  --tracking-caps: 0.14em;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  --radius-xs: 6px;
+  --radius-pill: 999px;
+  --radius-xl: 22px;
+
+  --elev-1: 0 1px 2px rgba(2, 6, 14, 0.4);
+  --elev-2: 0 8px 24px rgba(2, 6, 14, 0.45);
+  --elev-3: 0 24px 60px rgba(2, 6, 14, 0.55);
+
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasis: cubic-bezier(0.22, 0.8, 0.28, 1);
+
+  --text-primary: var(--ink);
+  --text-secondary: var(--muted);
+  --text-tertiary: #8494ab;
+  --text-disabled: #64748b;
+
+  --surface-raised: #101a2b;
+  --surface-hover: rgba(148, 163, 184, 0.06);
+  --line-subtle: rgba(148, 163, 184, 0.1);
+
+  --success-soft: rgba(125, 191, 154, 0.1);
+  --success-line: rgba(125, 191, 154, 0.32);
+  --warning-soft: rgba(224, 180, 108, 0.1);
+  --warning-line: rgba(224, 180, 108, 0.32);
+  --danger-soft: rgba(224, 133, 133, 0.1);
+  --danger-line: rgba(224, 133, 133, 0.34);
+
+  --control-height: 38px;
+  --z-sticky: 20;
+  --z-dialog: 60;
+  --z-toast: 80;
+}
+
+/* One scrollbar treatment for the whole product, so nested app panels no
+   longer alternate between a hairline and a chunky browser default. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.24) transparent;
+}
+
+@supports selector(::-webkit-scrollbar) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.24);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.4);
+    background-clip: content-box;
+  }
+}
+
+/* Reduced motion is handled per component where the animation carries meaning;
+   this backstop covers decorative loops and transitions that were not. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+  /* Progress indicators still have to say "working"; they keep a slow spin
+     instead of freezing at their first frame. */
+  [role="progressbar"],
+  .MuiCircularProgress-root,
+  .vr-image-gen__spinner,
+  .vr-spinner {
+    animation-duration: 1.4s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
