@@ -12,7 +12,7 @@ use tauri::AppHandle;
 
 const API_ORIGIN: &str = "https://vups-router-be.onrender.com";
 const MAX_PROXY_BODY: usize = 64 * 1024 * 1024;
-const HTML_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+const HTML_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost https://api.github.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 
 #[derive(Clone)]
 struct ServerState {
