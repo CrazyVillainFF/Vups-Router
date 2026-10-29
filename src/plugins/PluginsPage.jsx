@@ -1,11 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowSquareOut,
   BookOpen,
   Briefcase,
   ChartBar,
   ChatCircle,
-  CheckCircle,
   CircleNotch,
   Code,
   Database,
@@ -13,16 +11,14 @@ import {
   Image,
   Lightning,
   MagnifyingGlass,
-  Plugs,
   PuzzlePiece,
   ShieldCheck,
   Sparkle,
-  Trash,
-  WarningCircle,
   Wrench,
   X
 } from "@phosphor-icons/react";
 import HoldToDeleteDialog from "../components/HoldToDeleteDialog.jsx";
+import ExternalAnchor from "../components/ExternalLink.jsx";
 import {
   executePluginTool,
   fetchPluginActivity,
@@ -33,6 +29,9 @@ import {
   uninstallPlugin,
   updatePlugin
 } from "../services/api.js";
+import PluginActionDialog from "./PluginActionDialog.jsx";
+import PluginDetailView from "./PluginDetailView.jsx";
+import { connectionStatus, redactSecrets, setupGuidance } from "./pluginDetails.js";
 import "./plugins.css";
 
 const CATEGORY_LABELS = {
@@ -65,39 +64,21 @@ const STATUS_META = {
   available: { label: "Ready", tone: "ok" },
   requires_setup: { label: "Needs setup", tone: "setup" },
   oauth_required: { label: "OAuth required", tone: "setup" },
-  in_development: { label: "In development", tone: "muted" },
-  connected: { label: "Connected", tone: "ok" },
-  needs_reconnection: { label: "Reconnect", tone: "warn" },
-  error: { label: "Error", tone: "danger" },
-  disabled: { label: "Disabled", tone: "muted" },
-  disconnected: { label: "Not installed", tone: "muted" }
+  in_development: { label: "In development", tone: "muted" }
 };
 
-function pluginStatus(plugin) {
-  return plugin.installed ? plugin.connection : plugin.availability;
-}
-
+// The card badge uses the same derivation as the detail screen, so a plugin
+// whose last real check failed never reads as "Connected" in the grid either.
 function statusMeta(plugin) {
-  return STATUS_META[pluginStatus(plugin)] || STATUS_META.in_development;
+  if (plugin.installed) {
+    const status = connectionStatus(plugin);
+    return { label: status.label, tone: status.tone };
+  }
+  return STATUS_META[plugin.availability] || STATUS_META.in_development;
 }
 
 function canConnect(plugin) {
   return plugin.availability === "available" || plugin.availability === "requires_setup";
-}
-
-function exampleArgs(schema) {
-  const properties = schema?.properties || {};
-  const values = {};
-  for (const [key, field] of Object.entries(properties)) {
-    if (field.default !== undefined) values[key] = field.default;
-    else if (field.type === "integer") values[key] = field.minimum ?? 1;
-    else if (field.type === "number") values[key] = field.minimum ?? 0;
-    else if (field.type === "boolean") values[key] = false;
-    else if (field.type === "array") values[key] = [];
-    else if (field.type === "object") values[key] = {};
-    else values[key] = "";
-  }
-  return values;
 }
 
 function formatDate(value) {
@@ -176,12 +157,8 @@ export default function PluginsPage() {
   const [connectBusy, setConnectBusy] = useState(false);
   const [actionBusy, setActionBusy] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [toolName, setToolName] = useState("");
-  const [toolArgs, setToolArgs] = useState("{}");
-  const [toolConfirm, setToolConfirm] = useState(false);
-  const [toolBusy, setToolBusy] = useState(false);
-  const [toolResult, setToolResult] = useState("");
-  const [toolError, setToolError] = useState("");
+  const [actionTool, setActionTool] = useState(null);
+  const [detailError, setDetailError] = useState("");
 
   const detail = plugins.find(plugin => plugin.id === detailId) || null;
   const connectTarget = plugins.find(plugin => plugin.id === connectId) || null;
@@ -207,15 +184,10 @@ export default function PluginsPage() {
     load();
   }, []);
 
-  useEffect(() => {
-    if (!detail) return;
-    const firstTool = detail.tools?.[0];
-    setToolName(firstTool?.name || "");
-    setToolArgs(firstTool ? JSON.stringify(exampleArgs(firstTool.inputSchema), null, 2) : "{}");
-    setToolResult("");
-    setToolError("");
-    setToolConfirm(false);
-  }, [detail?.id]);
+  function openDetail(id) {
+    setDetailError("");
+    setDetailId(id);
+  }
 
   const categories = useMemo(
     () => [...new Set(plugins.map(plugin => plugin.category))].sort((a, b) => (CATEGORY_LABELS[a] || a).localeCompare(CATEGORY_LABELS[b] || b)),
@@ -236,13 +208,18 @@ export default function PluginsPage() {
   }, [plugins, query, category, statusFilter]);
 
   function openConnect(plugin) {
-    setDetailId("");
     setConnectId(plugin.id);
     setConnectError("");
     setConnectValues(Object.fromEntries((plugin.auth.fields || []).map(field => [
       field.key,
       field.type === "select" ? field.options?.[0]?.value || "" : ""
     ])));
+  }
+
+  // Whatever the server or a provider sends back passes through the redactor
+  // before it can reach the screen, the notice line, or a thrown error message.
+  function safeMessage(value, fallback) {
+    return redactSecrets(value || fallback);
   }
 
   async function submitConnect(event) {
@@ -259,13 +236,14 @@ export default function PluginsPage() {
       const result = connectTarget.installed
         ? await updatePlugin(connectTarget.id, payload)
         : await installPlugin(connectTarget.id, payload);
-      setNotice(result.message || `${connectTarget.name} is connected.`);
+      setNotice(safeMessage(result.message, `${connectTarget.name} is connected.`));
       const id = connectTarget.id;
       setConnectId("");
       await load();
       setDetailId(id);
+      setDetailError("");
     } catch (connectFailure) {
-      setConnectError(getApiErrorMessage(connectFailure));
+      setConnectError(safeMessage(getApiErrorMessage(connectFailure), "Could not save this connection."));
     } finally {
       setConnectBusy(false);
     }
@@ -274,12 +252,15 @@ export default function PluginsPage() {
   async function handleTest(plugin) {
     setActionBusy(plugin.id);
     setError("");
+    if (detailId === plugin.id) setDetailError("");
     try {
       const result = await testPlugin(plugin.id);
-      setNotice(result.message || `${plugin.name} is connected.`);
+      setNotice(safeMessage(result.message, `${plugin.name} answered its connection check.`));
       await load();
     } catch (testError) {
-      setError(getApiErrorMessage(testError));
+      const message = safeMessage(getApiErrorMessage(testError), "The connection check did not succeed.");
+      if (detailId === plugin.id) setDetailError(message);
+      else setError(message);
     } finally {
       setActionBusy("");
     }
@@ -288,52 +269,27 @@ export default function PluginsPage() {
   async function removePlugin() {
     if (!deleteTarget) return;
     const plugin = deleteTarget;
-    await uninstallPlugin(plugin.id);
+    try {
+      await uninstallPlugin(plugin.id);
+    } catch (removeError) {
+      throw new Error(safeMessage(getApiErrorMessage(removeError), `Could not disconnect ${plugin.name}.`));
+    }
     setNotice(`${plugin.name} disconnected.`);
     if (detailId === plugin.id) setDetailId("");
     setDeleteTarget(null);
     await load();
   }
 
-  function chooseTool(name) {
-    const tool = detail?.tools?.find(item => item.name === name);
-    setToolName(name);
-    setToolArgs(tool ? JSON.stringify(exampleArgs(tool.inputSchema), null, 2) : "{}");
-    setToolResult("");
-    setToolError("");
-    setToolConfirm(false);
-  }
-
-  async function runTool() {
-    if (!detail || !toolName || toolBusy) return;
-    let args;
+  async function runPluginTool(tool, args, confirm) {
+    if (!detail) throw new Error("Open the plugin before running an action.");
     try {
-      args = JSON.parse(toolArgs || "{}");
-      if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("not an object");
-    } catch {
-      setToolError("Tool arguments must be a JSON object.");
-      return;
-    }
-    const tool = detail.tools?.find(item => item.name === toolName);
-    if (tool?.sensitive && !toolConfirm) {
-      setToolError("Confirm this action before running the tool.");
-      return;
-    }
-    setToolBusy(true);
-    setToolError("");
-    setToolResult("");
-    try {
-      const result = await executePluginTool(detail.id, toolName, args, toolConfirm);
-      setToolResult(JSON.stringify(result.result, null, 2));
+      const response = await executePluginTool(detail.id, tool.name, args, confirm);
       await load();
+      return response;
     } catch (runError) {
-      setToolError(getApiErrorMessage(runError));
-    } finally {
-      setToolBusy(false);
+      throw new Error(safeMessage(getApiErrorMessage(runError), "That action did not run."));
     }
   }
-
-  const detailStatus = detail ? statusMeta(detail) : null;
 
   return (
     <main className="vr-page" id="main-content">
@@ -446,7 +402,7 @@ export default function PluginsPage() {
                     <span>{plugin.tools.length} tool{plugin.tools.length === 1 ? "" : "s"}</span>
                   </div>
                   <div className="vr-plugin-card-actions">
-                    <button type="button" className="vr-secondary-small" onClick={() => setDetailId(plugin.id)}>
+                    <button type="button" className="vr-secondary-small" onClick={() => openDetail(plugin.id)}>
                       Details
                     </button>
                     {installed ? (
@@ -454,13 +410,13 @@ export default function PluginsPage() {
                         <button type="button" className="vr-secondary-small" onClick={() => handleTest(plugin)} disabled={actionBusy === plugin.id}>
                           {actionBusy === plugin.id ? "Testing…" : "Test"}
                         </button>
-                        <button type="button" className="vr-primary-small" onClick={() => setDetailId(plugin.id)}>
+                        <button type="button" className="vr-primary-small" onClick={() => openDetail(plugin.id)}>
                           Manage
                         </button>
                       </>
                     ) : canConnect(plugin) ? (
                       <button type="button" className="vr-primary-small" onClick={() => openConnect(plugin)}>
-                        {plugin.auth.type === "none" ? "Install" : "Connect"}
+                        {plugin.auth.type === "none" ? "Turn on" : "Connect"}
                       </button>
                     ) : (
                       <button type="button" className="vr-secondary-small" disabled>
@@ -507,7 +463,7 @@ export default function PluginsPage() {
         </p>
       </div>
 
-      {detail ? (
+      {detail && !connectTarget ? (
         <Modal
           title={detail.name}
           subtitle={`${CATEGORY_LABELS[detail.category] || detail.category} · ${detail.auth.label}`}
@@ -516,127 +472,20 @@ export default function PluginsPage() {
           footer={
             <div className="vr-plugin-modal-actions">
               <button type="button" className="vr-secondary-small" onClick={() => setDetailId("")}>Close</button>
-              {detail.installed ? (
-                <>
-                  <button type="button" className="vr-secondary-small" onClick={() => openConnect(detail)}>Update credentials</button>
-                  <button type="button" className="vr-primary-small" onClick={() => handleTest(detail)} disabled={actionBusy === detail.id}>
-                    {actionBusy === detail.id ? "Testing…" : "Test connection"}
-                  </button>
-                  <button type="button" className="vr-danger-small" onClick={() => setDeleteTarget(detail)}>
-                    <Trash size={14} /> Uninstall
-                  </button>
-                </>
-              ) : canConnect(detail) ? (
-                <button type="button" className="vr-primary-small" onClick={() => openConnect(detail)}>
-                  {detail.auth.type === "none" ? "Install plugin" : "Connect plugin"}
-                </button>
-              ) : null}
             </div>
           }
         >
-          <div className="vr-plugin-detail-status">
-            <span className="vr-status-pill" data-tone={detailStatus?.tone}>{detailStatus?.label}</span>
-            <span>{detail.tools.length} tool{detail.tools.length === 1 ? "" : "s"}</span>
-            {detail.website ? (
-              <a href={detail.website} target="_blank" rel="noreferrer">
-                Official site <ArrowSquareOut size={13} />
-              </a>
-            ) : null}
-          </div>
-          <p className="vr-plugin-detail-description">{detail.description}</p>
-
-          {detail.installed ? (
-            <div className="vr-plugin-installed-panel">
-              <div>
-                <span>Connection</span>
-                <strong>{detailStatus?.label}</strong>
-              </div>
-              <div>
-                <span>Last tested</span>
-                <strong>{formatDate(detail.lastTestAt)}</strong>
-              </div>
-              <div>
-                <span>Credentials</span>
-                <strong>{Object.keys(detail.credentialsConfigured || {}).length ? "Saved securely" : "Not required"}</strong>
-              </div>
-              {detail.lastTestMessage ? <p>{detail.lastTestMessage}</p> : null}
-            </div>
-          ) : detail.availability === "in_development" ? (
-            <div className="vr-callout vr-callout--warning">
-              <WarningCircle size={18} />
-              <div>
-                <strong>Adapter in development</strong>
-                <span>This integration is listed so the catalog is honest about what is planned. It has no executable adapter yet and cannot be installed.</span>
-              </div>
-            </div>
-          ) : null}
-
-          <section className="vr-plugin-permissions">
-            <ShieldCheck size={17} />
-            <div>
-              <h3>Permissions</h3>
-              <ul>{detail.permissions.map(permission => <li key={permission}>{permission}</li>)}</ul>
-            </div>
-          </section>
-
-          {detail.tools.length > 0 ? (
-            <section className="vr-plugin-tools">
-              <h3>Tools</h3>
-              <div className="vr-plugin-tool-list">
-                {detail.tools.map(tool => (
-                  <div className="vr-plugin-tool" key={tool.name}>
-                    <div>
-                      <strong>{tool.name}</strong>
-                      <span>{tool.description}</span>
-                    </div>
-                    <div className="vr-plugin-tool-actions">
-                      {tool.sensitive ? <span className="vr-status-pill" data-tone="warn">Confirmation required</span> : null}
-                      {detail.installed ? (
-                        <button type="button" className="vr-link-button" onClick={() => chooseTool(tool.name)}>Use tool</button>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          {detail.installed && detail.tools.length > 0 ? (
-            <section className="vr-plugin-console">
-              <div className="vr-plugin-section-head">
-                <div>
-                  <span className="vr-page-kicker">TOOL CONSOLE</span>
-                  <h3>Run a tool</h3>
-                </div>
-                <span className="vr-plugin-muted">Results are not stored in chat history.</span>
-              </div>
-              <label>
-                <span>Tool</span>
-                <select className="vr-select" value={toolName} onChange={event => chooseTool(event.target.value)}>
-                  {detail.tools.map(tool => <option key={tool.name} value={tool.name}>{tool.name}</option>)}
-                </select>
-              </label>
-              <label>
-                <span>Arguments (JSON)</span>
-                <textarea value={toolArgs} onChange={event => setToolArgs(event.target.value)} rows={7} spellCheck={false} />
-              </label>
-              {detail.tools.find(tool => tool.name === toolName)?.sensitive ? (
-                <label className="vr-plugin-confirm">
-                  <input type="checkbox" checked={toolConfirm} onChange={event => setToolConfirm(event.target.checked)} />
-                  I confirm this action changes data or sends a message.
-                </label>
-              ) : null}
-              {toolError ? <div className="vr-inline-error" role="alert">{toolError}</div> : null}
-              <div className="vr-plugin-console-actions">
-                <button type="button" className="vr-primary-small" onClick={runTool} disabled={toolBusy}>
-                  {toolBusy ? <><CircleNotch size={14} className="vr-spin" /> Running…</> : "Run tool"}
-                </button>
-              </div>
-              {toolResult ? (
-                <pre className="vr-plugin-result" aria-label="Tool result">{toolResult}</pre>
-              ) : null}
-            </section>
-          ) : null}
+          {detailError ? <div className="vr-inline-error" role="alert">{detailError}</div> : null}
+          <PluginDetailView
+            key={detail.id}
+            plugin={detail}
+            testing={actionBusy === detail.id}
+            runDebug={runPluginTool}
+            onTest={() => handleTest(detail)}
+            onConnect={() => openConnect(detail)}
+            onDisconnect={() => setDeleteTarget(detail)}
+            onRunAction={name => setActionTool({ pluginId: detail.id, name })}
+          />
         </Modal>
       ) : null}
 
@@ -649,17 +498,56 @@ export default function PluginsPage() {
             <div className="vr-plugin-modal-actions">
               <button type="button" className="vr-secondary-small" onClick={() => setConnectId("")} disabled={connectBusy}>Cancel</button>
               <button type="submit" form="vr-plugin-connect-form" className="vr-primary-small" disabled={connectBusy}>
-                {connectBusy ? <><CircleNotch size={14} className="vr-spin" /> Testing…</> : connectTarget.installed ? "Save connection" : "Connect"}
+                {connectBusy ? (
+                  <><CircleNotch size={14} className="vr-spin" /> Testing…</>
+                ) : connectTarget.installed
+                  ? "Save and test"
+                  : connectTarget.auth.type === "none"
+                    ? "Turn on"
+                    : "Connect and test"}
               </button>
             </div>
           }
         >
           <form id="vr-plugin-connect-form" className="vr-plugin-connect-form" onSubmit={submitConnect}>
-            <p>
-              {connectTarget.auth.type === "none"
-                ? "This integration uses public data and does not need an account or key."
-                : "Credentials are sent over HTTPS, encrypted on the server, and never returned to this app."}
-            </p>
+            {(() => {
+              const guidance = setupGuidance(connectTarget);
+              return (
+                <>
+                  <div className="vr-plugin-connect-intro">
+                    <strong>{guidance.headline}</strong>
+                    <p>{guidance.sentence}</p>
+                  </div>
+                  {guidance.worksWithout?.length ? (
+                    <p className="vr-plugin-muted">
+                      Keeps working without a token: {guidance.worksWithout.join(", ").toLowerCase()}.
+                    </p>
+                  ) : null}
+                  {guidance.needsTokenFor?.length ? (
+                    <p className="vr-plugin-muted">
+                      {guidance.requiresCredentials ? "Needs the key" : "Needs the token"}:{" "}
+                      {guidance.needsTokenFor.join(", ").toLowerCase()}.
+                    </p>
+                  ) : null}
+                  {guidance.minimumAccess ? (
+                    <p className="vr-plugin-setup-note">
+                      <ShieldCheck size={14} />
+                      <span>
+                        <strong>Narrowest access that works:</strong> {guidance.minimumAccess}
+                        {guidance.guidanceUrl ? (
+                          <>
+                            {" "}
+                            <ExternalAnchor href={guidance.guidanceUrl}>
+                              {guidance.guidanceLabel || "Open the provider site"}
+                            </ExternalAnchor>
+                          </>
+                        ) : null}
+                      </span>
+                    </p>
+                  ) : null}
+                </>
+              );
+            })()}
             {(connectTarget.auth.fields || []).map(field => (
               <label key={field.key}>
                 <span>{field.label}{field.required ? "" : " (optional)"}</span>
@@ -683,9 +571,32 @@ export default function PluginsPage() {
                 )}
               </label>
             ))}
+            <p className="vr-plugin-setup-note">
+              <ShieldCheck size={14} />
+              <span>
+                Paste credentials here, never into a chat message. They are sent over HTTPS, encrypted on the server, and
+                never shown again — leaving a secret field blank keeps the saved value.
+              </span>
+            </p>
             {connectError ? <div className="vr-inline-error" role="alert">{connectError}</div> : null}
           </form>
         </Modal>
+      ) : null}
+
+      {detail && actionTool ? (
+        (() => {
+          const tool = detail.tools.find(item => item.name === actionTool.name);
+          if (!tool || actionTool.pluginId !== detail.id) return null;
+          return (
+            <PluginActionDialog
+              key={`${detail.id}:${tool.name}`}
+              plugin={detail}
+              tool={tool}
+              onClose={() => setActionTool(null)}
+              onRun={runPluginTool}
+            />
+          );
+        })()
       ) : null}
 
       <HoldToDeleteDialog
