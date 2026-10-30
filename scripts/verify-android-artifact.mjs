@@ -171,8 +171,10 @@ if (expectedCertSha256) {
 // 7. Alignment. Unaligned resources make some installers reject the package.
 const zipalign = tool("zipalign");
 const alignment = run(zipalign, ["-c", "-v", "4", apkPath]);
+// zipalign's own success line is misspelled ("succesful") in AOSP, so matching
+// only the correct spelling would reject every correctly aligned APK.
 check(
-  alignment.status === 0 && /Verification successful/i.test(alignment.stdout),
+  alignment.status === 0 && /Verification succe(ss|s)ful/i.test(alignment.stdout),
   "zipalign reports the archive is aligned",
   alignment.stdout.trim().split("\n").pop()
 );

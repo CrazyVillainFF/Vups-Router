@@ -262,7 +262,10 @@ jobs:
           }
           $signed = "false"
           $publisher = ""
-          if ($MODE -ne "none") {
+          # These are workflow `env:` entries, so they are only reachable as
+          # $env:NAME here. As bare $MODE/$REQUIRED they read as empty, which made
+          # every unsigned build take the signing branch and fail this gate.
+          if ($env:MODE -ne "none") {
             if (-not $env:SIGNTOOL) {
               Write-Error "Signing was attempted but signtool.exe is unavailable, so no signature could be verified."
               exit 1
@@ -282,27 +285,38 @@ jobs:
               $signed = "true"
               Write-Host "$($file.Name): signature Valid; publisher $publisher"
             }
-          } elseif ($REQUIRED -eq "true") {
+          } elseif ($env:REQUIRED -eq "true") {
             Write-Error "WINDOWS_SIGNING_REQUIRED is 'true' but no code-signing credentials are configured. Add the Azure Artifact Signing or PFX secrets; unsigned installers must not be published under this setting."
             exit 1
           }
-          foreach ($file in $files) {
-            $hash = (Get-FileHash -Algorithm SHA256 -Path $file.FullName).Hash.ToLowerInvariant()
-            "$hash  $($file.Name)" | Out-File -FilePath release-checks/windows.sha256 -Append -Encoding ascii
-          }
-          # Quoted because a certificate subject contains spaces and '=', which
-          # the publish job sources as a shell file.
-          @(
-            "WINDOWS_SIGNED=$signed"
-            "WINDOWS_PUBLISHER=`"$publisher`""
-            "WINDOWS_SIGNING_MODE=`"$MODE`""
-          ) | Out-File -FilePath release-checks/windows.env -Encoding ascii
+          $checksumLines = @(
+            foreach ($file in $files) {
+              $hash = (Get-FileHash -Algorithm SHA256 -Path $file.FullName).Hash.ToLowerInvariant()
+              "$hash  $($file.Name)"
+            }
+          )
+          # The publish job runs on Linux and feeds these lines to `sha256sum -c`,
+          # which treats a carriage return as part of the file name. Out-File on a
+          # Windows runner writes CRLF, so both files are written with LF here.
+          $envLines = @(
+            # Quoted because a certificate subject contains spaces and '=', which
+            # the publish job sources as a shell file.
+            "WINDOWS_SIGNED=$signed",
+            "WINDOWS_PUBLISHER=`"$publisher`"",
+            "WINDOWS_SIGNING_MODE=`"$($env:MODE)`""
+          )
+          # $PWD is spelled out because .NET's own working directory does not
+          # follow PowerShell's location, and a relative path here could otherwise
+          # write the checksums somewhere the upload step never looks.
+          [IO.File]::WriteAllText((Join-Path $PWD "release-checks/windows.sha256"), ($checksumLines -join "`n") + "`n")
+          [IO.File]::WriteAllText((Join-Path $PWD "release-checks/windows.env"), ($envLines -join "`n") + "`n")
           Get-Content release-checks/windows.sha256
-          if ($signed -eq "true") {
+          $summary = if ($signed -eq "true") {
             "Windows installers: Authenticode-signed, `signtool verify /pa` passed, publisher `$publisher`."
           } else {
             "Windows installers: unsigned (no signing credentials configured). SmartScreen will warn; the release notes say so."
-          } | Out-File -FilePath release-checks/windows-summary.md -Encoding utf8
+          }
+          $summary | Out-File -FilePath release-checks/windows-summary.md -Encoding utf8
       - name: Report the signing status
         shell: pwsh
         run: Get-Content release-checks/windows-summary.md | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
@@ -386,7 +400,7 @@ jobs:
             --expected-app-id "$ANDROID_APP_ID" \
             --min-bytes "$MIN_ARTIFACT_BYTES" \
             --expect-debug-key \
-            --build-tools "$BUILD_TOOLS"
+            --build-tools "${{ steps.sdk.outputs.build_tools }}"
       - uses: actions/upload-artifact@v4
         with:
           name: vupsrouter-android-debug-assets
@@ -482,7 +496,7 @@ jobs:
             --expected-app-id "$ANDROID_APP_ID" \
             --expected-cert-sha256 "$ANDROID_RELEASE_CERT_SHA256" \
             --min-bytes "$MIN_ARTIFACT_BYTES" \
-            --build-tools "$BUILD_TOOLS"
+            --build-tools "${{ steps.sdk.outputs.build_tools }}"
       - uses: actions/upload-artifact@v4
         with:
           name: vupsrouter-android-release-assets
