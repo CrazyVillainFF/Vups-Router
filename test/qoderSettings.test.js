@@ -74,8 +74,11 @@ test("trailing slashes and blank values do not count as edits", () => {
 
 test("the settings form sends the Qoder mode and OpenAPI host on save, test, and model test", () => {
   const saveBlock = pageSource.slice(pageSource.indexOf("async function handleSave"), pageSource.indexOf("async function handleTest"));
-  assert.match(saveBlock, /authMode: form\.authMode \|\| "pat"/);
-  assert.match(saveBlock, /openapiBaseUrl: form\.openapiBaseUrl\.trim\(\)/);
+  assert.match(saveBlock, /buildProviderSavePayload\(\{ form, providerId, selectedModels, defaultModel \}\)/);
+  const formSource = readFileSync(path.join(root, "src", "settings", "modelForm.js"), "utf8").replace(/\r\n/g, "\n");
+  assert.match(formSource, /payload\.authMode = form\?\.authMode \|\| "pat"/);
+  assert.match(formSource, /payload\.openapiBaseUrl = String\(form\?\.openapiBaseUrl \|\| ""\)\.trim\(\)/);
+  assert.match(formSource, /if \(payload\.providerType === "qoder_cloud_agents"\)/);
   const testBlock = pageSource.slice(pageSource.indexOf("async function handleTest("), pageSource.indexOf("async function handleTestModel"));
   assert.match(testBlock, /authMode: form\.authMode \|\| "pat"/);
   assert.match(testBlock, /openapiBaseUrl: form\.openapiBaseUrl\.trim\(\)/);
@@ -87,7 +90,8 @@ test("the settings form sends the Qoder mode and OpenAPI host on save, test, and
 test("saved Qoder settings are restored into the form", () => {
   assert.match(pageSource, /authMode: provider\?\.authMode \|\| "pat"/);
   assert.match(pageSource, /openapiBaseUrl: provider\?\.openapiBaseUrl \|\| ""/);
-  assert.match(pageSource, /authMode: result\.config\.authMode \|\| current\.authMode/);
+  assert.match(pageSource, /authMode: savedConfig\.authMode \|\| current\.authMode/);
+  assert.match(pageSource, /openapiBaseUrl: savedConfig\.openapiBaseUrl \?\? current\.openapiBaseUrl/);
 });
 
 test("the form exposes region and authentication selectors for Qoder only", () => {

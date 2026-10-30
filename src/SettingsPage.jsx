@@ -28,6 +28,7 @@ import SpotlightCard from "./components/reactbits/SpotlightCard/SpotlightCard.js
 import { capabilityLabels } from "./chat/modelCatalog.js";
 import { PROVIDER_CATEGORIES, PROVIDERS, filterProviders, providerById } from "./providers/registry.js";
 import { QODER_AUTH_MODES, QODER_REGIONS, formDiffersFromSaved, qoderRegionFor } from "./settings/qoderForm.js";
+import { buildProviderSavePayload, modelIdentity, savedModelIds } from "./settings/modelForm.js";
 import {
   activateProvider,
   createManagedProvider,
@@ -338,7 +339,7 @@ export default function SettingsPage({ embedded = false }) {
     setManualModel("");
     setModelsWarning("");
     if (existingProvider) {
-      setSelectedModels(existingProvider.models || []);
+      setSelectedModels(savedModelIds(existingProvider));
       setDefaultModel(existingProvider.defaultModel || "");
     } else {
       setSelectedModels([]);
@@ -408,33 +409,29 @@ export default function SettingsPage({ embedded = false }) {
     }
     setBusy("save");
     try {
-      const payload = {
-        provider: form.provider.trim(),
-        baseUrl: form.baseUrl.trim(),
-        apiKey: form.apiKey.trim(),
-        model: form.model.trim(),
-        providerType: form.providerType,
-        ...(form.providerType === "qoder_cloud_agents"
-          ? {
-              authMode: form.authMode || "pat",
-              openapiBaseUrl: form.openapiBaseUrl.trim()
-            }
-          : {})
-      };
+      const payload = buildProviderSavePayload({ form, providerId, selectedModels, defaultModel });
       const result = savedProvider
         ? await saveManagedProvider(savedProvider.configId, payload)
-        : await createManagedProvider({ ...payload, providerId });
+        : await createManagedProvider(payload);
       await refresh();
+      const savedConfig = result.config || {};
       setForm(current => ({
         ...current,
-        configId: result.config.configId || current.configId,
-        providerId: result.config.providerId || current.providerId,
-        baseUrl: result.config.baseUrl || current.baseUrl,
-        authMode: result.config.authMode || current.authMode,
-        openapiBaseUrl: result.config.openapiBaseUrl ?? current.openapiBaseUrl,
+        configId: savedConfig.configId || current.configId,
+        providerId: savedConfig.providerId || current.providerId,
+        baseUrl: savedConfig.baseUrl || current.baseUrl,
+        model: savedConfig.model || current.model,
+        authMode: savedConfig.authMode || current.authMode,
+        openapiBaseUrl: savedConfig.openapiBaseUrl ?? current.openapiBaseUrl,
         apiKey: ""
       }));
-      setAlert({ severity: "success", message: `${result.message} Key: ${result.config.apiKeyMasked || "saved"}.` });
+      // The saved row is the source of truth for the catalogue: models merged
+      // in by discovery show up here instead of vanishing until a reload.
+      if (Array.isArray(savedConfig.models)) {
+        setSelectedModels(savedConfig.models);
+        setDefaultModel(savedConfig.defaultModel || "");
+      }
+      setAlert({ severity: "success", message: `${result.message} Key: ${savedConfig.apiKeyMasked || "saved"}.` });
     } catch (error) {
       setAlert({ severity: "error", message: getApiErrorMessage(error) });
     } finally {
@@ -591,13 +588,22 @@ export default function SettingsPage({ embedded = false }) {
 
   async function handleSaveModels() {
     if (!savedProvider) return;
+    if (defaultModel && !selectedModels.includes(defaultModel)) {
+      setAlert({ severity: "error", message: `${defaultModel} is not in the saved model list. Choose a default from the saved models first.` });
+      return;
+    }
     setBusy("models-save");
     try {
       const result = await saveProviderModels(savedProvider.configId, { models: selectedModels, defaultModel });
       await refresh();
-      setAlert({ severity: "success", message: `${result.message} Default model: ${result.config.defaultModel || "none"}.` });
+      const savedConfig = result.config || {};
+      if (Array.isArray(savedConfig.models)) {
+        setSelectedModels(savedConfig.models);
+        setDefaultModel(savedConfig.defaultModel || "");
+      }
+      setAlert({ severity: "success", message: `${result.message} Default model: ${savedConfig.defaultModel || "none"}.` });
     } catch (error) {
-      setAlert({ severity: "error", message: getApiErrorMessage(error) });
+      setAlert({ severity: "error", message: `${getApiErrorMessage(error)} Saved models were not changed.` });
     } finally {
       setBusy("");
     }
@@ -811,7 +817,7 @@ export default function SettingsPage({ embedded = false }) {
                           <span>{provider.authMode === "service_account" ? "service account key" : "personal access token"}</span>
                         )}
                         <span><KeyRoundedIcon fontSize="inherit" /> {provider.apiKeyMasked || "saved"}</span>
-                        <span>{provider.models?.length || 0} saved model{provider.models?.length === 1 ? "" : "s"}</span>
+                        <span>{savedModelIds(provider).length} saved model{savedModelIds(provider).length === 1 ? "" : "s"}</span>
                         <span>Default: {provider.defaultModel || provider.model || "none"}</span>
                       </div>
                     </div>
@@ -824,7 +830,7 @@ export default function SettingsPage({ embedded = false }) {
                       <Button size="small" variant="outlined" startIcon={<AddRoundedIcon />} onClick={() => startAnotherKey(provider)}>
                         Add another key
                       </Button>
-                      <Button size="small" variant="outlined" onClick={() => startConfigure(providerById(provider.providerId), provider)}>
+                      <Button size="small" variant="outlined" onClick={() => startConfigure(registryEntry, provider)}>
                         Edit
                       </Button>
                       <Button
@@ -905,8 +911,12 @@ export default function SettingsPage({ embedded = false }) {
             </div>
             <div className="settings-provider-grid">
               {visibleProviders.map(entry => {
-                const savedConfigs = providers.filter(provider => provider.providerId === entry.id);
-                const saved = savedConfigs[0];
+                // A saved card can carry a name-derived providerId, so match the
+                // registry entry the same way the saved list does. Editing must
+                // open one specific configuration — preferring the active row
+                // keeps "Edit configuration" from silently targeting another key.
+                const savedConfigs = providers.filter(provider => registryEntryForSavedProvider(provider)?.id === entry.id);
+                const saved = savedConfigs.find(provider => provider.active) || savedConfigs[0];
                 return (
                   <SpotlightCard
                     key={entry.id}
@@ -1167,7 +1177,7 @@ export default function SettingsPage({ embedded = false }) {
                   <div className="settings-models-list">
                     {models.map(model => (
                       <button
-                        key={model.id}
+                        key={modelIdentity(savedProvider, model.id)}
                         type="button"
                         className={`settings-model-chip${selectedModels.includes(model.id) ? " is-active" : ""}`}
                         aria-pressed={selectedModels.includes(model.id)}

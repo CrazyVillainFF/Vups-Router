@@ -1,0 +1,961 @@
+✔ stream progress becomes stable, run-scoped activity rows (7.6013ms)
+✔ each new operation closes the previous one and repeats never duplicate (0.8415ms)
+✔ settling only touches rows that are still running (0.4802ms)
+✔ restored artifacts contribute real file rows without duplicates (2.7934ms)
+✔ progress text is cleaned without inventing filenames (0.5714ms)
+✔ elapsed labels use real timestamps (0.6191ms)
+✔ assistant turns keep activity instead of invented steps (2.0032ms)
+✔ a continuation starts a new run while old rows remain settled (1.2406ms)
+✔ the activity timeline uses real events, accessible controls, and no fake rows (12.0672ms)
+✔ a settled turn folds its steps, a failure keeps them open (1.8367ms)
+✔ the fold animates height and opacity instead of toggling display (11.7941ms)
+✔ the whole header row toggles the timeline (14.1197ms)
+✔ chat forwards real activity into the assistant turn that produced it (2.575ms)
+✔ development defaults to the same-origin proxy when unset (2.5852ms)
+✔ development honors a configured backend and trims trailing slashes (2.7303ms)
+✔ production uses the same-origin proxy when configuration is missing (1.042ms)
+✔ production ignores absolute backend URLs (0.6894ms)
+✔ production honors relative proxy paths (0.6058ms)
+✔ base URL normalization handles empty and padded values (0.4693ms)
+✔ localhost detection covers loopback hosts (1.0663ms)
+✔ localhost detection ignores lookalike and relative values (0.4944ms)
+✔ production configuration validation rejects localhost (1.8399ms)
+✔ production configuration validation accepts the proxy and public backends (1.001ms)
+✔ small examples and short snippets stay in normal chat (8.2941ms)
+✔ a long single file becomes an exact complete artifact with a concise summary (1.7757ms)
+✔ streaming previews include an unclosed final file without claiming completion (1.2107ms)
+✔ continuation merges the missing tail exactly and does not duplicate text (1.0364ms)
+✔ artifact summaries are bounded and never expose source as commentary (0.8785ms)
+✔ accepted image types cover the formats the backend sniffs (4.2482ms)
+✔ isImageFile only accepts image mime types (0.4718ms)
+✔ formatBytes renders readable sizes (0.3987ms)
+✔ readyAttachments filters out error items and payload-less entries (0.5893ms)
+✔ toPayloadImages strips the data URL prefix and keeps metadata (0.6709ms)
+✔ toRequestMessages attaches images to the final message only (0.8865ms)
+✔ toRequestMessages keeps text-only conversations unchanged (0.479ms)
+✔ image limits default to the backend defaults (0.3396ms)
+✔ text attachment detection accepts source files and rejects binaries (0.7209ms)
+✔ validateTextFile enforces type, size, and count limits (1.074ms)
+✔ readTextAttachment normalizes a local text file (1.7977ms)
+✔ text attachment prompt is delimited and marked untrusted (1.3537ms)
+✔ toRequestMessages adds text files only to the final user message (4.1126ms)
+✔ workspace files carry native provenance and a readable relative path (8.6258ms)
+✔ backslash workspace paths normalize to forward slashes (0.9116ms)
+✔ configured development API base URL is trimmed and normalized (7.3693ms)
+✔ development and production both default to the same-origin /api proxy (1.8473ms)
+✔ production never sends credentials to an absolute API origin (0.5995ms)
+✔ a relative API base URL is honored for proxied production deployments (2.0863ms)
+✔ only a 401 marks a stored session as signed out (6.464ms)
+✔ the API client sends cookies with every request (0.5135ms)
+✔ auth methods use cookie sessions on the existing backend paths (21.0678ms)
+✔ password recovery methods use the six-digit code endpoints (4.0354ms)
+✔ provider configuration methods use the settings endpoints (8.7096ms)
+✔ conversation methods use the conversations endpoints (2.5795ms)
+✔ API errors show backend messages and connection failures (1.151ms)
+✔ streamChatResponse posts to the backend proxy and forwards SSE deltas (12.4663ms)
+✔ streamChatResponse sends the selected mode and saved provider identity (1.4757ms)
+✔ streamChatResponse routes Vups v3 Galax to its dedicated endpoint (1.8242ms)
+✔ streamChatResponse preserves finish_reason and does not end early on empty or usage-only chunks (3.0225ms)
+✔ streamChatResponse rejects a stream that ends without a done event but keeps the partial text (3.4519ms)
+✔ streamChatResponse surfaces provider errors sent mid-stream (2.7037ms)
+✔ streamChatResponse surfaces JSON errors from the backend (2.1947ms)
+✔ streamChatResponse rejects empty completions instead of faking an answer (2.0087ms)
+✔ sign-in password visibility is concealed by default and toggles without touching values (4.6157ms)
+✔ sign-up password and confirm-password toggles are independent (2.7888ms)
+✔ matching passwords allow registration and empty confirmations block it (1.0698ms)
+✔ mismatched passwords prevent registration until both fields match again (0.4833ms)
+✔ existing name, email, and password rules are preserved (1.0942ms)
+✔ registration payload sends only the password, never confirm-password (0.8347ms)
+✔ sign-in payload keeps its existing shape and exact password (0.4934ms)
+✔ app logo and launch icons exist at their declared sizes (29.0415ms)
+✔ favicon.ico is a valid multi-size icon (3.104ms)
+✔ index.html points at the shipped icon, manifest, and social card (4.3269ms)
+✔ manifest icons resolve to real files with matching sizes (15.0099ms)
+✔ the shared logo component uses the new mark at both densities (7.072ms)
+✔ quota exhaustion is classified separately from a transient rate limit (16.3255ms)
+✔ a transient upstream 429 that mentions quota is still a rate limit (3.2798ms)
+✔ explicit quota and shared-rate codes keep their own categories (0.7709ms)
+✔ authentication, context, model, network, and empty failures get distinct types (2.3303ms)
+✔ provider service outages are not mislabeled as a missing model (0.6254ms)
+✔ reset times are rendered in the viewer's local timezone (52.6427ms)
+✔ quota errors show the affected model and never invent a reset time (0.8279ms)
+✔ a reliable Retry-After reset is shown as a local time (1.1562ms)
+✔ auth and invalid-model failures do not offer a pointless retry but keep model switching (1.0511ms)
+✔ the presented copy is concise and does not echo provider internals (3.1767ms)
+✔ backend size limits are explained without surfacing raw validation text (0.8562ms)
+✔ an edge firewall rejection is its own outcome and never an access denial (2.281ms)
+✔ an uncategorised provider rejection shows the provider's own sentence (1.3534ms)
+✔ a rejection without a provider sentence keeps the ordinary fallback (0.6229ms)
+✔ a 402 is reported as out of credits, not as a daily usage limit (0.8168ms)
+✔ OpenRouter's documented free-tier daily limit says when it resets (0.7941ms)
+✔ a quota failure from another provider keeps the generic usage-limit card (0.4725ms)
+✔ connection refusal reports a timeout-free connection message and never leaks a URL (14.2374ms)
+✔ a stalled connection is aborted by the connect deadline (43.237ms)
+✔ an idle stream preserves partial output and asks the user to continue (64.0225ms)
+✔ the overall deadline ends a request that never produces output (55.397ms)
+✔ a user cancellation rejects as AbortError, not as a chat failure (14.1023ms)
+✔ HTTP failures keep their status but present a concise message without internals (5.1326ms)
+✔ required user-facing copy is exact (1.6056ms)
+✔ API errors never echo the configured backend URL (1.1193ms)
+✔ streamChatResponse joins split UTF-8 SSE data and requires the done event (11.9887ms)
+✔ streamChatResponse flushes a final event without a trailing newline (2.3981ms)
+✔ an upstream error keeps partial content and exposes safe diagnostics (4.7112ms)
+✔ EOF without a done event is treated as an interrupted stream (1.9062ms)
+✔ EOF before any output is an explicit empty-stream error (3.3413ms)
+✔ non-OK JSON errors preserve the backend code and request ID (6.8425ms)
+✔ an HTML firewall 403 is reported as a blocked request, not an access denial (7.4603ms)
+✔ an HTML 403 without firewall evidence keeps the generic interrupted message (3.4268ms)
+✔ stream events carry truthful progress, stable message ids, and full artifacts (3.553ms)
+✔ streamChatResponse emits structured activity for real stream phases (2.6379ms)
+✔ continuation requests include the target message and preserve recovered artifacts on failure (7.2385ms)
+✔ a code flood becomes a complete artifact with prose-only chat (8.074ms)
+✔ CSS and JavaScript keep their own files and exact source (0.7927ms)
+✔ a multi-file project exposes a usable project title (1.162ms)
+✔ finishing a turn keeps the artifact when the backend sends no artifact event (1.718ms)
+✔ a structured backend artifact wins over a re-parse (0.4409ms)
+✔ short snippets stay inline and explicit show-code asks are honored (2.3977ms)
+✔ code written mid-stream is withheld from chat without dropping the prose (1.6038ms)
+✔ streaming and final artifacts never duplicate the source (0.7667ms)
+✔ coding intent only treats real build requests as artifacts (1.2992ms)
+✔ an interrupted artifact keeps its valid files and Continue merges the tail once (3.5753ms)
+✔ continued text preserves the seam without duplicating prose (2.0934ms)
+✔ a failed generation stops the working state exactly once (6.2668ms)
+✔ a save warning keeps the code and its download actions available (0.7565ms)
+✔ post-completion failures cannot remove a committed artifact (1.4293ms)
+✔ generated files render as compact real download rows (3.1434ms)
+✔ individual downloads use the real filename, MIME type, and exact source (2.9684ms)
+✔ download object URLs are released (1.7003ms)
+✔ Download all produces a valid ZIP with every generated file intact (41.0641ms)
+✔ ZIP and individual downloads stay safe for unicode and long names (9.3926ms)
+✔ empty artifacts expose no actions and never report a false success (3.8122ms)
+✔ long filenames and download actions stay usable on mobile (3.947ms)
+✔ structured FILE markers become separate exact source files (7.0601ms)
+✔ CRLF responses and language:filename fence metadata are supported (0.5057ms)
+✔ filenames in fence metadata and headings are recognized (0.5385ms)
+✔ a single unnamed block gets one sensible file, not a fake project (0.5141ms)
+✔ ordinary prose and shell snippets do not create a website package (0.4443ms)
+✔ empty and unsafe paths are skipped or made relative safely (0.6373ms)
+✔ duplicate generated paths are kept distinct without overwriting (0.492ms)
+✔ the ZIP is real and contains separately extractable files (40.7341ms)
+✔ download MIME types match the generated file extension (0.9701ms)
+✔ context handoff preserves the goal, requirements, constraints, files and next steps (3.6732ms)
+✔ handoff never copies complete source code and stays bounded (8.052ms)
+✔ handoff titles are concise and clearly marked as continued chats (0.7349ms)
+✔ provider context-window failures are recognized across common providers (7.5096ms)
+✔ message and API-key limits are never misclassified as a context window (3.0264ms)
+✔ only genuine missing-key failures get the API-key action card (0.3636ms)
+✔ the context alert uses only the compact copy and never claims a key problem (1.5529ms)
+✔ a bare HTTP 400 with the proxy's API-key fallback is a context limit for a long conversation (2.774ms)
+✔ context details in a diagnostic payload are detected even when the message is generic (0.4084ms)
+✔ a 401/403 credential rejection is never reclassified as a context limit (0.4689ms)
+✔ a 401/403 with explicit provider context evidence is a context limit (4.8249ms)
+✔ a bare 401/403 stays a credential or access error even for a large request (0.8446ms)
+✔ missing-key, rate-limit, network, and server failures keep normalized categories (1.1212ms)
+✔ the API-key alert names the selected model and points at Settings (0.8373ms)
+✔ a bare generic 400 never renders API-key guidance (0.7682ms)
+✔ ordinary network and server failures retain their existing behavior (0.3623ms)
+✔ API-key copy never leaks provider internals (0.3213ms)
+✔ the handoff keeps goal, recent requests, files, status, and next steps within budget (2.9331ms)
+✔ handoffs are always bounded even when every excerpt is very long (2.525ms)
+✔ a handoff made for an API-key failure does not claim the chat was too long (1.0295ms)
+✔ persisted handoff messages are recognizable and never duplicate into later handoffs (4.1366ms)
+✔ the chat wires the compact context alert without a generic error card (4.666ms)
+✔ a firewall rejection replaces the generic card with one friendly continuation action (3.8064ms)
+✔ continue-in-new-chat is persisted, guarded, reusable after failure, and keeps the original chat reachable (4.3482ms)
+✔ the chat request records its size so a bare 400 can be classified (2.9376ms)
+✔ the saved handoff is part of the first request and is restored after reload (1.7212ms)
+✔ continuation titles are compact, descriptive, and bounded (2.2988ms)
+✔ a continuation persists the bounded handoff before any copy is shown (7.4855ms)
+✔ a deployment without the create endpoint still keeps the handoff for the first request (1.7552ms)
+✔ a real persistence failure stops the continuation and reports it (1.5987ms)
+✔ a create response without an id is treated as a failed continuation (0.6776ms)
+✔ the continuation guard allows only one conversation per click burst (0.9636ms)
+✔ production build runs API configuration validation first (3.401ms)
+✔ Vercel proxies both /api and /api/* to the Render backend (0.8924ms)
+✔ production hosting configuration contains no localhost origin (0.7519ms)
+✔ Vite dev and preview proxy /api to the verified backend (5254.2989ms)
+✔ the production CSP allows only the verified backend and the release lookup (2.5792ms)
+✔ API responses stay uncached through the proxy (0.2131ms)
+✔ the build guard accepts missing configuration (86.7938ms)
+✔ the build guard accepts the verified proxy configuration (85.5692ms)
+✔ the build guard accepts an absolute public URL but warns it is ignored (82.6819ms)
+✔ the build guard fails when production configuration points at localhost (257.8601ms)
+✔ the semantic token layer names intent instead of repeating hex values (8.0195ms)
+✔ reduced motion is honoured globally without freezing progress indicators (2.0681ms)
+✔ the chat welcome offers starting prompts that only fill the composer (3.6657ms)
+✔ the sidebar fold is signposted instead of slicing the last task (3.8806ms)
+✔ settings rows separate the destructive action from routine actions (5.0995ms)
+✔ desktop preferences normalize invalid values and round-trip safely (3.9959ms)
+✔ desktop preferences fail closed without usable storage (0.63ms)
+✔ automations are owner-scoped, bounded, and never scheduled by accident (9.851ms)
+✔ automation storage drops blank drafts and survives damaged data (1.5828ms)
+✔ workspace bridge fails closed when the Tauri runtime is absent (2.0362ms)
+✔ an anonymous visitor is sent to sign in and returned to this approval page (8104.3316ms)
+✔ a sign-up link sends the visitor to sign-up instead (99.1989ms)
+✔ a signed-in browser approves the app once and says what happens next (186.0314ms)
+✔ a duplicate visit never sends a second approval (247.6969ms)
+✔ an incomplete link is refused before anything is sent (158.1806ms)
+✔ a refused approval shows the server's reason instead of a blank spinner (153.8134ms)
+✔ the native prompt is normalized before it can reach the UI (2.7448ms)
+✔ only the three real decisions can leave the bridge (0.5224ms)
+✔ the approval bridge is a named event and never a browser dialog (0.8214ms)
+✔ the permission card is an in-chat region with the three scoped actions (0.9148ms)
+✔ one pending approval produces one card and dedup is not left to the UI alone (7.9945ms)
+✔ the five-latest-files request is matched to one local enumeration (3.7647ms)
+✔ the fast path runs the tool before any model call and sends one request (3.475ms)
+✔ local results are rendered from real tool data and nothing else (51.1692ms)
+✔ a genuine OS failure is never dressed up as a permission problem (3.2235ms)
+✔ a model failure after tool work carries the local results with it (2.6858ms)
+✔ saved folder grants are inspectable and revocable from settings (13.3882ms)
+✔ the sign-in page always lives on the deployed HTTPS site (5.6314ms)
+✔ the challenge is the SHA-256 of a local verifier (17.4201ms)
+✔ starting a sign-in sends only the challenge, saves the verifier, opens the browser once (8.3433ms)
+✔ a malformed start response is refused and nothing is stored or opened (4.8549ms)
+✔ a backend without the sign-in route fails with a readable reason (3.4704ms)
+✔ the pending transaction survives a restart and drops once it is stale (1.7945ms)
+✔ the approval page keeps the client and signup mode in its URL (0.7587ms)
+✔ poll responses map onto waiting, approved, rejected and expired (1.7938ms)
+✔ waiting polls until the browser approves, then clears local state (21.328ms)
+✔ an expired or reused ticket ends the wait with the server's reason (2.1931ms)
+✔ a wrong verifier is reported as a failure, not as an endless wait (1.0166ms)
+✔ cancelling the wait stops polling and leaves the transaction resumable (1.2853ms)
+✔ reopen sends the browser back to the same pending ticket (1.1199ms)
+✔ the app resumes a pending sign-in and lands on the authenticated chat page (12.0199ms)
+✔ a missing desktop tool endpoint is reported as an unavailable feature, not a failed message (2.1134ms)
+✔ real desktop tool failures keep their server code (0.6472ms)
+✔ desktop tool failures never fall through to the generic card (7.689ms)
+✔ an expired session on the tool route keeps its own card (0.7741ms)
+✔ a server-side tool failure the client has never seen still explains itself (1.3444ms)
+✔ the too-many-steps card tells the user to narrow the request (0.8712ms)
+✔ the chat page resends a tool turn as a plain chat when tools are unavailable (1.3632ms)
+✔ a plain question on a server without the endpoint sends no warning card (1.7105ms)
+✔ a server without the tool endpoint is probed once per app session (7.9808ms)
+✔ the desktop service reports the production 404 as an unavailable endpoint (4.1835ms)
+✔ the desktop service still returns an answer when the endpoint exists (2.5171ms)
+✔ download routes and navigation are wired (12.2667ms)
+✔ release states never invent installers (0.488ms)
+✔ preview cards use truthful source labels and shipped images (4.226ms)
+✔ PWA manifest exposes real screenshots and keeps install metadata (3.9395ms)
+✔ service worker skips API responses and registers only in production (24.7646ms)
+✔ a successful answer followed by a clean stream close renders no alert (14.09ms)
+✔ a done event followed by a late error stays completed with no alert (7.23ms)
+✔ generation success with artifact persistence failure shows one save warning (10.5313ms)
+✔ a done event carrying a structured saveWarning keeps the answer and warns once (3.5549ms)
+✔ a genuine provider failure produces exactly one failure notice (7.4009ms)
+✔ a genuine failure after partial content keeps the text and shows one failure notice (3.568ms)
+✔ an incomplete stream shows one interruption notice and keeps partial output (5.9592ms)
+✔ consecutive requests cannot leak an error into the next turn (10.777ms)
+✔ empty assistant placeholders are never replayed as history (5.4373ms)
+✔ Continue revives an interrupted answer without duplicating its notice (0.9045ms)
+✔ a stale failure callback cannot add a second notice after completion (0.7419ms)
+✔ the notice resolver can never yield two notices for one turn (0.4916ms)
+✔ only https and mail addresses are accepted as external links (361.1142ms)
+✔ plain http is accepted for the developer's own machine and nowhere else (0.5737ms)
+✔ runtime detection covers the Windows shell, the Android shell and a browser (0.5691ms)
+✔ the Windows shell opens through the native opener exactly once (1.4634ms)
+✔ a denied Windows open rejects with the reason instead of passing silently (0.8004ms)
+✔ Android hands the link to the system browser through the WebView origin rule (0.5325ms)
+✔ Android prefers the Browser plugin when the shell ships it (0.7772ms)
+✔ a browser opens the link exactly once and reports a blocked popup (0.8004ms)
+✔ reportLinkError emits the shared event the toast listens for (27.2692ms)
+✔ the shared anchor stays a real link for keyboards, copy and middle click (122.8193ms)
+✔ a browser click is left to the browser so nothing double-opens (26.1299ms)
+✔ the native shell intercepts the click and reports the opened link once (10.6703ms)
+✔ a middle click is never turned into a second window (8.6105ms)
+✔ a rejected native open raises the toast event with the link that failed (9.9798ms)
+✔ every guide link in the app uses the shared opener (7.5254ms)
+✔ provider guide URLs are real https destinations with honest labels (1.8689ms)
+✔ the Windows shell allows any secure link and mail, nothing else (1.758ms)
+✔ the progress bar follows the real queued, connecting, and generating phases (4.2866ms)
+✔ a finished, failed, or cancelled turn removes the active bar (0.9168ms)
+✔ missing progress metadata produces one honest label and no invented values (0.6537ms)
+✔ elapsed time uses only the real turn start (0.7147ms)
+✔ multi-file progress counts the files the stream actually produced (1.0379ms)
+✔ a reported current file is named in the status even before the file list is known (2.2242ms)
+✔ only the newest running operation is reported, so repeats cannot duplicate it (0.5215ms)
+✔ the bar is one compact line and truncates long labels instead of wrapping (7.3581ms)
+✔ the thinking line rises with the assistant message instead of the composer (15.1773ms)
+✔ downloads stay hidden until a complete artifact is committed (7.7281ms)
+✔ hold-to-delete timing is deliberate and bounded (3.018ms)
+✔ hold progress clamps and reports completion only after the full hold (0.8649ms)
+✔ hold-to-delete button cancels on release, cancel, blur, and focus loss (3.174ms)
+✔ hold-to-delete dialog names the item, shows errors, and offers keyboard confirmation (4.1945ms)
+✔ all permanent delete surfaces use the shared hold confirmation (9.6587ms)
+▶ hold-to-delete behaviour
+  ✔ releasing early cancels and never deletes (222.37ms)
+  ✔ a complete hold fires the deletion exactly once (66.6815ms)
+  ✔ the hold threshold is the configured duration, not shorter (103.5078ms)
+  ✔ reduced motion steps the fill instead of sweeping it (55.8122ms)
+  ✔ a pointer release before the threshold deletes nothing (36.7026ms)
+  ✔ the dialog deletes once and reports success (171.6653ms)
+  ✔ a failed backend deletion reports the error and never claims success (47.2616ms)
+✔ hold-to-delete behaviour (83526.7089ms)
+✔ legal configuration exposes product identity and clearly marked placeholders (8.3119ms)
+✔ legal pages exist, are routed, and are linked from the footer (7.3376ms)
+✔ privacy and terms pages cover the real data flows and third parties (7.4051ms)
+✔ robots.txt and sitemap.xml exist for the public pages (5.755ms)
+✔ index.html ships production metadata (4.5706ms)
+✔ vercel.json keeps SPA routing, proxies the API on the same origin, and adds security headers (9.7644ms)
+✔ per-route metadata component supports titles and noindex (7.0546ms)
+✔ messages at or under 70 words stay fully visible (2.6725ms)
+✔ a 71-word message initially shows only the first 70 words (1.1281ms)
+✔ collapsing keeps the original whitespace inside the visible prefix (0.9103ms)
+✔ the full message is never rewritten by the display helper (0.7263ms)
+✔ the chat collapses user bubbles at the display layer only (6.426ms)
+✔ each long message keeps its own expanded state (1.6729ms)
+✔ feedback toggles between like, dislike, and cleared (4.0932ms)
+✔ sharing never invents a public conversation URL (5.0604ms)
+✔ persisted feedback requires a saved conversation and message (1.1145ms)
+✔ the action row appears only after a successful assistant turn (2.3575ms)
+✔ copy uses the complete response and confirms success (1.7243ms)
+✔ share prefers the native API and falls back to copying the response (4.5809ms)
+✔ like and dislike persist through the conversation API (10.1887ms)
+✔ markdown tables scroll inside their wrapper and never stack characters vertically (9.5071ms)
+✔ fenced code scrolls locally and keeps its own copy control (4.6865ms)
+✔ the chat shell fills the visual viewport without spilling the page (3.1559ms)
+✔ the mobile drawer slides in, traps focus, and yields to Escape (10.7116ms)
+✔ the mobile composer is compact and hides helper text (22.2981ms)
+✔ the model selector shrinks and truncates while send keeps its full size (11.8424ms)
+✔ a long model name only truncates its label, never the id sent to the backend (3.4926ms)
+✔ mobile inputs stay at 16px so the keyboard cannot hide the send button (8.3133ms)
+✔ the composer grows with the prompt but caps its height (1.4471ms)
+✔ a save without a new key never asks the server to erase the stored one (3.8836ms)
+✔ an empty selection is omitted so discovery cannot be overwritten by a save (0.4721ms)
+✔ the default falls back to a saved model instead of pointing outside the catalogue (1.3973ms)
+✔ Qoder keeps its token mode and region; other providers do not send them (0.8194ms)
+✔ the client caps the catalogue the same way the server does (4.43ms)
+✔ model identity is scoped to the configuration, not the display name (0.7126ms)
+✔ a legacy single-model row still reads as one saved model (0.7185ms)
+✔ the settings form reads the catalogue back from the saved configuration (1.0316ms)
+✔ connection and model tests never send a model catalogue (0.7705ms)
+✔ editing from the directory targets the active configuration of that provider (1.0611ms)
+✔ the models editor refuses a default outside the selection (0.5458ms)
+✔ model capability metadata drives picker labels and vision flags (6.3639ms)
+✔ saved keys and free models are offered together (1.1922ms)
+✔ the full free catalogue is kept when the API already returns it (0.9211ms)
+✔ explicitly allowlisted paid shared models are labeled and never marked free (10.0095ms)
+✔ free models stay visible when personal discovery returns nothing (0.9989ms)
+✔ with no saved keys the catalogue contains only free models (0.5472ms)
+✔ saved models remain when the free catalogue is unavailable (5.465ms)
+✔ two keys for the same provider keep separate, distinguishable rows (1.429ms)
+✔ the same model on different providers is distinguishable (1.078ms)
+✔ saved rows expose provider, masked key, and a saved marker (0.8936ms)
+✔ OpenCode restricted free models are shown as unavailable with a clear reason (1.5762ms)
+✔ OpenRouter free models stay selectable and are labeled without being disabled (0.6483ms)
+✔ a personal OmniRoute provider stays saved and never becomes the shared gateway (0.6518ms)
+✔ a saved selection resolves to the exact configuration (1.0441ms)
+✔ a shared selection resolves without a configuration id (0.5247ms)
+✔ a stale saved selection falls back to the free model (0.6315ms)
+✔ the fallback uses a saved row only when no free model exists (0.5338ms)
+✔ selection storage round-trips without ever storing a key (1.026ms)
+✔ chat requests carry configId and provider identity only for saved rows (0.3711ms)
+✔ Vups v3 Galax is the built-in free default above user keys (0.6314ms)
+✔ Vups selection storage is versioned and preserves explicit non-default choices (0.5421ms)
+✔ gateway models appear in their own group without replacing saved or free rows (0.7917ms)
+✔ a gateway model already offered for free is not repeated (0.5215ms)
+✔ a gateway selection resolves to a source-only chat reference (1.9859ms)
+✔ an intended but unavailable gateway adds exactly one disabled status row (1.2432ms)
+✔ a disabled or unconfigured gateway adds no rows at all (0.8309ms)
+✔ gateway status labels are human-readable for every upstream state (0.5391ms)
+✔ custom model type keeps Vups, saved providers, and gateways but hides free catalogue rows (1.292ms)
+✔ free model type shows only Vups and verified free rows, grouped as free (0.8024ms)
+✔ a catalogue-only personal free model routes to its exact saved provider configuration (0.4183ms)
+✔ a personal catalogue row that is already saved is not duplicated (0.8126ms)
+✔ missing catalogue metadata cannot turn a model into free by name alone (0.508ms)
+✔ the motion lab renders at least 20 React Bits components (12.7381ms)
+✔ every motion lab component ships its source and styles (7.4373ms)
+✔ motion lab is a lazy route and is linked from the footer (5.2767ms)
+✔ motion and GSAP runtimes are declared (1.7827ms)
+✔ native shell detection persists a valid query and survives auth redirects (3.909ms)
+✔ native auth redirect preserves the direct-chat search and shell layout (5.4055ms)
+✔ native shells launch directly into chat (17.8744ms)
+✔ the desktop bundle rebuilds the frontend instead of packaging a stale dist (2.5091ms)
+✔ external auth helpers use only the verified production routes (1.5484ms)
+✔ external auth rejects any origin or scheme outside the approved allowlist (0.5225ms)
+✔ external auth opener uses Tauri in native mode and a browser fallback on the web (1.3329ms)
+✔ Windows permission defaults to ask every time and persists (0.7251ms)
+✔ permission modes are enforced from actual attachment provenance (1.3201ms)
+✔ permission dialog details never expose file contents (3.3417ms)
+✔ workspace attachments keep their native provenance and relative path (3.8445ms)
+✔ a dropped permission request still settles so the composer cannot hang (1.6695ms)
+✔ native UI wires direct chat, camera, folder access, and unavailable tools honestly (4.4826ms)
+✔ the capability governing the loopback origin grants every bridge command (4.611ms)
+✔ 1. a short prompt stays ordinary composer text (2.8716ms)
+✔ 2. a 10 KB pasted prompt becomes a compact attachment card (5.9098ms)
+✔ 3. the card label shows the real size, e.g. 13.2 KB (1.0284ms)
+✔ 4. size is measured in UTF-8 bytes, not JavaScript characters (0.8173ms)
+✔ 5. the stored text is byte-for-byte the original paste (1.3205ms)
+✔ 6. the title comes from the first meaningful line (1.2118ms)
+✔ 7. editing updates title and size in place without duplicating the card (1.5526ms)
+✔ 8. sending submits the entire original prompt exactly once (2.3631ms)
+✔ 9. provider and model switches never touch the attached prompt (4.1626ms)
+✔ 10. the card survives draft restore and retry re-injection (3.0558ms)
+✔ 11. existing messages and file attachments are unaffected (0.7813ms)
+✔ 12. a pasted prompt is not a local file read on Windows (1.8787ms)
+✔ 13. preview is capped for rendering while the stored text stays whole (35.2134ms)
+✔ 14. the composer renders the card with icon, title, label, size, and actions (0.9252ms)
+✔ 15. an oversized paste hits the real message limit instead of truncating (20.1972ms)
+✔ the rendered card names the folder, the operation and the waiting state (82688.2437ms)
+✔ a button press reports the decision and nothing else (110.2053ms)
+✔ a file-contents request never offers a folder-wide grant (33.7456ms)
+✔ while a decision is in flight the card is a loading state, not a result (31.692ms)
+✔ a delivery failure stays on the card instead of disappearing (47.6426ms)
+✔ the three modes keep their ids and labels (3.7264ms)
+✔ the selected mode is persisted and an unknown value falls back to ask (0.6862ms)
+✔ ask mode asks before every local attachment that is not pasted text (0.837ms)
+✔ workspace mode sends workspace and folder picks, full access sends anything (1.5712ms)
+✔ the selector only moves after the native layer adopts the mode (1.3542ms)
+✔ a mode or workspace switch cancels the cards raised under the old policy (0.6447ms)
+✔ the native layer, not the selector, decides every read (1.4527ms)
+✔ the default detail screen never shows raw tool names; the advanced section does (82766.3085ms)
+✔ the status sentence and last successful check come from the real health check (55.503ms)
+✔ a failed last check reads as a problem and carries a redacted message (59.4835ms)
+✔ read access and write access are separate, and only writes ask first (98.5651ms)
+✔ each action explains what it touches and whether it changes anything (31.1032ms)
+✔ test connection, connect and disconnect buttons call their handlers (29.9492ms)
+✔ a test in flight disables the button and says what is happening (20.1261ms)
+✔ an unconnected plugin offers Connect, no Test, and no Try it (18.0548ms)
+✔ an unfinished adapter offers no connect action and no permissions (9.4384ms)
+✔ a no-account plugin is turned on, not connected, and claims no write access (10.7676ms)
+An update to PluginActionDialog inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+✔ GitHub setup says a token is optional and names the narrowest access (15.473ms)
+An update to PluginActionDialog inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to PluginActionDialog inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to PluginActionDialog inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+✔ a read action runs from the form and shows the result without a review step (147.5379ms)
+An update to PluginActionDialog inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to PluginActionDialog inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to PluginActionDialog inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+✔ a write action waits for review, sends nothing, then sends only after approval (29.6011ms)
+An update to PluginActionDialog inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to PluginActionDialog inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to PluginActionDialog inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+✔ cancelling at the review step never sends the request (19.4679ms)
+An update to PluginActionDialog inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+✔ a refused write keeps the screen in review and shows a redacted error (34.4776ms)
+✔ a failing read action reports the problem and shows no result (29.125ms)
+An update to PluginActionDialog inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+✔ the missing-field message names the field and sends nothing (12.5536ms)
+✔ while a request is in flight the primary button is disabled (15.3267ms)
+✔ the advanced facts never print a stored secret value (20.8988ms)
+✔ friendly labels replace the four technical tool names (5.205ms)
+✔ other plugins get labels from their own descriptions, not GitHub's actions (1.3544ms)
+✔ read access and write access are separate groups (0.9604ms)
+✔ a write action is the only one that needs the optional token (0.3589ms)
+✔ each action says what it does, what it touches and whether it changes data (0.8241ms)
+✔ connection copy follows the real status, not the presence of credentials (2.3802ms)
+✔ connection problem copy uses the redacted provider message (4.0696ms)
+✔ an unfinished adapter is never described as connectable (0.9927ms)
+✔ GitHub setup explains the optional token and the narrowest scope (1.6694ms)
+✔ a key-only plugin is not told that it works without credentials (1.0492ms)
+✔ the request body only carries declared fields (0.857ms)
+✔ form validation names the missing or invalid field (0.6291ms)
+✔ client redaction catches tokens in any displayed message (0.4604ms)
+✔ every default label differs from the technical tool name (0.5652ms)
+✔ every provider entry has a unique, slug-safe id (1.9023ms)
+✔ every provider entry carries the fields the settings UI renders (0.6223ms)
+✔ supported entries only promise adapters that exist (1.74ms)
+✔ previously pending providers now resolve to a working adapter (2.9559ms)
+✔ Qoder Cloud Agents is supported through its documented session protocol (2.0707ms)
+✔ external links are https, and base URLs are https or local http (1.6864ms)
+✔ providers with a default base URL ship an absolute http(s) URL (0.7609ms)
+✔ local gateway entries explain the localhost reachability rule (0.6308ms)
+✔ FlagshipRouter is present with its documented localhost default (0.4879ms)
+✔ AgentRouter uses its documented OpenAI-compatible base URL and makes no unverified free-tier claim (0.6245ms)
+✔ Google Gemini uses its documented OpenAI-compatible endpoint and discloses free-tier limits (0.4888ms)
+✔ custom endpoints exist for both OpenAI and Anthropic shapes (0.27ms)
+✔ registry helpers return consistent subsets (0.2961ms)
+✔ OmniRoute is a supported aggregator with no guessed public URL (0.2795ms)
+✔ OpenCode Zen is a supported aggregator with its documented endpoints (0.4688ms)
+✔ provider search matches aliases, case, and normalized whitespace (1.0906ms)
+✔ multi-provider API calls use the managed provider endpoints (11.8449ms)
+✔ generateImage sends the prompt to the dedicated image endpoint (0.867ms)
+✔ provider ids in API paths are URL-encoded (0.6103ms)
+✔ both documented Qoder regions resolve from business and OpenAPI hosts (2.8333ms)
+✔ region presets pair each business endpoint with its own OpenAPI host (0.4813ms)
+✔ editing the endpoint, protocol, auth mode, or OpenAPI host invalidates a saved result (0.9208ms)
+✔ trailing slashes and blank values do not count as edits (0.5307ms)
+✖ the settings form sends the Qoder mode and OpenAPI host on save, test, and model test (3.5122ms)
+✖ saved Qoder settings are restored into the form (2.8153ms)
+✔ the form exposes region and authentication selectors for Qoder only (0.6086ms)
+✔ unsaved edits replace a stale saved test result in the UI (0.6111ms)
+✔ Qoder help text names both regions and both authentication modes (0.633ms)
+✔ the provider directory describes both Qoder regions and auth modes (0.7354ms)
+✔ only Ollama, Qoder, and OpenRouter carry the recommended flag (772.7017ms)
+✔ each recommended provider explains why in plain language (1.4739ms)
+✔ both provider rows render the shared badge from registry metadata (1.921ms)
+✔ saved configs resolve to registry metadata even when their providerId is name-derived (1.5353ms)
+✔ the badge never wraps or shrinks and uses the theme accent tokens (2.9109ms)
+✔ the badge renders as text with the tooltip that lists the caveat (77.969ms)
+✔ the badge renders nothing for providers that are not recommended (2.9558ms)
+✔ updatePasswordDisabled only blocks on busy, length, or mismatch (1.7775ms)
+✔ passwords are compared exactly and never trimmed or transformed (0.3478ms)
+✔ hints explain the length rule and mismatches without leaking into empty fields (5.4713ms)
+✔ eye toggles are independent per field (2.1893ms)
+✔ recovery context round-trips through storage (1.1536ms)
+✔ expired recovery context is rejected and cleared (0.7058ms)
+✔ malformed or unsafe recovery context is ignored and cleared (0.7437ms)
+✔ clearRecoveryContext removes the stored entry, and missing storage never throws (0.6018ms)
+✔ 1. advertised asset names match the workflow that publishes them (3.6129ms)
+✔ 2. the static map advertises no installer before the release is read (0.5731ms)
+✔ 3. with no published release nothing is linked (1.2986ms)
+✔ 4. a published installer becomes a real download with real metadata (2.8593ms)
+✔ 5. a release without the platform asset says so instead of guessing (0.7325ms)
+✔ 6. a debug-only APK is never presented as a production release (1.094ms)
+✔ 7. a release-signed APK wins over the debug build and reads as available (2.5135ms)
+✔ 8. only this repository's release assets are trusted (1.0785ms)
+✔ 9. latest-release links are version-free so they stay permanent (0.6547ms)
+✔ 10. size, version, date and page helpers refuse bad input (0.8727ms)
+✔ 11. the README download block links real files, never localhost (1.2663ms)
+✔ 12. the page reads releases live instead of hardcoding them (31.4518ms)
+✔ 13. every published version string tracks package.json (4.6989ms)
+✔ 1. every Android build passes the verifier before it can be uploaded (1.9178ms)
+✔ 2. the verifier uses the real SDK tools, not hand-rolled substitutes (0.4296ms)
+✔ 3. a debug key can never be published as a release build (0.2673ms)
+✔ 4. the Capacitor payload is checked before Gradle packages it (1.1921ms)
+✔ 5. Windows signing is gated and can never silently fall back to unsigned (0.5834ms)
+✔ 6. checksums describe the signed bytes, not the pre-signing file (0.2716ms)
+✔ 7. the release notes only claim a signature that actually exists (0.3481ms)
+✔ 8. no step prints a signing secret (0.4856ms)
+✔ 9. the published release still refuses drafts and unverified tags (0.405ms)
+✔ 10. the desktop shell may reach the same release lookup as the web app (7.551ms)
+✔ a confirmation done event is final: a later error event never turns it into a failure (6.6123ms)
+✔ duplicate done events are idempotent (1.0095ms)
+✔ a done event arriving after an error still wins because persistence succeeded (1.3651ms)
+✔ artifact persistence failure is a persistence error, not a generation failure (1.4188ms)
+✔ an interrupted stream keeps partial output and is classified as interrupted (1.019ms)
+✔ empty provider output produces one empty-response error (4.7795ms)
+✔ an aborted request rejects with AbortError rather than a chat failure (1.2867ms)
+✔ a completed turn cannot be turned into a failure by a stale callback (2.0557ms)
+✔ chunks and activity after completion are ignored (0.3862ms)
+✔ finishReason error does not masquerade as a truncated response (0.2888ms)
+✔ length-limited answers stay completed but marked as length limited (0.222ms)
+✔ cancelling an empty placeholder removes it so it can never be replayed (0.9186ms)
+✔ cancelling a partial turn keeps the text and records a cancelled state (0.2222ms)
+✔ a late failure after cancellation is ignored (0.403ms)
+✔ interrupting keeps partial content and clears any failure (0.3122ms)
+✔ history replay drops empty assistant turns and never sends an empty user message (0.9459ms)
+✔ save failures and generation failures are distinct categories (0.5052ms)
+✔ rate limits, timeouts, image failures, and oversized requests are not mislabeled (0.5406ms)
+✔ quota notices do not invent reset times (0.4869ms)
+✔ elapsed seconds come from real turn timestamps (3.0722ms)
+✔ ThoughtLine is restored from the existing React Bits component (2.8165ms)
+✔ AgentActivity uses ThoughtLine as the single thinking indicator and timer (2.3497ms)
+✔ the assistant message keeps the real event timeline beside the thinking line (2.7213ms)
+✔ the shimmer gradient keeps the working label visible (2.2211ms)
+✔ the live timeline opens while the turn runs and folds after it settles (2.9604ms)
+✔ thinking labels come from the real stream phase (2.6489ms)
+✔ a 404 from the usage endpoint is treated as a missing feature (1.3051ms)
+✔ usage stops being re-requested once the server says it has no endpoint (8.2307ms)
+✔ the sidebar names the reason instead of showing an error forever (2.0063ms)
+ℹ tests 536
+ℹ suites 1
+ℹ pass 534
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 115388.2204
+
+✖ failing tests:
+
+test at test\qoderSettings.test.js:75:1
+✖ the settings form sends the Qoder mode and OpenAPI host on save, test, and model test (3.5122ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /authMode: form\.authMode \|\| "pat"/. Input:
+  
+  'async function handleSave(event) {\n' +
+    '    event?.preventDefault?.();\n' +
+    '    if (!form) return;\n' +
+    '    setAlert(null);\n' +
+    '    if (!SAVEABLE_COMPATIBILITY.has(form.compatibility) || form.providerType === "native") {\n' +
+    '      setAlert({ severity: "warning", message: "This endpoint needs a dedicated adapter before VupsRouter can use it. OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages are implemented." });\n' +
+    '      return;\n' +
+    '    }\n' +
+    '    const providerId = savedProvider ? form.providerId : slugify(form.providerId || form.provider);\n' +
+    '    if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(providerId)) {\n' +
+    '      setAlert({ severity: "error", message: "Provider name must contain letters or digits." });\n' +
+    '      return;\n' +
+    '    }\n' +
+    '    if (form.provider.trim().length < 2) {\n' +
+    '      setAlert({ severity: "error", message: "Provider name must be at least 2 characters." });\n' +
+    '      return;\n' +
+    '    }\n' +
+    '    if (!form.baseUrl.trim()) {\n' +
+    '      setAlert({ severity: "error", message: "Enter the API base URL (for example https://api.example.com/v1)." });\n' +
+    '      return;\n' +
+    '    }\n' +
+    '    if (!savedProvider?.hasApiKey && form.apiKey.trim().length < 4) {\n' +
+    '      setAlert({ severity: "error", message: "Paste the API key from your provider." });\n' +
+    '      return;\n' +
+    '    }\n' +
+    '    setBusy("save");\n' +
+    '    try {\n' +
+    '      const payload = buildProviderSavePayload({ form, providerId, selectedModels, defaultModel });\n' +
+    '      const result = savedProvider\n' +
+    '        ? await saveManagedProvider(savedProvider.configId, payload)\n' +
+    '        : await createManagedProvider(payload);\n' +
+    '      await refresh();\n' +
+    '      const savedConfig = result.config || {};\n' +
+    '      setForm(current => ({\n' +
+    '        ...current,\n' +
+    '        configId: savedConfig.configId || current.configId,\n' +
+    '        providerId: savedConfig.providerId || current.providerId,\n' +
+    '        baseUrl: savedConfig.baseUrl || current.baseUrl,\n' +
+    '        model: savedConfig.model || current.model,\n' +
+    '        authMode: savedConfig.authMode || current.authMode,\n' +
+    '        openapiBaseUrl: savedConfig.openapiBaseUrl ?? current.openapiBaseUrl,\n' +
+    '        apiKey: ""\n' +
+    '      }));\n' +
+    '      // The saved row is the source of truth for the catalogue: models merged\n' +
+    '      // in by discovery show up here instead of vanishing until a reload.\n' +
+    '      if (Array.isArray(savedConfig.models)) {\n' +
+    '        setSelectedModels(savedConfig.models);\n' +
+    '        setDefaultModel(savedConfig.defaultModel || "");\n' +
+    '      }\n' +
+    '      setAlert({ severity: "success", message: `${result.message} Key: ${savedConfig.apiKeyMasked || "saved"}.` });\n' +
+    '    } catch (error) {\n' +
+    '      setAlert({ severity: "error", message: getApiErrorMessage(error) });\n' +
+    '    } finally {\n' +
+    '      setBusy("");\n' +
+    '    }\n' +
+    '  }\n' +
+    '\n' +
+    '  '
+  
+      at TestContext.<anonymous> (file:///C:/project/Vups%20Router/client/test/qoderSettings.test.js:77:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'async function handleSave(event) {\n    event?.preventDefault?.();\n    if (!form) return;\n    setAlert(null);\n    if (!SAVEABLE_COMPATIBILITY.has(form.compatibility) || form.providerType === "native") {\n      setAlert({ severity: "warning", message: "This endpoint needs a dedicated adapter before VupsRouter can use it. OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages are implemented." });\n      return;\n    }\n    const providerId = savedProvider ? form.providerId : slugify(form.providerId || form.provider);\n    if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(providerId)) {\n      setAlert({ severity: "error", message: "Provider name must contain letters or digits." });\n      return;\n    }\n    if (form.provider.trim().length < 2) {\n      setAlert({ severity: "error", message: "Provider name must be at least 2 characters." });\n      return;\n    }\n    if (!form.baseUrl.trim()) {\n      setAlert({ severity: "error", message: "Enter the API base URL (for example https://api.example.com/v1)." });\n      return;\n    }\n    if (!savedProvider?.hasApiKey && form.apiKey.trim().length < 4) {\n      setAlert({ severity: "error", message: "Paste the API key from your provider." });\n      return;\n    }\n    setBusy("save");\n    try {\n      const payload = buildProviderSavePayload({ form, providerId, selectedModels, defaultModel });\n      const result = savedProvider\n        ? await saveManagedProvider(savedProvider.configId, payload)\n        : await createManagedProvider(payload);\n      await refresh();\n      const savedConfig = result.config || {};\n      setForm(current => ({\n        ...current,\n        configId: savedConfig.configId || current.configId,\n        providerId: savedConfig.providerId || current.providerId,\n        baseUrl: savedConfig.baseUrl || current.baseUrl,\n        model: savedConfig.model || current.model,\n        authMode: savedConfig.authMode || current.authMode,\n        openapiBaseUrl: savedConfig.openapiBaseUrl ?? current.openapiBaseUrl,\n        apiKey: ""\n      }));\n      // The saved row is the source of truth for the catalogue: models merged\n      // in by discovery show up here instead of vanishing until a reload.\n      if (Array.isArray(savedConfig.models)) {\n        setSelectedModels(savedConfig.models);\n        setDefaultModel(savedConfig.defaultModel || "");\n      }\n      setAlert({ severity: "success", message: `${result.message} Key: ${savedConfig.apiKeyMasked || "saved"}.` });\n    } catch (error) {\n      setAlert({ severity: "error", message: getApiErrorMessage(error) });\n    } finally {\n      setBusy("");\n    }\n  }\n\n  ',
+    expected: /authMode: form\.authMode \|\| "pat"/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at test\qoderSettings.test.js:87:1
+✖ saved Qoder settings are restored into the form (2.8153ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /authMode: result\.config\.authMode \|\| current\.authMode/. Input:
+  
+  'import React, { useCallback, useEffect, useMemo, useState } from "react";\n' +
+    'import { Link } from "react-router-dom";\n' +
+    'import {\n' +
+    '  Button,\n' +
+    '  CircularProgress,\n' +
+    '  IconButton,\n' +
+    '  InputAdornment,\n' +
+    '  TextField,\n' +
+    '  Typography\n' +
+    '} from "@mui/material";\n' +
+    'import AddRoundedIcon from "@mui/icons-material/AddRounded";\n' +
+    'import BoltRoundedIcon from "@mui/icons-material/BoltRounded";\n' +
+    'import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";\n' +
+    'import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";\n' +
+    'import KeyRoundedIcon from "@mui/icons-material/KeyRounded";\n' +
+    'import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";\n' +
+    'import SaveRoundedIcon from "@mui/icons-material/SaveRounded";\n' +
+    'import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";\n' +
+    'import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";\n' +
+    'import SiteHeader from "./components/SiteHeader.jsx";\n' +
+    'import ExternalLink from "./components/ExternalLink.jsx";\n' +
+    'import HoldToDeleteDialog from "./components/HoldToDeleteDialog.jsx";\n' +
+    'import { Alert as LwAlert } from "./components/lightswind/alert";\n' +
+    'import { Badge as LwBadge } from "./components/lightswind/badge";\n' +
+    'import { Skeleton } from "./components/lightswind/skeleton";\n' +
+    'import AnimatedContent from "./components/reactbits/AnimatedContent/AnimatedContent.jsx";\n' +
+    'import SpotlightCard from "./components/reactbits/SpotlightCard/SpotlightCard.jsx";\n' +
+    'import { capabilityLabels } from "./chat/modelCatalog.js";\n' +
+    'import { PROVIDER_CATEGORIES, PROVIDERS, filterProviders, providerById } from "./providers/registry.js";\n' +
+    'import { QODER_AUTH_MODES, QODER_REGIONS, formDiffersFromSaved, qoderRegionFor } from "./settings/qoderForm.js";\n' +
+    'import { buildProviderSavePayload, modelIdentity, savedModelIds } from "./settings/modelForm.js";\n' +
+    'import {\n' +
+    '  activateProvider,\n' +
+    '  createManagedProvider,\n' +
+    '  fetchFreeModels,\n' +
+    '  fetchProviderModelsDetailed,\n' +
+    '  getApiErrorMessage,\n' +
+    '  listProviders,\n' +
+    '  removeProvider,\n' +
+    '  saveManagedProvider,\n' +
+    '  saveModelType,\n' +
+    '  saveProviderModels,\n' +
+    '  testManagedProvider,\n' +
+    '  testManagedProviderModel,\n' +
+    '  testProviderConnection,\n' +
+    '  testProviderModel\n' +
+    '} from "./services/api.js";\n' +
+    'import { RecommendedBadge } from "./settings/RecommendedBadge.jsx";\n' +
+    'import "./settings.css";\n' +
+    '\n' +
+    'function capabilityTitle(model) {\n' +
+    '  const labels = capabilityLabels(model?.capabilities);\n' +
+    '  return labels.length > 0 ? `Supported: ${labels.join(", ")}` : "Capabilities not reported by this provider";\n' +
+    '}\n' +
+    '\n' +
+    '/** MUI severities used across this page mapped onto the Lightwind Alert variants. */\n' +
+    'const ALERT_VARIANTS = { error: "destructive", warning: "warning", info: "info", success: "success" };\n' +
+    '\n' +
+    'function StatusBadge({ tone = "neutral", dot = false, children }) {\n' +
+    '  return (\n' +
+    '    <LwBadge\n' +
+    '      variant="unstyled"\n' +
+    '      size="unstyled"\n' +
+    '      shape="unstyled"\n' +
+    '      withDot={dot}\n' +
+    '      className={`settings-badge settings-badge--${tone}`}\n' +
+    '    >\n' +
+    '      {children}\n' +
+    '    </LwBadge>\n' +
+    '  );\n' +
+    '}\n' +
+    '\n' +
+    'const EMPTY_FORM = {\n' +
+    '  configId: "",\n' +
+    '  providerId: "",\n' +
+    '  provider: "",\n' +
+    '  baseUrl: "",\n' +
+    '  apiKey: "",\n' +
+    '  model: "",\n' +
+    '  providerType: "openai_compatible",\n' +
+    '  compatibility: "openai",\n' +
+    '  authMode: "pat",\n' +
+    '  openapiBaseUrl: "",\n' +
+    '  status: "supported",\n' +
+    '  registryId: ""\n' +
+    '};\n' +
+    '\n' +
+    'const PROTOCOL_OPTIONS = [\n' +
+    '  { value: "openai_compatible", label: "OpenAI-compatible — Chat Completions" },\n' +
+    '  { value: "openai_responses", label: "OpenAI — Responses API" },\n' +
+    '  { value: "anthropic_compatible", label: "Anthropic — Messages API" },\n' +
+    '  { value: "azure_openai", label: "Azure OpenAI — api-key header" },\n' +
+    '  { value: "watsonx", label: "IBM watsonx — IAM token exchange" },\n' +
+    '  { value: "qoder_cloud_agents", label: "Qoder Cloud Agents — session/event API" },\n' +
+    '  { value: "local_gateway", label: "Local gateway — OpenAI-compatible" },\n' +
+    '  { value: "native", label: "Other native API (unsupported)" }\n' +
+    '];\n' +
+    '\n' +
+    'const SAVEABLE_COMPATIBILITY = new Set(["openai", "anthropic", "azure", "watsonx", "qoder"]);\n' +
+    '\n' +
+    'const COMPATIBILITY_PROTOCOL = {\n' +
+    '  openai: "openai_compatible",\n' +
+    '  anthropic: "anthropic_compatible",\n' +
+    '  azure: "azure_openai",\n' +
+    '  watsonx: "watsonx",\n' +
+    '  qoder: "qoder_cloud_agents",\n' +
+    '  other: "native"\n' +
+    '};\n' +
+    '\n' +
+    'function protocolHelp(type) {\n' +
+    '  if (type === "anthropic_compatible") return "Anthropic Messages API. Use https://api.anthropic.com or a compatible proxy; /v1 is added when needed.";\n' +
+    '  if (type === "openai_responses") return "OpenAI Responses API. Use the base URL before /responses, e.g. https://api.openai.com/v1.";\n' +
+    '  if (type === "azure_openai") return "Azure OpenAI v1 endpoint, e.g. https://{resource}.openai.azure.com/openai/v1. The key is sent in the api-key header and the model ID is your deployment name.";\n' +
+    '  if (type === "watsonx") return "IBM watsonx: use your regional cluster URL plus ?project_id=YOUR_PROJECT_ID. The IBM Cloud API key is exchanged for an IAM token automatically.";\n' +
+    `  if (type === "qoder_cloud_agents") return "Qoder Cloud Agents. Choose your region — Global (api.qoder.com / openapi.qoder.sh) or China mainland (api.qoder.com.cn / openapi.qoder.com.cn) — then use either a Personal Access Token, or a service account key which the backend exchanges at the region's OpenAPI host for a short-lived access token (about an hour, renewed automatically). The connection check lists models and falls back to a read-only agents probe; it never creates a session. Each chat message starts a new Qoder session — earlier turns are sent along with it.";\n` +
+    '  if (type === "local_gateway") return "Ollama, LM Studio, vLLM, or another local OpenAI-compatible gateway. The deployed backend cannot reach localhost.";\n' +
+    '  if (type === "native") return "A provider-specific API that is not one of the implemented adapters. Saving and chat are disabled for this option.";\n' +
+    '  return "OpenAI Chat Completions API. Use the base URL before /chat/completions, e.g. https://api.example.com/v1.";\n' +
+    '}\n' +
+    '\n' +
+    'function slugify(name) {\n' +
+    '  return String(name || "")\n' +
+    '    .trim()\n' +
+    '    .toLowerCase()\n' +
+    '    .replace(/[^a-z0-9]+/g, "-")\n' +
+    '    .replace(/^-+|-+$/g, "")\n' +
+    '    .slice(0, 60) || "provider";\n' +
+    '}\n' +
+    '\n' +
+    '// Saved configs sometimes carry a name-derived providerId ("qoder-cloud-agents")\n' +
+    '// instead of the registry id, so fall back to the exact display name.\n' +
+    'function registryEntryForSavedProvider(provider) {\n' +
+    '  if (!provider) return null;\n' +
+    '  const direct = providerById(provider.providerId);\n' +
+    '  if (direct) return direct;\n' +
+    '  const name = String(provider.provider || "").trim().toLowerCase();\n' +
+    '  if (!name) return null;\n' +
+    '  return PROVIDERS.find(entry =>\n' +
+    '    entry.name.toLowerCase() === name\n' +
+    '    || entry.id === name\n' +
+    '    || (Array.isArray(entry.aliases) && entry.aliases.some(alias => String(alias).toLowerCase() === name))\n' +
+    '  ) || null;\n' +
+    '}\n' +
+    '\n' +
+    'function statusLabel(provider) {\n' +
+    '  const last = provider.lastTest;\n' +
+    '  if (last) {\n' +
+    '    if (last.status === "connected") return { label: "Connection verified", tone: "ok" };\n' +
+    '    if (last.status === "reachable") return { label: "Endpoint reachable — test a model", tone: "warn" };\n' +
+    '    if (last.status === "invalid_key") return { label: "Last test: authentication failed", tone: "error" };\n' +
+    '    if (last.status === "insufficient_scope") return { label: "Last test: permission or scope insufficient", tone: "error" };\n' +
+    '    if (last.status === "incorrect_region") return { label: "Last test: endpoint and region do not match", tone: "error" };\n' +
+    '    if (last.status === "not_found") return { label: "Last test: endpoint not found — check region and base URL", tone: "error" };\n' +
+    '    if (last.status === "invalid_response") return { label: "Last test: invalid response from Qoder", tone: "error" };\n' +
+    '    if (last.status === "rate_limited") return { label: "Last test: rate limited — try again shortly", tone: "warn" };\n' +
+    '    if (last.status === "provider_unavailable") return { label: "Last test: Qoder service unavailable", tone: "error" };\n' +
+    '    if (last.status === "bad_request") return { label: "Last test: endpoint rejected the request", tone: "error" };\n' +
+    '    if (last.status === "insufficient_balance") return { label: "Last test: insufficient balance", tone: "warn" };\n' +
+    '    if (last.status === "restricted") return { label: "Last test: restricted to official client", tone: "warn" };\n' +
+    '    if (last.status === "unsupported") return { label: "Last test: protocol not supported", tone: "warn" };\n' +
+    '    if (last.status === "model_unavailable") return { label: "Last test: model unavailable", tone: "warn" };\n' +
+    '    if (last.status === "quota_exhausted") return { label: "Last test: free quota exhausted — wait for reset", tone: "warn" };\n' +
+    '    if (last.status === "region_restricted") return { label: "Last test: region not eligible for free tier", tone: "warn" };\n' +
+    '    if (last.status === "unreachable") return { label: "Last test: network or DNS error", tone: "error" };\n' +
+    '    if (last.status === "timeout") return { label: "Last test: timed out", tone: "error" };\n' +
+    '    return { label: "Last test failed", tone: "error" };\n' +
+    '  }\n' +
+    '  return { label: "Saved — run a test to verify", tone: "neutral" };\n' +
+    '}\n' +
+    '\n' +
+    'function formFromProvider(provider, registryEntry) {\n' +
+    '  return {\n' +
+    '    configId: provider?.configId || "",\n' +
+    '    providerId: provider?.providerId || registryEntry?.id || "",\n' +
+    '    provider: provider?.provider || registryEntry?.name || "",\n' +
+    '    baseUrl: provider?.baseUrl ?? registryEntry?.baseUrl ?? "",\n' +
+    '    apiKey: "",\n' +
+    '    model: provider?.model || provider?.defaultModel || "",\n' +
+    '    providerType: provider?.providerType || COMPATIBILITY_PROTOCOL[registryEntry?.compatibility] || "openai_compatible",\n' +
+    '    compatibility: registryEntry?.compatibility || "openai",\n' +
+    '    authMode: provider?.authMode || "pat",\n' +
+    '    openapiBaseUrl: provider?.openapiBaseUrl || "",\n' +
+    '    status: registryEntry?.status || (provider ? "supported" : "listed"),\n' +
+    '    registryId: registryEntry?.id || ""\n' +
+    '  };\n' +
+    '}\n' +
+    '\n' +
+    'function GuideLinks({ entry }) {\n' +
+    '  const links = [\n' +
+    '    entry?.keysUrl && { href: entry.keysUrl, label: entry.keysLabel || "Create a key" },\n' +
+    '    entry?.docsUrl && { href: entry.docsUrl, label: "API docs" },\n' +
+    '    entry?.pricingUrl && { href: entry.pricingUrl, label: "Pricing" },\n' +
+    '    entry?.website && { href: entry.website, label: "Website" }\n' +
+    '  ].filter(Boolean);\n' +
+    '  i'... 52252 more characters
+  
+      at TestContext.<anonymous> (file:///C:/project/Vups%20Router/client/test/qoderSettings.test.js:90:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'import React, { useCallback, useEffect, useMemo, useState } from "react";\nimport { Link } from "react-router-dom";\nimport {\n  Button,\n  CircularProgress,\n  IconButton,\n  InputAdornment,\n  TextField,\n  Typography\n} from "@mui/material";\nimport AddRoundedIcon from "@mui/icons-material/AddRounded";\nimport BoltRoundedIcon from "@mui/icons-material/BoltRounded";\nimport CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";\nimport DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";\nimport KeyRoundedIcon from "@mui/icons-material/KeyRounded";\nimport OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";\nimport SaveRoundedIcon from "@mui/icons-material/SaveRounded";\nimport VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";\nimport VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";\nimport SiteHeader from "./components/SiteHeader.jsx";\nimport ExternalLink from "./components/ExternalLink.jsx";\nimport HoldToDeleteDialog from "./components/HoldToDeleteDialog.jsx";\nimport { Alert as LwAlert } from "./components/lightswind/alert";\nimport { Badge as LwBadge } from "./components/lightswind/badge";\nimport { Skeleton } from "./components/lightswind/skeleton";\nimport AnimatedContent from "./components/reactbits/AnimatedContent/AnimatedContent.jsx";\nimport SpotlightCard from "./components/reactbits/SpotlightCard/SpotlightCard.jsx";\nimport { capabilityLabels } from "./chat/modelCatalog.js";\nimport { PROVIDER_CATEGORIES, PROVIDERS, filterProviders, providerById } from "./providers/registry.js";\nimport { QODER_AUTH_MODES, QODER_REGIONS, formDiffersFromSaved, qoderRegionFor } from "./settings/qoderForm.js";\nimport { buildProviderSavePayload, modelIdentity, savedModelIds } from "./settings/modelForm.js";\nimport {\n  activateProvider,\n  createManagedProvider,\n  fetchFreeModels,\n  fetchProviderModelsDetailed,\n  getApiErrorMessage,\n  listProviders,\n  removeProvider,\n  saveManagedProvider,\n  saveModelType,\n  saveProviderModels,\n  testManagedProvider,\n  testManagedProviderModel,\n  testProviderConnection,\n  testProviderModel\n} from "./services/api.js";\nimport { RecommendedBadge } from "./settings/RecommendedBadge.jsx";\nimport "./settings.css";\n\nfunction capabilityTitle(model) {\n  const labels = capabilityLabels(model?.capabilities);\n  return labels.length > 0 ? `Supported: ${labels.join(", ")}` : "Capabilities not reported by this provider";\n}\n\n/** MUI severities used across this page mapped onto the Lightwind Alert variants. */\nconst ALERT_VARIANTS = { error: "destructive", warning: "warning", info: "info", success: "success" };\n\nfunction StatusBadge({ tone = "neutral", dot = false, children }) {\n  return (\n    <LwBadge\n      variant="unstyled"\n      size="unstyled"\n      shape="unstyled"\n      withDot={dot}\n      className={`settings-badge settings-badge--${tone}`}\n    >\n      {children}\n    </LwBadge>\n  );\n}\n\nconst EMPTY_FORM = {\n  configId: "",\n  providerId: "",\n  provider: "",\n  baseUrl: "",\n  apiKey: "",\n  model: "",\n  providerType: "openai_compatible",\n  compatibility: "openai",\n  authMode: "pat",\n  openapiBaseUrl: "",\n  status: "supported",\n  registryId: ""\n};\n\nconst PROTOCOL_OPTIONS = [\n  { value: "openai_compatible", label: "OpenAI-compatible — Chat Completions" },\n  { value: "openai_responses", label: "OpenAI — Responses API" },\n  { value: "anthropic_compatible", label: "Anthropic — Messages API" },\n  { value: "azure_openai", label: "Azure OpenAI — api-key header" },\n  { value: "watsonx", label: "IBM watsonx — IAM token exchange" },\n  { value: "qoder_cloud_agents", label: "Qoder Cloud Agents — session/event API" },\n  { value: "local_gateway", label: "Local gateway — OpenAI-compatible" },\n  { value: "native", label: "Other native API (unsupported)" }\n];\n\nconst SAVEABLE_COMPATIBILITY = new Set(["openai", "anthropic", "azure", "watsonx", "qoder"]);\n\nconst COMPATIBILITY_PROTOCOL = {\n  openai: "openai_compatible",\n  anthropic: "anthropic_compatible",\n  azure: "azure_openai",\n  watsonx: "watsonx",\n  qoder: "qoder_cloud_agents",\n  other: "native"\n};\n\nfunction protocolHelp(type) {\n  if (type === "anthropic_compatible") return "Anthropic Messages API. Use https://api.anthropic.com or a compatible proxy; /v1 is added when needed.";\n  if (type === "openai_responses") return "OpenAI Responses API. Use the base URL before /responses, e.g. https://api.openai.com/v1.";\n  if (type === "azure_openai") return "Azure OpenAI v1 endpoint, e.g. https://{resource}.openai.azure.com/openai/v1. The key is sent in the api-key header and the model ID is your deployment name.";\n  if (type === "watsonx") return "IBM watsonx: use your regional cluster URL plus ?project_id=YOUR_PROJECT_ID. The IBM Cloud API key is exchanged for an IAM token automatically.";\n  if (type === "qoder_cloud_agents") return "Qoder Cloud Agents. Choose your region — Global (api.qoder.com / openapi.qoder.sh) or China mainland (api.qoder.com.cn / openapi.qoder.com.cn) — then use either a Personal Access Token, or a service account key which the backend exchanges at the region\'s OpenAPI host for a short-lived access token (about an hour, renewed automatically). The connection check lists models and falls back to a read-only agents probe; it never creates a session. Each chat message starts a new Qoder session — earlier turns are sent along with it.";\n  if (type === "local_gateway") return "Ollama, LM Studio, vLLM, or another local OpenAI-compatible gateway. The deployed backend cannot reach localhost.";\n  if (type === "native") return "A provider-specific API that is not one of the implemented adapters. Saving and chat are disabled for this option.";\n  return "OpenAI Chat Completions API. Use the base URL before /chat/completions, e.g. https://api.example.com/v1.";\n}\n\nfunction slugify(name) {\n  return String(name || "")\n    .trim()\n    .toLowerCase()\n    .replace(/[^a-z0-9]+/g, "-")\n    .replace(/^-+|-+$/g, "")\n    .slice(0, 60) || "provider";\n}\n\n// Saved configs sometimes carry a name-derived providerId ("qoder-cloud-agents")\n// instead of the registry id, so fall back to the exact display name.\nfunction registryEntryForSavedProvider(provider) {\n  if (!provider) return null;\n  const direct = providerById(provider.providerId);\n  if (direct) return direct;\n  const name = String(provider.provider || "").trim().toLowerCase();\n  if (!name) return null;\n  return PROVIDERS.find(entry =>\n    entry.name.toLowerCase() === name\n    || entry.id === name\n    || (Array.isArray(entry.aliases) && entry.aliases.some(alias => String(alias).toLowerCase() === name))\n  ) || null;\n}\n\nfunction statusLabel(provider) {\n  const last = provider.lastTest;\n  if (last) {\n    if (last.status === "connected") return { label: "Connection verified", tone: "ok" };\n    if (last.status === "reachable") return { label: "Endpoint reachable — test a model", tone: "warn" };\n    if (last.status === "invalid_key") return { label: "Last test: authentication failed", tone: "error" };\n    if (last.status === "insufficient_scope") return { label: "Last test: permission or scope insufficient", tone: "error" };\n    if (last.status === "incorrect_region") return { label: "Last test: endpoint and region do not match", tone: "error" };\n    if (last.status === "not_found") return { label: "Last test: endpoint not found — check region and base URL", tone: "error" };\n    if (last.status === "invalid_response") return { label: "Last test: invalid response from Qoder", tone: "error" };\n    if (last.status === "rate_limited") return { label: "Last test: rate limited — try again shortly", tone: "warn" };\n    if (last.status === "provider_unavailable") return { label: "Last test: Qoder service unavailable", tone: "error" };\n    if (last.status === "bad_request") return { label: "Last test: endpoint rejected the request", tone: "error" };\n    if (last.status === "insufficient_balance") return { label: "Last test: insufficient balance", tone: "warn" };\n    if (last.status === "restricted") return { label: "Last test: restricted to official client", tone: "warn" };\n    if (last.status === "unsupported") return { label: "Last test: protocol not supported", tone: "warn" };\n    if (last.status === "model_unavailable") return { label: "Last test: model unavailable", tone: "warn" };\n    if (last.status === "quota_exhausted") return { label: "Last test: free quota exhausted — wait for reset", tone: "warn" };\n    if (last.status === "region_restricted") return { label: "Last test: region not eligible for free tier", tone: "warn" };\n    if (last.status === "unreachable") return { label: "Last test: network or DNS error", tone: "error" };\n    if (last.status === "timeout") return { label: "Last test: timed out", tone: "error" };\n    return { label: "Last test failed", tone: "error" };\n  }\n  return { label: "Saved — run a test to verify", tone: "neutral" };\n}\n\nfunction formFromProvider(provider, registryEntry) {\n  return {\n    configId: provider?.configId || "",\n    providerId: provider?.providerId || registryEntry?.id || "",\n    provider: provider?.provider || registryEntry?.name || "",\n    baseUrl: provider?.baseUrl ?? registryEntry?.baseUrl ?? "",\n    apiKey: "",\n    model: provider?.model || provider?.defaultModel || "",\n    providerType: provider?.providerType || COMPATIBILITY_PROTOCOL[registryEntry?.compatibility] || "openai_compatible",\n    compatibility: registryEntry?.compatibility || "openai",\n    authMode: provider?.authMode || "pat",\n    openapiBaseUrl: provider?.openapiBaseUrl || "",\n    status: registryEntry?.status || (provider ? "supported" : "listed"),\n    registryId: registryEntry?.id || ""\n  };\n}\n\nfunction GuideLinks({ entry }) {\n  const links = [\n    entry?.keysUrl && { href: entry.keysUrl, label: entry.keysLabel || "Create a key" },\n    entry?.docsUrl && { href: entry.docsUrl, label: "API docs" },\n    entry?.pricingUrl && { href: entry.pricingUrl, label: "Pricing" },\n    entry?.website && { href: entry.website, label: "Website" }\n  ].filter(Boolean);\n  i'... 52252 more characters,
+    expected: /authMode: result\.config\.authMode \|\| current\.authMode/,
+    operator: 'match',
+    diff: 'simple'
+  }

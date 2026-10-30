@@ -102,6 +102,18 @@ const VALIDATION_PATTERN =
 // A shipped shell talking to a server that does not know its origin. The
 // provider is not involved, so it must not read as a provider denial.
 const ORIGIN_BLOCKED_PATTERN = /origin not allowed/i;
+// The backend relays the provider's own sentence after "Provider said:". When no
+// category fits, that sentence is real evidence and must not be replaced by an
+// invented apology. The relay is already sanitised and length-capped server side.
+const PROVIDER_RELAY = /Provider said:\s*(.+)$/i;
+const CREDIT_CODES = new Set(["insufficient_credits", "billing_hard_limit", "payment_required", "billing_error"]);
+// OpenRouter documents this limit source on the 429 it returns for free models.
+const OPENROUTER_FREE_DAILY = "openrouter_free_tier_daily";
+
+function providerSaid(error) {
+  const match = String(error?.message || "").match(PROVIDER_RELAY);
+  return (match?.[1] || "").trim().slice(0, 300);
+}
 
 // The shared catalog answers with its own codes. Each one needs a different
 // next action, so none of them may fall through to the generic card.
@@ -254,10 +266,22 @@ export function presentChatError(error, { modelLabel = "", now = new Date() } = 
     retry = false;
     canSwitchModel = false;
   } else if (category === "quota") {
-    title = "Usage limit reached";
-    message = resetText
-      ? `This model's usage limit is reached. It should reset ${resetText}.`
-      : "This model's usage limit is reached. Reset time not provided by provider.";
+    const limitSource = String(error?.diagnostic?.limitSource || "");
+    if (CREDIT_CODES.has(code)) {
+      title = "Out of credits";
+      message =
+        providerSaid(error) ||
+        "Your provider account has no credit left for this model. Top it up with the provider, or choose another model.";
+    } else if (limitSource === OPENROUTER_FREE_DAILY) {
+      title = "Free-model limit reached";
+      message =
+        "OpenRouter only allows a fixed number of free-model requests per day for accounts without credits. The limit resets at midnight UTC, or add credits to lift it.";
+    } else {
+      title = "Usage limit reached";
+      message = resetText
+        ? `This model's usage limit is reached. It should reset ${resetText}.`
+        : "This model's usage limit is reached. Reset time not provided by provider.";
+    }
     retry = false;
   } else if (category === "rate_limit") {
     title = "Model is busy";
@@ -351,6 +375,13 @@ export function presentChatError(error, { modelLabel = "", now = new Date() } = 
   } else if (category === "policy") {
     title = "Request blocked";
     message = "This model declined the request. Rephrase it or choose another model.";
+    retry = false;
+  } else if (category === "unknown_error" && providerSaid(error)) {
+    // No category fit, but the provider explained the failure in its own words.
+    // Those words are evidence; replacing them with "please try again" sends the
+    // user back to the same rejected request.
+    title = "The provider refused this request";
+    message = providerSaid(error);
     retry = false;
   }
 

@@ -1,0 +1,18 @@
+
+> vupsrouter-client@1.0.1 tauri:build
+> tauri build
+
+        Info Looking up installed tauri packages to check mismatched versions...
+    Finished `release` profile [optimized] target(s) in 1.97s
+       Built application at: C:\project\Vups Router\client\src-tauri\target\release\vupsrouter.exe
+        Info Patching C:\project\Vups Router\client\src-tauri\target\release\vupsrouter.exe with bundle type information: nsis
+        Info Target: x64
+     Running makensis to produce C:\project\Vups Router\client\src-tauri\target\release\bundle\nsis\VupsRouter_1.0.1_x64-setup.exe
+        Info Patching C:\project\Vups Router\client\src-tauri\target\release\vupsrouter.exe with bundle type information: msi
+        Info Target: x64
+     Running candle for "C:\\project\\Vups Router\\client\\src-tauri\\target\\release\\wix\\x64\\main.wxs"
+     Running light to produce C:\project\Vups Router\client\src-tauri\target\release\bundle\msi\VupsRouter_1.0.1_x64_en-US.msi
+    Finished 2 bundles at:
+        C:\project\Vups Router\client\src-tauri\target\release\bundle\nsis\VupsRouter_1.0.1_x64-setup.exe (5.67 MiB)
+        C:\project\Vups Router\client\src-tauri\target\release\bundle\msi\VupsRouter_1.0.1_x64_en-US.msi (7.46 MiB)
+

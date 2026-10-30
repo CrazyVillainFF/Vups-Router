@@ -1,0 +1,14 @@
+✔ an anonymous visitor is sent to sign in and returned to this approval page (970.9212ms)
+✔ a sign-up link sends the visitor to sign-up instead (130.9412ms)
+✔ a signed-in browser approves the app once and says what happens next (159.7963ms)
+✔ a duplicate visit never sends a second approval (250.9271ms)
+✔ an incomplete link is refused before anything is sent (125.6778ms)
+✔ a refused approval shows the server's reason instead of a blank spinner (141.0686ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4152.3517

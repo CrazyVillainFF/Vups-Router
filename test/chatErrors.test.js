@@ -199,3 +199,61 @@ test("an edge firewall rejection is its own outcome and never an access denial",
     /firewall|WAF|blocked|rejected|security|filter|request id|diagnostic|api key|another model|provider denied|Access denied/i
   );
 });
+
+test("an uncategorised provider rejection shows the provider's own sentence", () => {
+  const presentation = presentChatError({
+    status: 400,
+    code: "bad_request",
+    model: "deepseek-flash",
+    message: "The provider rejected the request (HTTP 400). Provider said: Field 'model' must reference an available model."
+  });
+  assert.equal(presentation.category, "unknown_error");
+  assert.equal(presentation.title, "The provider refused this request");
+  assert.equal(presentation.message, "Field 'model' must reference an available model.");
+  assert.equal(presentation.retry, false);
+});
+
+test("a rejection without a provider sentence keeps the ordinary fallback", () => {
+  const presentation = presentChatError({ status: 500, code: "unexpected", message: "Something broke." });
+  assert.equal(presentation.title, "Something went wrong");
+  assert.equal(presentation.message, "Something went wrong. Please try again.");
+  assert.equal(presentation.retry, true);
+});
+
+test("a 402 is reported as out of credits, not as a daily usage limit", () => {
+  const presentation = presentChatError({
+    status: 402,
+    code: "insufficient_credits",
+    model: "qfmodel",
+    message:
+      "Your provider account has insufficient credits (HTTP 402). Provider said: You have no available credit. Please renew your plan or purchase a resource package to continue."
+  });
+  assert.equal(presentation.category, "quota");
+  assert.equal(presentation.title, "Out of credits");
+  assert.equal(
+    presentation.message,
+    "You have no available credit. Please renew your plan or purchase a resource package to continue."
+  );
+  assert.doesNotMatch(presentation.message, /reset time not provided/i);
+});
+
+test("OpenRouter's documented free-tier daily limit says when it resets", () => {
+  const presentation = presentChatError({
+    status: 429,
+    code: "quota_exhausted",
+    model: "recursive/flint-v1.0:free",
+    message:
+      "The provider account has reached its usage limit (HTTP 429). Provider said: Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day",
+    diagnostic: { limitSource: "openrouter_free_tier_daily" }
+  });
+  assert.equal(presentation.category, "quota");
+  assert.equal(presentation.title, "Free-model limit reached");
+  assert.match(presentation.message, /midnight UTC/);
+  assert.equal(presentation.retry, false);
+});
+
+test("a quota failure from another provider keeps the generic usage-limit card", () => {
+  const presentation = presentChatError({ status: 429, code: "quota_exhausted", message: "Quota exhausted." });
+  assert.equal(presentation.title, "Usage limit reached");
+  assert.equal(presentation.message, "This model's usage limit is reached. Reset time not provided by provider.");
+});
