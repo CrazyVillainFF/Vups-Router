@@ -8,7 +8,8 @@ import {
   NATIVE_SHELL_STORAGE_KEY,
   detectNativeShell,
   nativeChatPath,
-  normalizeNativeShell
+  normalizeNativeShell,
+  usesBrowserAuthHandoff
 } from "../src/native/shell.js";
 import {
   DEFAULT_PERMISSION_MODE,
@@ -60,6 +61,21 @@ test("native shell detection persists a valid query and survives auth redirects"
   assert.equal(normalizeNativeShell(" WINDOWS "), "windows");
   assert.equal(nativeChatPath("android"), "/chat?native=android");
   assert.equal(nativeChatPath("ios"), "/chat");
+});
+
+test("only the Windows shell hands account access to a browser", () => {
+  assert.equal(usesBrowserAuthHandoff("windows"), true);
+  assert.equal(usesBrowserAuthHandoff(" WINDOWS "), true, "matched the same way the shell is normalised elsewhere");
+  assert.equal(usesBrowserAuthHandoff("android"), false);
+  assert.equal(usesBrowserAuthHandoff("ios"), false);
+  assert.equal(usesBrowserAuthHandoff(null), false);
+
+  // Why the Android app cannot hand off: Capacitor leaves the WebView only for a
+  // host outside the app's own, and the APK loads the same site the approval URL
+  // points at. An Android handoff therefore navigates in place, the browser
+  // never opens, and the ticket is never approved.
+  const capacitor = JSON.parse(read("capacitor.config.json"));
+  assert.equal(new URL(capacitor.server.url).host, new URL(PRODUCTION_SITE_URL).host);
 });
 
 test("native auth redirect preserves the direct-chat search and shell layout", () => {

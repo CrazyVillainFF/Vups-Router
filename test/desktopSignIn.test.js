@@ -313,7 +313,14 @@ test("the app resumes a pending sign-in and lands on the authenticated chat page
   assert.match(app, /await waitForDesktopSignIn\(transaction, \{ signal: controller\.signal \}\)/);
   assert.match(app, /await refreshSession\(\)/);
   assert.match(app, /if \(status === "authenticated"\) return <Navigate to=\{redirectTo\} replace \/>;/);
-  assert.match(app, /client: nativeShell === NATIVE_SHELLS\.android \? "android" : "windows"/);
+  assert.match(app, /const browserAuth = usesBrowserAuthHandoff\(nativeShell\)/);
+  assert.match(app, /\{!browserAuth \? <>/, "the credential form is the screen every shell without a browser handoff gets");
+  assert.match(app, /if \(!browserAuth\) return undefined;/, "only a shell with a browser handoff resumes a pending ticket");
+  assert.doesNotMatch(
+    app,
+    /NATIVE_SHELLS\.android \? "android"/,
+    "the Android app must never start a browser handoff: its WebView is already on the site origin"
+  );
   assert.match(app, /clearPendingSignIn\(\)/, "Cancel abandons the stored transaction");
   assert.doesNotMatch(app, /does not yet receive a browser session/, "the dead-end copy is gone");
   assert.match(app, /path="\/desktop-auth" element=\{<DesktopAuthPage \/>\}/);

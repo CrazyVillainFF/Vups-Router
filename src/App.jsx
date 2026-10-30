@@ -15,7 +15,7 @@ import DownloadPage from "./pages/DownloadPage.jsx";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import { getApiErrorMessage } from "./services/api.js";
-import { NATIVE_SHELLS, detectNativeShell, isTauriRuntime } from "./native/shell.js";
+import { NATIVE_SHELLS, detectNativeShell, isTauriRuntime, usesBrowserAuthHandoff } from "./native/shell.js";
 import { openAuthPage } from "./native/authLinks.js";
 import {
   beginDesktopSignIn,
@@ -73,6 +73,7 @@ function AuthPage({ mode }) {
   const nativeShell =
     detectNativeShell(returnSearch || undefined) ||
     (isTauriRuntime() ? NATIVE_SHELLS.windows : null);
+  const browserAuth = usesBrowserAuthHandoff(nativeShell);
   const { signUp, signIn, status, refreshSession } = useAuth();
   const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "" });
   const [visibility, setVisibility] = useState(initialPasswordVisibility);
@@ -99,7 +100,7 @@ function AuthPage({ mode }) {
   }, [mode]);
 
   useEffect(() => {
-    if (!nativeShell) return undefined;
+    if (!browserAuth) return undefined;
     const pending = readPendingSignIn();
     if (!pending) return undefined;
     watchHandoff(pending);
@@ -109,7 +110,7 @@ function AuthPage({ mode }) {
     };
     // Resume only once per native auth screen mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nativeShell]);
+  }, [browserAuth]);
 
 
   if (status === "authenticated") return <Navigate to={redirectTo} replace />;
@@ -206,7 +207,7 @@ function AuthPage({ mode }) {
     setExternalBusy(kind);
     try {
       const { transaction } = await beginDesktopSignIn({
-        client: nativeShell === NATIVE_SHELLS.android ? "android" : "windows",
+        client: NATIVE_SHELLS.windows,
         mode: kind
       });
       await watchHandoff(transaction);
@@ -220,8 +221,8 @@ function AuthPage({ mode }) {
   }
 
     return <div className={`auth-layout${nativeShell ? " auth-layout--native" : ""}`}><div className="auth-art-panel"><Link to="/" className="brand auth-brand"><span className="brand-mark"><VupsLogo /></span><span>vups<span className="brand-light">router</span></span></Link><div className="auth-art-copy"><div className="eyebrow"><span className="eyebrow-line"/> FREE AI, MADE CLEAR</div><h1>Find your next<br/><span>AI model.</span></h1><p>Compare free access options and open models.</p><div className="auth-logo" aria-hidden="true"><VupsLogo className="auth-logo-image" sizes="220px" /></div><div className="auth-art-lines"><span/><span/><span/><span/><span/></div></div><div className="auth-art-foot"><span>FREE AI / CLEAR CHOICES</span><span>VUPSROUTER / 2026</span></div></div>
-    <div className="auth-form-panel"><Link to="/" className="back-home">{"\u2190"} Back to home</Link><div className="auth-form-wrap"><div className="auth-form-heading"><span className="auth-kicker">{nativeShell ? `VUPSROUTER FOR ${shellLabel}` : isSignup ? "JOIN VUPSROUTER" : "GOOD TO HAVE YOU BACK"}</span><h2>{nativeShell ? isSignup ? "Create your account" : "Sign in" : isSignup ? "Create your account" : "Welcome back"}</h2><p>{nativeShell ? "Account access opens securely in your browser." : isSignup ? "Create an account to use your VupsRouter account features." : "Sign in to your VupsRouter account."}</p></div>
-      {!nativeShell ? <>
+    <div className="auth-form-panel"><Link to="/" className="back-home">{"\u2190"} Back to home</Link><div className="auth-form-wrap"><div className="auth-form-heading"><span className="auth-kicker">{nativeShell ? `VUPSROUTER FOR ${shellLabel}` : isSignup ? "JOIN VUPSROUTER" : "GOOD TO HAVE YOU BACK"}</span><h2>{nativeShell ? isSignup ? "Create your account" : "Sign in" : isSignup ? "Create your account" : "Welcome back"}</h2><p>{browserAuth ? "Account access opens securely in your browser." : isSignup ? "Create an account to use your VupsRouter account features." : "Sign in to your VupsRouter account."}</p></div>
+      {!browserAuth ? <>
       {error && <Alert severity="error" sx={{mb:2}}>{error}</Alert>}{message && <Alert severity="success" sx={{mb:2}}>{message}</Alert>}
       <form className="auth-form" onSubmit={handleSubmit}>
         {isSignup && <TextField label="Your name" value={form.name} onChange={update("name")} onBlur={markTouched("name")} error={Boolean(fieldError("name"))} helperText={fieldError("name")} autoComplete="name" autoFocus inputProps={{minLength:2,maxLength:80}} required />}
@@ -342,7 +343,7 @@ function AuthPage({ mode }) {
           ) : null}
           {externalError ? <Alert severity="error" sx={{ mt: 1.5 }}>{externalError}</Alert> : null}
           <p className="auth-external__note">
-            VupsRouter opens the secure sign-in page in your browser. {shellLabel === "ANDROID" ? "This Android app" : "This Windows app"} finishes signing you in automatically when you are done there.
+            VupsRouter opens the secure sign-in page in your browser. This Windows app finishes signing you in automatically when you are done there.
           </p>
         </div>
       )}

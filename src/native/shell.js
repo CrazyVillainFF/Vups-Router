@@ -63,3 +63,11 @@ export function isNativeShell(shell, expected) {
   const normalized = normalizeNativeShell(shell);
   return Boolean(normalized && (!expected || normalized === expected));
 }
+
+// Only the Windows shell needs account access to happen in a real browser: it
+// serves its own UI from a loopback origin, so a cookie set by the production
+// site would never reach the app. The Android WebView is already on that site's
+// origin, so it signs in in place and the session cookie stays first-party.
+export function usesBrowserAuthHandoff(shell) {
+  return normalizeNativeShell(shell) === NATIVE_SHELLS.windows;
+}
