@@ -13,13 +13,13 @@ React 19 + Vite frontend for VupsRouter: the existing home, signup, and signin p
 
 Also available in the release: `VupsRouter-windows-x64.msi` (same app, for managed installs). **There is no iOS app** — nothing is downloaded for iPhone or iPad; use the web app there.
 
-**Current build: v1.0.6** — built and published by CI on **2026-10-30 06:52 UTC** (12:22 IST, 30 Oct 2026). Verify any download against [`SHA256SUMS.txt`](https://github.com/CrazyVillainFF/Vups-Router/releases/download/v1.0.6/SHA256SUMS.txt):
+**Current build: v1.0.7** — built and published by CI on **2026-10-30 09:55 UTC** (15:25 IST, 30 Oct 2026). Verify any download against [`SHA256SUMS.txt`](https://github.com/CrazyVillainFF/Vups-Router/releases/download/v1.0.7/SHA256SUMS.txt):
 
 | File | SHA-256 |
 | --- | --- |
-| `VupsRouter-android-test-debug.apk` (6,617,147 B) | `e625e799ce859f26b31e229aeee6ad71dd921255ddd121cdadd97ea52fb3fb0a` |
-| `VupsRouter-windows-x64-setup.exe` (5,955,603 B) | `5f2df0a715e9403c463a9c06a1b689442d8ade43f7b0d8977c3fed0196865b03` |
-| `VupsRouter-windows-x64.msi` (7,827,456 B) | `4533584e1a21b00f00f9cc37e6a763c41dd48bab994c64e018e8b0c8e651e0aa` |
+| `VupsRouter-android-test-debug.apk` (6,617,117 B) | `b27818af5e6c9c1f665bff4d4e1533375eed0f4a39ffd0e836273c7308780e75` |
+| `VupsRouter-windows-x64-setup.exe` (5,951,521 B) | `317fd79d783958dc79b85ae5d425633edb1ae9703ac2df3984fe11cf297577fb` |
+| `VupsRouter-windows-x64.msi` (7,827,456 B) | `9cfd6f7bda1dd3c1407c0bbbbf6a28ea2d28f7dbf3ed162f5107d15c3e57e305` |
 
 The two *latest/download* links above always resolve to the newest release, because CI publishes assets with version-free names. `src/download/releases.js` (the in-app `/download` page) reads the same GitHub Release at runtime, so this table and the website cannot disagree. If an asset is missing from the release, the page shows *Not published yet* instead of a dead button.
 
