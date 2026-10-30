@@ -163,7 +163,7 @@ describe("hold-to-delete behaviour", () => {
     // Let any timer React still needs to clean up fire before the globals go away.
     await new Promise(resolve => { setTimeout(resolve, 50); });
     restoreGlobals();
-    rmSync(workDir, { recursive: true, force: true });
+    rmSync(workDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
 
   beforeEach(() => {

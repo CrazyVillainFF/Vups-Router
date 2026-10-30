@@ -8,7 +8,10 @@ import { transformWithEsbuild } from "vite";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cardSourcePath = path.join(root, "src", "native", "InChatPermissionCard.jsx");
-const workDir = path.join(root, "test", ".compiled");
+// Each render test owns its scratch directory: node --test runs files in
+// parallel processes, and two suites sharing one folder delete each other's
+// in-flight esbuild output.
+const workDir = path.join(root, "test", ".compiled-permcard");
 
 // The card is plain JSX and this project has no bundler-driven test runner, so
 // it is compiled with Vite's own esbuild pipeline into a directory under the
@@ -60,7 +63,7 @@ afterEach(async () => {
 });
 
 after(() => {
-  rmSync(workDir, { recursive: true, force: true });
+  rmSync(workDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });
 
 function render(element) {

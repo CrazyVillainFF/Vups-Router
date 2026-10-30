@@ -219,10 +219,6 @@ test("local results are rendered from real tool data and nothing else", () => {
 
 test("a genuine OS failure is never dressed up as a permission problem", () => {
   const desktopChat = readFileSync(new URL("../src/services/desktopChat.js", import.meta.url), "utf8");
-  const serverTools = readFileSync(
-    new URL("../../server/src/desktopTools.js", import.meta.url),
-    "utf8"
-  );
 
   // Nowhere in the client copy does the app tell anyone to touch Windows ACLs.
   assert.doesNotMatch(desktopChat, /icacls|Security tab|Properties → Security|take ownership of|NTFS/i);
@@ -232,10 +228,10 @@ test("a genuine OS failure is never dressed up as a permission problem", () => {
     "an access_denied result states what the app did not do"
   );
 
-  // The model is told the same, and only the native code may call something a
-  // Windows access problem.
-  assert.match(serverTools, /Never tell the user to change NTFS permissions/);
-  assert.match(serverTools, /code "access_denied" may be described as a Windows access problem/);
+  // The matching server prompt rule is pinned by the server repository's own
+  // suite (server/src/desktopTools.test.js): this file used to read
+  // ../../server/src/desktopTools.js, which only exists in a two-repo local
+  // checkout and failed every CI run of the client alone.
 
   // Progress states name the lifecycle instead of implying a grant.
   assert.match(desktopChat, /— running/);
