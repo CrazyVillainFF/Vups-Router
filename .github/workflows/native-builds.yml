@@ -369,14 +369,24 @@ jobs:
           fi
           echo "platforms:   $(ls "$ANDROID_HOME/platforms" 2>/dev/null | tr '\n' ' ')"
           echo "build-tools: $(ls "$ANDROID_HOME/build-tools" 2>/dev/null | tr '\n' ' ')"
-          # aapt, apksigner and zipalign all come from the newest build-tools.
-          # Without them nothing here can be verified, so the job stops instead
-          # of shipping an unchecked APK.
-          BUILD_TOOLS="$(ls -1d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -V | tail -1 || true)"
+          # aapt, apksigner and zipalign all come from one build-tools release,
+          # and the highest version number on the image is not always the
+          # complete one, so the newest release that actually carries all three
+          # is chosen. Without them nothing here can be verified, and the job
+          # stops instead of shipping an unchecked APK.
+          BUILD_TOOLS=""
+          for dir in $(ls -1d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -Vr); do
+            if [ -f "$dir/aapt" ] && [ -f "$dir/apksigner" ] && [ -f "$dir/zipalign" ]; then
+              BUILD_TOOLS="$dir"
+              break
+            fi
+          done
           if [ -z "$BUILD_TOOLS" ]; then
             echo '::error::No build-tools are installed, so aapt/apksigner/zipalign are unavailable and the APK cannot be verified.'
             exit 1
           fi
+          APKSIGNER_VERSION="$("$BUILD_TOOLS/apksigner" version 2>/dev/null | head -1 || true)"
+          echo "verifying with $BUILD_TOOLS (apksigner ${APKSIGNER_VERSION:-version unknown})"
           echo "build_tools=$BUILD_TOOLS" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - run: npm test
@@ -448,11 +458,19 @@ jobs:
           fi
           echo "platforms:   $(ls "$ANDROID_HOME/platforms" 2>/dev/null | tr '\n' ' ')"
           echo "build-tools: $(ls "$ANDROID_HOME/build-tools" 2>/dev/null | tr '\n' ' ')"
-          BUILD_TOOLS="$(ls -1d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -V | tail -1 || true)"
+          BUILD_TOOLS=""
+          for dir in $(ls -1d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -Vr); do
+            if [ -f "$dir/aapt" ] && [ -f "$dir/apksigner" ] && [ -f "$dir/zipalign" ]; then
+              BUILD_TOOLS="$dir"
+              break
+            fi
+          done
           if [ -z "$BUILD_TOOLS" ]; then
             echo '::error::No build-tools are installed, so aapt/apksigner/zipalign are unavailable and the APK cannot be verified.'
             exit 1
           fi
+          APKSIGNER_VERSION="$("$BUILD_TOOLS/apksigner" version 2>/dev/null | head -1 || true)"
+          echo "verifying with $BUILD_TOOLS (apksigner ${APKSIGNER_VERSION:-version unknown})"
           echo "build_tools=$BUILD_TOOLS" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - run: npm run build

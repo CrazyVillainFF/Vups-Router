@@ -4,9 +4,10 @@
 // It runs the official SDK tools rather than reimplementing their checks, and
 // exits non-zero on the first failure so nothing unverified can be uploaded.
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { looksLikeDebugCertificate, readApksignerCertificate, readKeytoolCertificate } from "./android-signature-reader.mjs";
 
 const args = process.argv.slice(2);
 const flag = name => {
@@ -35,6 +36,8 @@ const check = (ok, label, detail = "") => {
   }
 };
 
+const lastLine = text => String(text || "").trim().split(/\r?\n/).pop() || "";
+
 const tool = name => {
   if (!buildTools) {
     throw new Error(`--build-tools is required so ${name} can be located.`);
@@ -53,20 +56,33 @@ const tool = name => {
 
 const run = (toolRef, argv) => {
   const resolved = typeof toolRef === "string" ? { cmd: toolRef, prefix: [] } : toolRef;
-  try {
-    return {
-      status: 0,
-      stdout: execFileSync(resolved.cmd, [...resolved.prefix, ...argv], {
-        encoding: "utf8",
-        maxBuffer: 64 * 1024 * 1024
-      })
-    };
-  } catch (error) {
-    return {
-      status: error.status ?? 1,
-      stdout: `${error.stdout || ""}${error.stderr || ""}`
-    };
-  }
+  const result = spawnSync(resolved.cmd, [...resolved.prefix, ...argv], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024
+  });
+  const stdout = result.stdout || "";
+  const stderr = result.stderr || "";
+  return {
+    // A tool that could not be started is not a tool that reported a failure,
+    // but both have to stop the gate, so the reason is kept next to the code.
+    status: result.error ? 127 : (result.status ?? 1),
+    error: result.error ? `${result.error.code || result.error.name}: ${result.error.message}` : "",
+    stdout,
+    stderr,
+    // Parsing has to see both streams: reading only stdout silently turns a
+    // tool that reports on stderr into "no output" and, for the signature
+    // checks, into an APK that looks unsigned.
+    all: stderr ? `${stdout}\n${stderr}` : stdout
+  };
+};
+
+// keytool ships with the same JDK that apksigner needs to run, so it is
+// available wherever the SDK tools are, and it reads the certificate out of the
+// APK's own signature block instead of out of a formatter's text.
+const keytoolRef = () => {
+  const exe = process.platform === "win32" ? "keytool.exe" : "keytool";
+  const fromJavaHome = process.env.JAVA_HOME ? path.join(process.env.JAVA_HOME, "bin", exe) : "";
+  return { cmd: fromJavaHome && fs.existsSync(fromJavaHome) ? fromJavaHome : exe, prefix: [] };
 };
 
 if (!apkPath || !outDir || !checksDir || !assetName || !expectedAppId) {
@@ -112,11 +128,11 @@ check(head[0] === 0x50 && head[1] === 0x4b, "starts with the zip magic PK\\x03\\
 //    invalid" usually means when the download is truncated or corrupted.
 const aapt = tool("aapt");
 const unzipTest = run("unzip", ["-t", apkPath]);
-check(unzipTest.status === 0, "every zip entry passes its CRC check", unzipTest.status === 0 ? "" : unzipTest.stdout.trim().split("\n").pop());
+check(unzipTest.status === 0, "every zip entry passes its CRC check", unzipTest.status === 0 ? "" : lastLine(unzipTest.error || unzipTest.all));
 
 // 4. The manifest resolves, and the identity is the one users already have.
 const badging = run(aapt, ["dump", "badging", apkPath]);
-check(badging.status === 0, "aapt can parse AndroidManifest.xml");
+check(badging.status === 0, "aapt can parse AndroidManifest.xml", badging.status === 0 ? "" : lastLine(badging.error || badging.all));
 const pkg = /^package: name='([^']+)' versionCode='(\d+)' versionName='([^']*)'/m.exec(badging.stdout);
 check(Boolean(pkg), "badging reports the package line", pkg ? pkg[1] : "");
 const appId = pkg?.[1] ?? "";
@@ -148,13 +164,40 @@ check(entries.has("assets/public/index.html"), "the bundled web client is presen
 //    a debug key on a release build breaks future updates silently.
 const apksigner = tool("apksigner");
 const signature = run(apksigner, ["verify", "--verbose", "--print-certs", apkPath]);
-check(signature.status === 0, "apksigner verifies the signature");
-const signer = /Signer #1 certificate DN: (.+)$/m.exec(signature.stdout)?.[1] ?? "";
-const certSha256 = /Signer #1 certificate SHA-256 digest: ([0-9a-f]+)$/im.exec(signature.stdout)?.[1] ?? "";
+check(signature.status === 0, "apksigner verifies the signature", signature.status === 0 ? "" : lastLine(signature.error || signature.all));
+const fromApksigner = readApksignerCertificate(signature.all);
+const crossCheck = run(keytoolRef(), ["-printcert", "-jarfile", apkPath]);
+const fromKeytool = readKeytoolCertificate(crossCheck.all);
+// keytool is a cross-check, not a second gate: an APK signed without a v1 block
+// or a JDK that predates `-jarfile` leaves it speechless, and that must not
+// block a build the SDK itself verifies.
+if (crossCheck.status !== 0 || !fromKeytool.sha256) {
+  console.log(`[apk] note: keytool cross-check unavailable (${crossCheck.error || `exit ${crossCheck.status}`})`);
+} else if (!fromApksigner.sha256) {
+  console.log("[apk] note: apksigner printed no certificate block; the identity below came from keytool.");
+}
+if (fromApksigner.sha256 && fromKeytool.sha256 && fromApksigner.certificateCount === 1 && fromKeytool.certificateCount === 1) {
+  check(
+    fromApksigner.sha256 === fromKeytool.sha256,
+    "the SDK and the JDK read the same signing certificate",
+    `apksigner ${fromApksigner.sha256}, keytool ${fromKeytool.sha256}`
+  );
+}
+const signer = fromApksigner.subject || fromKeytool.subject;
+const certSha256 = fromApksigner.sha256 || fromKeytool.sha256;
 check(Boolean(signer), "the signer certificate subject is readable", signer);
-check(/Verified using v1 scheme \(JAR signing\): true/.test(signature.stdout), "v1 (JAR) signature present");
-check(/Verified using v2 scheme \(APK Signature Scheme v2\): true/.test(signature.stdout), "v2 signature present");
-const isDebugKey = /androiddebugkey|CN=Android Debug/i.test(signer);
+if (!signer) {
+  // A certificate that cannot be read must never be mistaken for an APK that is
+  // merely unsigned, so the text both tools actually produced is kept here.
+  console.error("  apksigner stdout/stderr, signer-related lines:");
+  const lines = signature.all.split(/\r?\n/).filter(line => /signer|verif|certificate/i.test(line));
+  for (const line of lines.slice(0, 15)) console.error(`    | ${line}`);
+  if (!lines.length) console.error("    | (apksigner produced no output)");
+  console.error(`  keytool exit ${crossCheck.status} ${crossCheck.error || ""}, output ${lastLine(crossCheck.all) || "(empty)"}`);
+}
+check(/Verified using v1 scheme \(JAR signing\): true/.test(signature.all), "v1 (JAR) signature present");
+check(/Verified using v2 scheme \(APK Signature Scheme v2\): true/.test(signature.all), "v2 signature present");
+const isDebugKey = looksLikeDebugCertificate(signer);
 check(
   expectDebugKey ? isDebugKey : !isDebugKey,
   expectDebugKey ? "the test build is signed with the debug key" : "the build is not signed with an Android debug key",
@@ -174,9 +217,9 @@ const alignment = run(zipalign, ["-c", "-v", "4", apkPath]);
 // zipalign's own success line is misspelled ("succesful") in AOSP, so matching
 // only the correct spelling would reject every correctly aligned APK.
 check(
-  alignment.status === 0 && /Verification succe(ss|s)ful/i.test(alignment.stdout),
+  alignment.status === 0 && /Verification succe(ss|s)ful/i.test(alignment.all),
   "zipalign reports the archive is aligned",
-  alignment.stdout.trim().split("\n").pop()
+  alignment.status === 0 ? lastLine(alignment.all) : lastLine(alignment.error || alignment.all)
 );
 
 if (failures.length > 0) {
@@ -208,5 +251,5 @@ fs.writeFileSync(
 );
 console.log(`[apk] staged ${staged} (${stats.size} bytes)`);
 console.log(`[apk] sha256 ${hash}`);
-console.log(`[apk] certificate sha256 ${certSha256}`);
+console.log(`[apk] certificate sha256 ${certSha256} (read by ${fromApksigner.sha256 ? "apksigner" : "keytool"})`);
 console.log(`[apk] all checks passed for ${appId} ${versionName} (${versionCode})`);

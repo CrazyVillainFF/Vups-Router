@@ -10,6 +10,7 @@ const read = file => readFileSync(path.join(root, file), "utf8");
 // newlines.
 const workflow = read(".github/workflows/native-builds.yml").replaceAll("\r\n", "\n");
 const apkGate = read("scripts/verify-android-artifact.mjs");
+const signatureReader = read("scripts/android-signature-reader.mjs");
 const bundleGate = read("scripts/check-capacitor-bundle.mjs");
 
 // Split the jobs section on its two-space-indented keys. The workflow is YAML,
@@ -70,7 +71,14 @@ test("2. the verifier uses the real SDK tools, not hand-rolled substitutes", () 
 test("3. a debug key can never be published as a release build", () => {
   assert.match(jobBody("android-debug"), /--expect-debug-key/);
   assert.doesNotMatch(jobBody("android-release"), /--expect-debug-key/);
-  assert.match(apkGate, /androiddebugkey\|CN=Android Debug/i);
+  // The debug identity must be read from the certificate subject, never from the
+  // fact that some signature verified. That rule now lives in the shared reader
+  // so the gate and its unit tests judge exactly the same pattern.
+  assert.match(apkGate, /looksLikeDebugCertificate\(signer\)/);
+  assert.ok(
+    signatureReader.includes("|CN\\s*=\\s*Android Debug"),
+    "the debug certificate pattern must keep matching the Android debug subject in either RDN order"
+  );
   assert.match(
     workflow,
     /ANDROID_RELEASE_CERT_SHA256: 486cf30b77ea2cba1ba397b07740fbef62244a8663cc20f91f7c21cd90e2eeb1/,
