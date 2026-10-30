@@ -602,6 +602,10 @@ jobs:
           {
             echo "VupsRouter $APP_VERSION — native builds produced by \`.github/workflows/native-builds.yml\` for tag \`$RELEASE_TAG\`."
             echo
+            # An installer is identified by when it was built, not only by its
+            # version: the same version can be rebuilt after a CI fix.
+            echo "Built $(date -u '+%Y-%m-%d %H:%M UTC') · run \`$GITHUB_RUN_ID\`."
+            echo
             echo "| File | Size | What it is |"
             echo "| --- | --- | --- |"
             if [ -f "assets/$WINDOWS_EXE_ASSET" ]; then

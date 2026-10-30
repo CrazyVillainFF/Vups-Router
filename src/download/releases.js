@@ -62,7 +62,7 @@ export const DOWNLOADS = {
     status: "available",
     title: "VupsRouter Web App",
     description: "Install the web experience on supported devices.",
-    version: "1.0.2",
+    version: "1.0.3",
     architecture: "Web",
     format: "PWA",
     fileSize: null,
@@ -156,9 +156,14 @@ export function releaseVersion(release) {
   return tag ? tag.replace(/^v/i, "") : null;
 }
 
+// Installers are only ever rebuilt, never patched in place, so the download page
+// shows the exact publish moment — a build is identified by its date and time,
+// not just its day.
 export function releasePublishedDate(release) {
-  const date = new Date(release?.published_at || release?.created_at || "");
-  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+  const stamp = new Date(release?.published_at || release?.created_at || "");
+  if (Number.isNaN(stamp.getTime())) return null;
+  const iso = stamp.toISOString();
+  return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
 }
 
 export function releasePageUrl(release) {

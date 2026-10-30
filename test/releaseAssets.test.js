@@ -76,7 +76,7 @@ test("4. a published installer becomes a real download with real metadata", () =
   assert.equal(merged.windows.downloadUrl, live.assets[0].browser_download_url);
   assert.equal(merged.windows.version, "1.0.0");
   assert.equal(merged.windows.fileSize, "5.6 MB");
-  assert.equal(merged.windows.publishedAt, "2026-10-28");
+  assert.equal(merged.windows.publishedAt, "2026-10-28 10:00 UTC");
   assert.equal(merged.windows.releaseNotesUrl, live.html_url);
   assert.match(merged.windows.install.join(" "), /SmartScreen/);
 });
@@ -149,7 +149,8 @@ test("10. size, version, date and page helpers refuse bad input", () => {
   assert.equal(releaseVersion({ tag_name: "v2.1.0" }), "2.1.0");
   assert.equal(releaseVersion({}), null);
   assert.equal(releasePublishedDate({ published_at: "not a date" }), null);
-  assert.equal(releasePublishedDate({ created_at: "2026-01-02T00:00:00Z" }), "2026-01-02");
+  assert.equal(releasePublishedDate({ created_at: "2026-01-02T00:00:00Z" }), "2026-01-02 00:00 UTC");
+  assert.equal(releasePublishedDate({ published_at: "2026-01-02T13:45:07Z" }), "2026-01-02 13:45 UTC");
   assert.equal(releasePageUrl(release([])), `https://github.com/${RELEASE_REPO}/releases/tag/v1.0.0`);
   assert.equal(releasePageUrl({ html_url: "https://evil.example/" }), null);
 });
