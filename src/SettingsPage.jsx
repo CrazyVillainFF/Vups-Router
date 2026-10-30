@@ -112,7 +112,7 @@ function protocolHelp(type) {
   if (type === "openai_responses") return "OpenAI Responses API. Use the base URL before /responses, e.g. https://api.openai.com/v1.";
   if (type === "azure_openai") return "Azure OpenAI v1 endpoint, e.g. https://{resource}.openai.azure.com/openai/v1. The key is sent in the api-key header and the model ID is your deployment name.";
   if (type === "watsonx") return "IBM watsonx: use your regional cluster URL plus ?project_id=YOUR_PROJECT_ID. The IBM Cloud API key is exchanged for an IAM token automatically.";
-  if (type === "qoder_cloud_agents") return "Qoder Cloud Agents. Choose your region — Global (api.qoder.com / openapi.qoder.sh) or China mainland (api.qoder.com.cn / openapi.qoder.com.cn) — then use either a Personal Access Token, or a service account key which the backend exchanges at the region's OpenAPI host for a short-lived access token (about an hour, renewed automatically). The connection check lists models and falls back to a read-only agents probe; it never creates a session. Each chat message starts a new Qoder session — earlier turns are sent along with it.";
+  if (type === "qoder_cloud_agents") return "Qoder Cloud Agents. Choose your region — Global (api.qoder.com / openapi.qoder.sh) or China mainland (api.qoder.com.cn / api.qoder.com.cn) — then use either a Personal Access Token, or a service account key which the backend exchanges at the region's OpenAPI host for a short-lived access token (about an hour, renewed automatically). The connection check lists models and falls back to a read-only agents probe; it never creates a session. One chat conversation keeps one Qoder session, so Qoder holds the earlier turns itself; stopping a reply cancels that turn and a busy session is reported instead of queued.";
   if (type === "local_gateway") return "Ollama, LM Studio, vLLM, or another local OpenAI-compatible gateway. The deployed backend cannot reach localhost.";
   if (type === "native") return "A provider-specific API that is not one of the implemented adapters. Saving and chat are disabled for this option.";
   return "OpenAI Chat Completions API. Use the base URL before /chat/completions, e.g. https://api.example.com/v1.";
@@ -820,6 +820,9 @@ export default function SettingsPage({ embedded = false }) {
                         <span>{savedModelIds(provider).length} saved model{savedModelIds(provider).length === 1 ? "" : "s"}</span>
                         <span>Default: {provider.defaultModel || provider.model || "none"}</span>
                       </div>
+                      {provider.lastTest && provider.lastTest.status !== "connected" && provider.lastTest.message && (
+                        <p className="settings-provider-issue">{provider.lastTest.message}</p>
+                      )}
                     </div>
                     <div className="settings-saved-actions">
                       {!isActive && (

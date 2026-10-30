@@ -5,6 +5,7 @@ import {
   CONTINUE_NEW_CHAT_ACTION,
   formatResetTime,
   isFirewallBlockedResponse,
+  isInterruptedError,
   presentChatError,
   REQUEST_BLOCKED_MESSAGE,
   REQUEST_BLOCKED_TITLE
@@ -256,4 +257,59 @@ test("a quota failure from another provider keeps the generic usage-limit card",
   const presentation = presentChatError({ status: 429, code: "quota_exhausted", message: "Quota exhausted." });
   assert.equal(presentation.title, "Usage limit reached");
   assert.equal(presentation.message, "This model's usage limit is reached. Reset time not provided by provider.");
+});
+
+// The sentences below are copied from the backend's Qoder adapter so the cards
+// are checked against what users actually receive.
+test("a busy Qoder session is reported as busy, not as an access denial", () => {
+  const busy = {
+    status: 409,
+    code: "session_busy",
+    message:
+      "Qoder is still working on the previous reply in this conversation (HTTP 409). Wait for it to finish, or press Stop and send again."
+  };
+  assert.equal(classifyChatError(busy), "session_busy");
+  const presentation = presentChatError(busy);
+  assert.equal(presentation.title, "Qoder is still answering");
+  assert.match(presentation.message, /press Stop and send again/);
+  assert.equal(presentation.retry, true, "sending again after the turn finishes can work");
+  assert.ok(presentation.message.length < 180);
+});
+
+test("a scoped-in Qoder credential is not told to paste a new key", () => {
+  const denied = {
+    status: 403,
+    code: "insufficient_scope",
+    message: "Qoder denied the request (HTTP 403). The credential is missing the qca.access scope or access to Cloud Agents."
+  };
+  assert.equal(classifyChatError(denied), "provider_scope");
+  const presentation = presentChatError(denied);
+  assert.equal(presentation.retry, false);
+  assert.match(presentation.message, /qca\.access scope/);
+  assert.doesNotMatch(presentation.message, /api key/i);
+});
+
+test("a wedged or missing Qoder session sends the user to a new chat", () => {
+  for (const code of ["provider_conflict", "qoder_no_session"]) {
+    assert.equal(classifyChatError({ status: 409, code, message: "Qoder rejected the session state." }), "session_conflict");
+    const presentation = presentChatError({ status: 409, code, message: "Qoder rejected the session state." });
+    assert.equal(presentation.title, "Qoder's session is stuck");
+    assert.equal(presentation.retry, false);
+    assert.equal(presentation.canSwitchModel, false, "another model cannot fix a session");
+  }
+});
+
+test("a missing Qoder environment or agent names the setup step", () => {
+  for (const code of ["qoder_no_environment", "qoder_no_agent"]) {
+    assert.equal(classifyChatError({ status: 502, code, message: "Qoder Cloud Agents has no environment." }), "provider_setup");
+  }
+  const fallback = presentChatError({ status: 502, code: "qoder_no_environment", message: "" });
+  assert.equal(fallback.title, "Qoder has nothing to run this on");
+  assert.match(fallback.message, /Qoder console/);
+  assert.ok(fallback.message.length < 180);
+});
+
+test("a cancelled turn reads as an interrupted response", () => {
+  assert.equal(classifyChatError({ code: "cancelled", message: "Request cancelled." }), "stream");
+  assert.equal(isInterruptedError({ code: "cancelled" }), true);
 });

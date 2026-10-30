@@ -132,3 +132,14 @@ test("the provider directory describes both Qoder regions and auth modes", () =>
   assert.match(entry, /openapi\.qoder\.sh/);
   assert.match(entry, /service account key/);
 });
+
+test("a saved card shows the stored failure sentence, not only its label", () => {
+  assert.match(pageSource, /provider\.lastTest && provider\.lastTest\.status !== "connected" && provider\.lastTest\.message/);
+  assert.match(pageSource, /<p className="settings-provider-issue">\{provider\.lastTest\.message\}<\/p>/);
+});
+
+test("the Qoder help text describes one session per conversation", () => {
+  const help = pageSource.slice(pageSource.indexOf('if (type === "qoder_cloud_agents")'), pageSource.indexOf('if (type === "local_gateway")'));
+  assert.match(help, /One chat conversation keeps one Qoder session/);
+  assert.doesNotMatch(help, /Each chat message starts a new Qoder session/, "the adapter reuses the session");
+});

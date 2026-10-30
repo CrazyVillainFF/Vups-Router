@@ -83,7 +83,8 @@ const INTERRUPTED_CODES = new Set([
   "vups_stream_interrupted",
   "stream_error",
   "vups_stream_error",
-  "eof_without_terminal"
+  "eof_without_terminal",
+  "cancelled"
 ]);
 
 const OVERSIZE_CODES = new Set([
@@ -113,6 +114,19 @@ const OPENROUTER_FREE_DAILY = "openrouter_free_tier_daily";
 function providerSaid(error) {
   const match = String(error?.message || "").match(PROVIDER_RELAY);
   return (match?.[1] || "").trim().slice(0, 300);
+}
+
+// Qoder Cloud Agents keeps the conversation on its own side, so its failures
+// name a session, a scope or a workspace object rather than a model. These codes
+// are only ever produced by that adapter, and the backend's own sentence for
+// them states the fix, so it is shown instead of a invented generic card.
+const SESSION_BUSY_CODES = new Set(["session_busy"]);
+const SESSION_STATE_CODES = new Set(["provider_conflict", "qoder_no_session"]);
+const PROVIDER_SCOPE_CODES = new Set(["insufficient_scope"]);
+const PROVIDER_SETUP_CODES = new Set(["qoder_no_environment", "qoder_no_agent"]);
+
+function backendAdvice(error) {
+  return String(error?.message || "").trim().slice(0, 300);
 }
 
 // The shared catalog answers with its own codes. Each one needs a different
@@ -198,6 +212,13 @@ export function classifyChatError(error) {
   // Before the credential branch: an unallowlisted app origin answers 403, but
   // no provider key or permission is involved.
   if (hasPattern(message, ORIGIN_BLOCKED_PATTERN)) return "origin_blocked";
+  // Also before the credential branch: Qoder answers 403 for a credential that
+  // is valid but lacks the Cloud Agents scope, and 409 for a session that is
+  // busy or wedged. None of those are fixed by pasting a new key.
+  if (SESSION_BUSY_CODES.has(code)) return "session_busy";
+  if (SESSION_STATE_CODES.has(code)) return "session_conflict";
+  if (PROVIDER_SCOPE_CODES.has(code)) return "provider_scope";
+  if (PROVIDER_SETUP_CODES.has(code)) return "provider_setup";
   if (status === 400 && hasPattern(combined, VALIDATION_PATTERN)) return "request_invalid";
   // Before the credential branch: the shared-catalog messages mention a key,
   // but the user has no key to fix — the server does.
@@ -302,6 +323,31 @@ export function presentChatError(error, { modelLabel = "", now = new Date() } = 
       title = "Access denied";
       message = "The provider denied this request. Check its permissions in Settings, or choose another model.";
     }
+    retry = false;
+  } else if (category === "session_busy") {
+    title = "Qoder is still answering";
+    message =
+      backendAdvice(error) ||
+      "Qoder is still working on the previous reply here. Wait for it to finish, or press Stop and send again.";
+    canSwitchModel = false;
+  } else if (category === "session_conflict") {
+    title = "Qoder's session is stuck";
+    message =
+      backendAdvice(error) ||
+      "Qoder's session for this conversation can't continue from its current state. Start a new chat and send it again.";
+    retry = false;
+    canSwitchModel = false;
+  } else if (category === "provider_scope") {
+    title = "Qoder credential lacks access";
+    message =
+      backendAdvice(error) ||
+      "The saved Qoder credential cannot use Cloud Agents. Create a new token that allows it in Settings.";
+    retry = false;
+  } else if (category === "provider_setup") {
+    title = "Qoder has nothing to run this on";
+    message =
+      backendAdvice(error) ||
+      "Qoder Cloud Agents has no environment or agent for this account. Create one in your Qoder console and retry.";
     retry = false;
   } else if (category === "request_blocked") {
     title = REQUEST_BLOCKED_TITLE;
