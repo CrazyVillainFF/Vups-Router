@@ -1,4 +1,4 @@
-﻿use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, VecDeque},
@@ -154,7 +154,6 @@ impl CancelRegistry {
             flags.remove(operation_id);
         }
     }
-
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -200,9 +199,16 @@ struct ApprovalPrompt {
     command: Option<String>,
     /// Extra facts the card shows (source, destination, shell, cwd, PID).
     details: Vec<String>,
-    /// True only when this card names one exact file or executable and the
-    /// answer may be saved for that resource. Folder reads, writes, deletes,
-    /// commands and process control are always per call.
+    /// The chat whose answer may be remembered for this card. Empty when the
+    /// caller has no chat scope, in which case only an exact-file permission is
+    /// possible.
+    #[serde(default)]
+    chat_id: String,
+    /// True when this card may offer the middle action. With a chat id, it
+    /// covers ordinary reads, edits, writes and launches for this chat and is
+    /// kept in memory only. Without one, it falls back to the older exact-file
+    /// permission. Protected system locations, network shares, deletes,
+    /// commands and process control always ask.
     can_persist: bool,
     expires_at: i64,
 }
@@ -292,7 +298,12 @@ impl ApprovalBroker {
     /// Resolves a pending request. Only an id the broker issued, that is still
     /// pending and that belongs to `owner` can be answered, so a stale or forged
     /// frontend response authorizes nothing.
-    fn respond(&self, owner: &str, request_id: &str, decision: ApprovalDecision) -> Result<(), String> {
+    fn respond(
+        &self,
+        owner: &str,
+        request_id: &str,
+        decision: ApprovalDecision,
+    ) -> Result<(), String> {
         let mut guard = self
             .pending
             .lock()
@@ -438,16 +449,18 @@ impl GrantStore {
         let Some(directory) = &self.directory else {
             return Ok(());
         };
-        fs::create_dir_all(directory).map_err(|_| "Could not store the permission grant.".to_string())?;
+        fs::create_dir_all(directory)
+            .map_err(|_| "Could not store the permission grant.".to_string())?;
         let file = GrantFile {
             version: 2,
             grants: self.grants.clone(),
         };
-        let rendered =
-            serde_json::to_vec_pretty(&file).map_err(|_| "Could not store the permission grant.".to_string())?;
+        let rendered = serde_json::to_vec_pretty(&file)
+            .map_err(|_| "Could not store the permission grant.".to_string())?;
         let path = directory.join("desktop-tool-grants.json");
         let tmp = directory.join("desktop-tool-grants.json.tmp");
-        fs::write(&tmp, rendered).map_err(|_| "Could not store the permission grant.".to_string())?;
+        fs::write(&tmp, rendered)
+            .map_err(|_| "Could not store the permission grant.".to_string())?;
         fs::rename(&tmp, path).map_err(|_| "Could not store the permission grant.".to_string())?;
         Ok(())
     }
@@ -489,9 +502,7 @@ impl GrantStore {
     /// containment.
     fn covers(&self, owner: &str, kind: &str, target: &Path) -> bool {
         self.grants.iter().any(|grant| {
-            grant.owner == owner
-                && grant.kind == kind
-                && same_path(Path::new(&grant.path), target)
+            grant.owner == owner && grant.kind == kind && same_path(Path::new(&grant.path), target)
         })
     }
 
@@ -611,6 +622,11 @@ pub struct ToolRequest {
     args: Value,
     #[serde(default)]
     operation_id: Option<String>,
+    /// The chat this call belongs to. An "Allow Always (Only for This Chat)"
+    /// answer is keyed by it and is never written to disk; without it, only the
+    /// older exact-file permission can be remembered.
+    #[serde(default)]
+    chat_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -713,16 +729,52 @@ fn action_read_only(action: &str) -> bool {
 fn action_modifies_data(action: &str) -> bool {
     matches!(
         action,
-        "create" | "write" | "append" | "edit" | "rename" | "move" | "copy" | "delete" | "command"
+        "create"
+            | "write"
+            | "append"
+            | "edit"
+            | "rename"
+            | "move"
+            | "copy"
+            | "delete"
+            | "command"
             | "start_command"
     )
 }
 
 /// "Allow Always" is only meaningful for an operation on one exact resource:
 /// reading one file's contents, or launching one executable. Folder listings,
-/// metadata, writes, deletes, commands and process control stay per call.
+/// metadata, writes, deletes, commands and process control stay per call. This
+/// is the no-chat fallback; a call that names its chat uses
+/// `action_chat_rememberable` instead, which also covers ordinary edits.
 fn action_persistable(action: &str) -> bool {
     matches!(action, "contents" | "launch")
+}
+
+/// File actions whose answer can be remembered for the current chat. Deletes
+/// stay per call because they cannot be undone, and shell commands, process
+/// control and URLs have no stable file target, so they keep asking too.
+fn action_chat_rememberable(action: &str) -> bool {
+    matches!(
+        action,
+        "locate"
+            | "list"
+            | "recent"
+            | "search"
+            | "contents"
+            | "metadata"
+            | "search_contents"
+            | "create"
+            | "write"
+            | "append"
+            | "edit"
+            | "rename"
+            | "move"
+            | "copy"
+            | "launch"
+            | "open"
+            | "open_with"
+    )
 }
 
 /// The prompt can offer "Always" only when its scope is one real file or
@@ -741,13 +793,39 @@ fn exact_resource_can_persist(path: &Path) -> bool {
     }
 }
 
+/// A chat-scoped answer is kept in memory, but it must still name a real target:
+/// an absolute local path that is not protected and not a link. A file that does
+/// not exist yet is a legitimate write target and is keyed by its exact path.
+fn chat_target_can_remember(prompt: &ApprovalPrompt) -> bool {
+    let raw = prompt.scope_path.trim();
+    if raw.is_empty() || is_network_path(raw) {
+        return false;
+    }
+    let path = Path::new(raw);
+    if !path.is_absolute() || is_protected_system_path(path) {
+        return false;
+    }
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => !metadata.file_type().is_symlink(),
+        Err(_) => true,
+    }
+}
+
+fn prompt_can_remember(prompt: &ApprovalPrompt) -> bool {
+    if !prompt.chat_id.is_empty() {
+        return action_chat_rememberable(&prompt.action) && chat_target_can_remember(prompt);
+    }
+    action_persistable(&prompt.action) && exact_resource_can_persist(Path::new(&prompt.scope_path))
+}
+
 fn binary_extension(path: &Path) -> bool {
     matches!(
         path.extension()
             .map(|value| value.to_string_lossy().to_ascii_lowercase())
             .as_deref(),
         Some(
-            "pdf" | "doc"
+            "pdf"
+                | "doc"
                 | "docx"
                 | "xls"
                 | "xlsx"
@@ -815,7 +893,6 @@ fn text_content_failure(path: &Path) -> ToolFailure {
         ),
     }
 }
-
 
 fn now_millis() -> i64 {
     SystemTime::now()
@@ -1055,11 +1132,9 @@ fn validate_absolute_no_traversal(raw: &str) -> Result<PathBuf, ToolFailure> {
 fn resolve_existing_path(raw: &str, want_dir: bool) -> Result<PathBuf, ToolFailure> {
     let path = validate_absolute_no_traversal(raw)?;
     reject_symlink_components(&path)?;
-    let canonical =
-        fs::canonicalize(&path).map_err(|error| with_path(io_failure(error), &path))?;
+    let canonical = fs::canonicalize(&path).map_err(|error| with_path(io_failure(error), &path))?;
     let readable = display_path(&canonical);
-    let metadata =
-        fs::metadata(&canonical).map_err(|error| with_path(io_failure(error), &path))?;
+    let metadata = fs::metadata(&canonical).map_err(|error| with_path(io_failure(error), &path))?;
     if want_dir && !metadata.is_dir() {
         return Err(ToolFailure {
             code: "not_a_directory".into(),
@@ -1078,8 +1153,7 @@ fn resolve_existing_path(raw: &str, want_dir: bool) -> Result<PathBuf, ToolFailu
 fn resolve_existing_any(raw: &str) -> Result<PathBuf, ToolFailure> {
     let path = validate_absolute_no_traversal(raw)?;
     reject_symlink_components(&path)?;
-    let canonical =
-        fs::canonicalize(&path).map_err(|error| with_path(io_failure(error), &path))?;
+    let canonical = fs::canonicalize(&path).map_err(|error| with_path(io_failure(error), &path))?;
     Ok(display_path(&canonical))
 }
 
@@ -1116,8 +1190,9 @@ fn resolve_creation_path(raw: &str, allow_missing_parents: bool) -> Result<PathB
             if metadata.file_type().is_symlink() {
                 return Err(ToolFailure {
                     code: "symlink_rejected".into(),
-                    message: "Symbolic links and junctions are not available to AI filesystem tools."
-                        .into(),
+                    message:
+                        "Symbolic links and junctions are not available to AI filesystem tools."
+                            .into(),
                 });
             }
         }
@@ -1159,7 +1234,8 @@ fn resolve_creation_path(raw: &str, allow_missing_parents: bool) -> Result<PathB
 }
 
 fn path_same(left: &Path, right: &Path) -> bool {
-    path_text(&canonical_for_policy(left)).eq_ignore_ascii_case(&path_text(&canonical_for_policy(right)))
+    path_text(&canonical_for_policy(left))
+        .eq_ignore_ascii_case(&path_text(&canonical_for_policy(right)))
 }
 
 fn normal_component_count(path: &Path) -> usize {
@@ -1217,8 +1293,9 @@ fn ensure_safe_mutation_target(path: &Path) -> Result<(), ToolFailure> {
         if is_sensitive_file(&name.to_string_lossy()) {
             return Err(ToolFailure {
                 code: "sensitive_file".into(),
-                message: "That file is excluded to protect credentials and secrets. Nothing was changed."
-                    .into(),
+                message:
+                    "That file is excluded to protect credentials and secrets. Nothing was changed."
+                        .into(),
             });
         }
     }
@@ -1323,7 +1400,10 @@ fn known_folder_path(
     }
     let path = resolver(&normalized).ok_or_else(|| ToolFailure {
         code: "known_folder_unavailable".into(),
-        message: format!("Windows did not report a {} folder for this account.", normalized),
+        message: format!(
+            "Windows did not report a {} folder for this account.",
+            normalized
+        ),
     })?;
     Ok((normalized, path))
 }
@@ -1348,17 +1428,12 @@ fn make_prompt(
     operation_id: &str,
 ) -> ApprovalPrompt {
     let access = action_access(spec.action);
-    let can_persist = action_persistable(spec.action)
-        && exact_resource_can_persist(Path::new(&spec.scope_path));
     let scope_key = format!(
         "{}|{}|{}|{}",
         policy.owner,
         access,
         spec.scope_path.to_ascii_lowercase(),
-        spec.command
-            .as_deref()
-            .unwrap_or("")
-            .to_ascii_lowercase()
+        spec.command.as_deref().unwrap_or("").to_ascii_lowercase()
     );
     let approval_key = if operation_id.is_empty() {
         scope_key
@@ -1381,9 +1456,22 @@ fn make_prompt(
         destructive: spec.destructive,
         command: spec.command,
         details: spec.details,
-        can_persist,
+        chat_id: String::new(),
+        // resolve_request decides this once it knows the chat scope; a prompt
+        // built outside that path remembers nothing.
+        can_persist: false,
         expires_at: now_millis() + APPROVAL_TIMEOUT.as_millis() as i64,
     }
+}
+
+fn chat_id_of(request: &ToolRequest) -> String {
+    request
+        .chat_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| truncate_text(value, 80))
+        .unwrap_or_default()
 }
 
 fn operation_id_of(request: &ToolRequest) -> String {
@@ -1462,7 +1550,9 @@ fn prompt_requires_approval(policy: &ToolPolicy, paths: &[PathBuf]) -> bool {
     match policy.mode {
         ToolMode::Ask => true,
         ToolMode::Workspace => false,
-        ToolMode::Full => paths.iter().any(|path| path_requires_approval(policy, path)),
+        ToolMode::Full => paths
+            .iter()
+            .any(|path| path_requires_approval(policy, path)),
     }
 }
 
@@ -1474,7 +1564,9 @@ fn mutation_requires_approval(policy: &ToolPolicy, paths: &[PathBuf], destructiv
     match policy.mode {
         ToolMode::Ask => true,
         ToolMode::Workspace => destructive,
-        ToolMode::Full => paths.iter().any(|path| path_requires_approval(policy, path)),
+        ToolMode::Full => paths
+            .iter()
+            .any(|path| path_requires_approval(policy, path)),
     }
 }
 
@@ -1514,7 +1606,7 @@ fn process_key(args: &Value) -> Result<String, ToolFailure> {
     }
     Err(ToolFailure {
         code: "invalid_arguments".into(),
-        message: "Use the processId (or PID) that VupsRouter reported for the process.".into(),
+        message: "Use the processId (or the numeric PID from list_processes) that VupsRouter reported for the process.".into(),
     })
 }
 
@@ -1561,7 +1653,10 @@ fn validate_content(content: &str) -> Result<(), ToolFailure> {
     if content.len() > MAX_WRITE_BYTES {
         return Err(ToolFailure {
             code: "content_too_large".into(),
-            message: format!("Keep written content under {} MB.", MAX_WRITE_BYTES / (1024 * 1024)),
+            message: format!(
+                "Keep written content under {} MB.",
+                MAX_WRITE_BYTES / (1024 * 1024)
+            ),
         });
     }
     if content.contains('\0') {
@@ -1581,8 +1676,9 @@ fn ensure_not_sensitive(path: &Path) -> Result<(), ToolFailure> {
     {
         return Err(ToolFailure {
             code: "sensitive_file".into(),
-            message: "That file is excluded to protect credentials and secrets. Nothing was changed."
-                .into(),
+            message:
+                "That file is excluded to protect credentials and secrets. Nothing was changed."
+                    .into(),
         });
     }
     Ok(())
@@ -1597,11 +1693,17 @@ fn default_working_directory(policy: &ToolPolicy) -> PathBuf {
         .unwrap_or_else(std::env::temp_dir)
 }
 
-fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<ResolvedRequest, ToolFailure> {
+fn resolve_request(
+    policy: &ToolPolicy,
+    request: &ToolRequest,
+) -> Result<ResolvedRequest, ToolFailure> {
     if !DESKTOP_TOOL_NAMES.contains(&request.tool.as_str()) {
         return Err(ToolFailure {
             code: "unknown_tool".into(),
-            message: format!("The local tool \"{}\" is not available.", truncate_text(&request.tool, 80)),
+            message: format!(
+                "The local tool \"{}\" is not available.",
+                truncate_text(&request.tool, 80)
+            ),
         });
     }
     let args = request.args.clone();
@@ -1612,9 +1714,8 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
     let mut prepared = Prepared::None;
     let mut requires_approval = false;
 
-    let approval = match tool {
-        "get_windows_known_folder" => {
-            let name = required_str(&args, "name", "The known-folder tool needs a folder name.")?;
+    let mut approval = match tool {
+        "get_windows_known_folder" => {            let name = required_str(&args, "name", "The known-folder tool needs a folder name.")?;
             let (normalized, path) = known_folder_path(name, system_known_folder)?;
             target = path.clone();
             // Windows reports this path; no directory entry is read.
@@ -1713,7 +1814,10 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
                 "The metadata tool needs an absolute path.",
             )?)?;
             ensure_not_sensitive(&path)?;
-            let scope_root = path.parent().map(Path::to_path_buf).unwrap_or_else(|| path.clone());
+            let scope_root = path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| path.clone());
             target = path.clone();
             paths.push(path.clone());
             requires_approval = prompt_requires_approval(policy, &paths);
@@ -1731,7 +1835,11 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
         }
         "search_files" => {
             let root = resolve_existing_path(
-                required_str(&args, "root", "The search tool needs an absolute root folder.")?,
+                required_str(
+                    &args,
+                    "root",
+                    "The search tool needs an absolute root folder.",
+                )?,
                 true,
             )?;
             let query = required_str(&args, "query", "The search tool needs a filename query.")?;
@@ -1758,7 +1866,11 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
         }
         "search_file_contents" => {
             let root = resolve_existing_path(
-                required_str(&args, "root", "The content search needs an absolute root folder.")?,
+                required_str(
+                    &args,
+                    "root",
+                    "The content search needs an absolute root folder.",
+                )?,
                 true,
             )?;
             let query = required_str(&args, "query", "The content search needs text to look for.")?;
@@ -1808,23 +1920,27 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
                 false,
             )?;
             ensure_safe_mutation_target(&path)?;
-            let content = args
-                .get("content")
-                .and_then(Value::as_str)
-                .ok_or_else(|| ToolFailure {
-                    code: "invalid_arguments".into(),
-                    message: "The write tool needs the text to write.".into(),
-                })?;
+            let content =
+                args.get("content")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| ToolFailure {
+                        code: "invalid_arguments".into(),
+                        message: "The write tool needs the text to write.".into(),
+                    })?;
             validate_content(content)?;
             let exists = fs::symlink_metadata(&path)
                 .map(|metadata| metadata.is_file())
                 .unwrap_or(false);
             if exists {
-                if fs::metadata(&path).map(|metadata| metadata.len() > MAX_WRITE_BYTES as u64).unwrap_or(false) {
+                if fs::metadata(&path)
+                    .map(|metadata| metadata.len() > MAX_WRITE_BYTES as u64)
+                    .unwrap_or(false)
+                {
                     return Err(ToolFailure {
                         code: "file_too_large".into(),
-                        message: "That file is larger than the 2 MB edit limit. Nothing was changed."
-                            .into(),
+                        message:
+                            "That file is larger than the 2 MB edit limit. Nothing was changed."
+                                .into(),
                     });
                 }
             }
@@ -1850,7 +1966,16 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
             if exists && !append {
                 details.push("Replaces the file's current contents".into());
             }
-            mutation_prompt(policy, tool, action, &path, summary, details, false, &operation_id)
+            mutation_prompt(
+                policy,
+                tool,
+                action,
+                &path,
+                summary,
+                details,
+                false,
+                &operation_id,
+            )
         }
         "edit_file" => {
             let path = resolve_existing_path(
@@ -1866,19 +1991,23 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
                     code: "invalid_arguments".into(),
                     message: "The edit tool needs the exact text to find.".into(),
                 })?;
-            let replace = args
-                .get("replace")
-                .and_then(Value::as_str)
-                .ok_or_else(|| ToolFailure {
-                    code: "invalid_arguments".into(),
-                    message: "The edit tool needs the replacement text.".into(),
-                })?;
+            let replace =
+                args.get("replace")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| ToolFailure {
+                        code: "invalid_arguments".into(),
+                        message: "The edit tool needs the replacement text.".into(),
+                    })?;
             validate_content(find)?;
             validate_content(replace)?;
-            if fs::metadata(&path).map(|metadata| metadata.len() > MAX_WRITE_BYTES as u64).unwrap_or(false) {
+            if fs::metadata(&path)
+                .map(|metadata| metadata.len() > MAX_WRITE_BYTES as u64)
+                .unwrap_or(false)
+            {
                 return Err(ToolFailure {
                     code: "file_too_large".into(),
-                    message: "That file is larger than the 2 MB edit limit. Nothing was changed.".into(),
+                    message: "That file is larger than the 2 MB edit limit. Nothing was changed."
+                        .into(),
                 });
             }
             target = path.clone();
@@ -1938,7 +2067,11 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
             )?)?;
             ensure_not_sensitive(&source)?;
             let destination = resolve_creation_path(
-                required_str(&args, "destination", "The tool needs an absolute destination path.")?,
+                required_str(
+                    &args,
+                    "destination",
+                    "The tool needs an absolute destination path.",
+                )?,
                 false,
             )?;
             if path_same(&source, &destination) {
@@ -1951,8 +2084,9 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
             if path_within(&source, &destination) {
                 return Err(ToolFailure {
                     code: "invalid_arguments".into(),
-                    message: "A folder cannot be moved or copied inside itself. Nothing was changed."
-                        .into(),
+                    message:
+                        "A folder cannot be moved or copied inside itself. Nothing was changed."
+                            .into(),
                 });
             }
             if fs::symlink_metadata(&destination).is_ok() {
@@ -2029,7 +2163,11 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
                 ToolMode::Ask | ToolMode::Workspace => true,
                 ToolMode::Full => path_requires_approval(policy, &path),
             };
-            let kind = if path.is_dir() { "folder in File Explorer" } else { "file in its default app" };
+            let kind = if path.is_dir() {
+                "folder in File Explorer"
+            } else {
+                "file in its default app"
+            };
             mutation_prompt(
                 policy,
                 tool,
@@ -2213,14 +2351,14 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
                     scope_path: format!("Process {key}"),
                     scope_name: format!("Process {key}"),
                     summary: if force {
-                        format!("Force-terminate the VupsRouter-launched app (process {key})")
+                        format!("Force-terminate an app (process {key})")
                     } else {
-                        format!("Ask the VupsRouter-launched app to close (process {key})")
+                        format!("Ask an app to close (process {key})")
                     },
                     command: None,
                     details: vec![
-                        "Only a process VupsRouter launched can be closed; unrelated system \
-                         processes are never touched."
+                        "Any app with a visible window can be closed, whether or not \
+                         VupsRouter launched it. Protected Windows processes are refused."
                             .into(),
                     ],
                     destructive: force,
@@ -2229,7 +2367,8 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
             )
         }
         "run_command" | "start_command" => {
-            let spec = CommandSpec::parse(&args, default_working_directory(policy)).map_err(exec_failure)?;
+            let spec = CommandSpec::parse(&args, default_working_directory(policy))
+                .map_err(exec_failure)?;
             let background = tool == "start_command";
             requires_approval = match policy.mode {
                 ToolMode::Ask | ToolMode::Workspace => true,
@@ -2241,7 +2380,11 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
                 policy,
                 tool,
                 PromptSpec {
-                    action: if background { "start_command" } else { "command" },
+                    action: if background {
+                        "start_command"
+                    } else {
+                        "command"
+                    },
                     scope_path: path_text(&spec.cwd),
                     scope_name: format!("{shell} command"),
                     summary: if background {
@@ -2300,6 +2443,11 @@ fn resolve_request(policy: &ToolPolicy, request: &ToolRequest) -> Result<Resolve
         }
         _ => unreachable!(),
     };
+    // The card may offer "Allow Always (Only for This Chat)" only once it knows
+    // which chat asked. Without a chat id it falls back to the older exact-file
+    // permission, which is the only thing that can be matched later.
+    approval.chat_id = chat_id_of(request);
+    approval.can_persist = prompt_can_remember(&approval);
     Ok(ResolvedRequest {
         tool: tool.to_string(),
         args,
@@ -2366,7 +2514,7 @@ fn list_directory(path: &Path) -> Result<Value, ToolFailure> {
         let name = child.file_name().to_string_lossy().to_string();
         let child_path = child.path();
         let Ok(metadata) = fs::symlink_metadata(&child_path) else {
-            continue
+            continue;
         };
         if metadata.file_type().is_symlink() {
             continue;
@@ -2394,21 +2542,19 @@ fn list_directory(path: &Path) -> Result<Value, ToolFailure> {
     entries.sort_by(|left, right| {
         let left_dir = left.get("kind").and_then(Value::as_str) == Some("directory");
         let right_dir = right.get("kind").and_then(Value::as_str) == Some("directory");
-        right_dir
-            .cmp(&left_dir)
-            .then_with(|| {
-                left.get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_ascii_lowercase()
-                    .cmp(
-                        &right
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_ascii_lowercase(),
-                    )
-            })
+        right_dir.cmp(&left_dir).then_with(|| {
+            left.get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_ascii_lowercase()
+                .cmp(
+                    &right
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_ascii_lowercase(),
+                )
+        })
     });
     Ok(json!({
         "path": path_text(path),
@@ -2570,7 +2716,10 @@ fn search_directory(
         state.cancelled = true;
         return;
     }
-    if state.timed_out || state.entries.len() >= state.max_results || state.scanned >= MAX_SEARCH_ENTRIES {
+    if state.timed_out
+        || state.entries.len() >= state.max_results
+        || state.scanned >= MAX_SEARCH_ENTRIES
+    {
         state.truncated = true;
         return;
     }
@@ -2586,7 +2735,10 @@ fn search_directory(
             state.cancelled = true;
             return;
         }
-        if state.timed_out || state.entries.len() >= state.max_results || state.scanned >= MAX_SEARCH_ENTRIES {
+        if state.timed_out
+            || state.entries.len() >= state.max_results
+            || state.scanned >= MAX_SEARCH_ENTRIES
+        {
             state.truncated = true;
             return;
         }
@@ -2625,7 +2777,10 @@ fn search_directory(
         if !metadata.is_file() || is_sensitive_file(&name) {
             continue;
         }
-        if name.to_ascii_lowercase().contains(&state.query.to_ascii_lowercase()) {
+        if name
+            .to_ascii_lowercase()
+            .contains(&state.query.to_ascii_lowercase())
+        {
             state.entries.push(json!({
                 "name": name,
                 "kind": "file",
@@ -2897,7 +3052,10 @@ fn create_directory(path: &Path) -> Result<Value, ToolFailure> {
         }
         return Err(ToolFailure {
             code: "path_exists".into(),
-            message: format!("A file already exists at {}. Nothing was changed.", path_text(path)),
+            message: format!(
+                "A file already exists at {}. Nothing was changed.",
+                path_text(path)
+            ),
         });
     }
     fs::create_dir(path).map_err(|error| with_path(io_failure(error), path))?;
@@ -2909,7 +3067,9 @@ fn create_directory(path: &Path) -> Result<Value, ToolFailure> {
 }
 
 fn current_size(path: &Path) -> u64 {
-    fs::metadata(path).map(|metadata| metadata.len()).unwrap_or(0)
+    fs::metadata(path)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0)
 }
 
 fn write_text_file(path: &Path, content: &str, append: bool) -> Result<Value, ToolFailure> {
@@ -2919,7 +3079,10 @@ fn write_text_file(path: &Path, content: &str, append: bool) -> Result<Value, To
         if metadata.is_dir() {
             return Err(ToolFailure {
                 code: "path_exists".into(),
-                message: format!("{} is a folder, not a file. Nothing was changed.", path_text(path)),
+                message: format!(
+                    "{} is a folder, not a file. Nothing was changed.",
+                    path_text(path)
+                ),
             });
         }
         let extra = if append { content.len() as u64 } else { 0 };
@@ -2943,7 +3106,8 @@ fn write_text_file(path: &Path, content: &str, append: bool) -> Result<Value, To
         .map_err(|error| with_path(io_failure(error), path))?;
     file.write_all(content.as_bytes())
         .map_err(|error| with_path(io_failure(error), path))?;
-    file.flush().map_err(|error| with_path(io_failure(error), path))?;
+    file.flush()
+        .map_err(|error| with_path(io_failure(error), path))?;
     let size = current_size(path);
     Ok(json!({
         "path": path_text(path),
@@ -3040,11 +3204,13 @@ fn copy_entry(
     if depth > MAX_COPY_DEPTH {
         return Err(ToolFailure {
             code: "too_deep".into(),
-            message: "The folder tree is deeper than VupsRouter will copy. Nothing further was copied."
-                .into(),
+            message:
+                "The folder tree is deeper than VupsRouter will copy. Nothing further was copied."
+                    .into(),
         });
     }
-    let metadata = fs::symlink_metadata(source).map_err(|error| with_path(io_failure(error), source))?;
+    let metadata =
+        fs::symlink_metadata(source).map_err(|error| with_path(io_failure(error), source))?;
     if metadata.file_type().is_symlink() {
         return Err(ToolFailure {
             code: "symlink_rejected".into(),
@@ -3061,17 +3227,24 @@ fn copy_entry(
         });
     }
     if metadata.is_dir() {
-        fs::create_dir_all(destination).map_err(|error| with_path(io_failure(error), destination))?;
-        let read_dir = fs::read_dir(source).map_err(|error| with_path(io_failure(error), source))?;
+        fs::create_dir_all(destination)
+            .map_err(|error| with_path(io_failure(error), destination))?;
+        let read_dir =
+            fs::read_dir(source).map_err(|error| with_path(io_failure(error), source))?;
         for child in read_dir {
             let child = child.map_err(|error| with_path(io_failure(error), source))?;
-            copy_entry(&child.path(), &destination.join(child.file_name()), depth + 1, budget)?;
+            copy_entry(
+                &child.path(),
+                &destination.join(child.file_name()),
+                depth + 1,
+                budget,
+            )?;
         }
         return Ok(());
     }
     if metadata.is_file() {
-        let copied = fs::copy(source, destination)
-            .map_err(|error| with_path(io_failure(error), source))?;
+        let copied =
+            fs::copy(source, destination).map_err(|error| with_path(io_failure(error), source))?;
         budget.bytes += copied;
     }
     Ok(())
@@ -3084,7 +3257,8 @@ fn remove_tree(path: &Path, depth: usize, removed: &mut usize) -> Result<(), Too
             message: "The folder tree is deeper than VupsRouter will delete.".into(),
         });
     }
-    let metadata = fs::symlink_metadata(path).map_err(|error| with_path(io_failure(error), path))?;
+    let metadata =
+        fs::symlink_metadata(path).map_err(|error| with_path(io_failure(error), path))?;
     if metadata.file_type().is_symlink() {
         return Err(ToolFailure {
             code: "symlink_rejected".into(),
@@ -3156,8 +3330,13 @@ fn copy_entry_to(source: &Path, destination: &Path) -> Result<Value, ToolFailure
 }
 
 fn delete_entry(path: &Path) -> Result<Value, ToolFailure> {
-    let metadata = fs::symlink_metadata(path).map_err(|error| with_path(io_failure(error), path))?;
-    let kind = if metadata.is_dir() { "directory" } else { "file" };
+    let metadata =
+        fs::symlink_metadata(path).map_err(|error| with_path(io_failure(error), path))?;
+    let kind = if metadata.is_dir() {
+        "directory"
+    } else {
+        "file"
+    };
     let mut removed = 0usize;
     if metadata.is_dir() {
         remove_tree(path, 0, &mut removed)?;
@@ -3199,8 +3378,8 @@ fn run_resolved(
                 }
                 return Ok(value);
             }
-            let outcome =
-                run_command_blocking(processes, operation_id, spec, is_cancelled).map_err(exec_failure)?;
+            let outcome = run_command_blocking(processes, operation_id, spec, is_cancelled)
+                .map_err(exec_failure)?;
             if outcome.cancelled {
                 return Err(cancelled_tool_failure());
             }
@@ -3229,7 +3408,9 @@ fn run_resolved(
         "read_file" => read_file(&request.target),
         "read_file_metadata" => read_metadata(&request.target),
         "search_files" => search_files(&request.target, &request.args, is_cancelled),
-        "search_file_contents" => search_file_contents(&request.target, &request.args, is_cancelled),
+        "search_file_contents" => {
+            search_file_contents(&request.target, &request.args, is_cancelled)
+        }
         "create_directory" => create_directory(&request.target),
         "write_file" => write_text_file(&request.target, &content_arg(&request.args)?, false),
         "append_file" => write_text_file(&request.target, &content_arg(&request.args)?, true),
@@ -3243,7 +3424,11 @@ fn run_resolved(
                     code: "invalid_arguments".into(),
                     message: "The edit tool needs replacement text.".into(),
                 })?;
-            let all = request.args.get("all").and_then(Value::as_bool).unwrap_or(false);
+            let all = request
+                .args
+                .get("all")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             edit_text_file(&request.target, find, replace, all)
         }
         "rename_path" => {
@@ -3268,7 +3453,11 @@ fn run_resolved(
         "delete_path" => delete_entry(&request.target),
         "open_path" => open_target(&request.target).map_err(exec_failure),
         "open_url" => {
-            let url = validate_url(required_str(&request.args, "url", "The open tool needs a URL.")?)?;
+            let url = validate_url(required_str(
+                &request.args,
+                "url",
+                "The open tool needs a URL.",
+            )?)?;
             open_url(&url).map_err(exec_failure)
         }
         "list_installed_apps" => {
@@ -3340,7 +3529,11 @@ fn run_resolved(
         }
         "close_app" => {
             let key = process_key(&request.args)?;
-            let force = request.args.get("force").and_then(Value::as_bool).unwrap_or(false);
+            let force = request
+                .args
+                .get("force")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             close_app(processes, &key, force).map_err(exec_failure)
         }
         "command_output" => {
@@ -3375,29 +3568,60 @@ fn content_arg(args: &Value) -> Result<String, ToolFailure> {
         })
 }
 
+/// One "Allow Always (Only for This Chat)" answer. It is kept in memory for the
+/// life of the app process and keyed by the chat that asked, so it can never
+/// authorize a different chat and never reaches the grant file on disk.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ChatGrant {
+    owner: String,
+    chat_id: String,
+    access: String,
+    path: String,
+    /// Exact command line when the card named one (a launch with arguments, an
+    /// "open with" target). Empty when the answer covers only the path.
+    command: String,
+}
+
 /// The standing approvals for this account. "Allow once" is deliberately absent:
 /// it authorizes only the call it answered, so the next operation asks again
 /// instead of inheriting a decision the user made about different work.
 #[derive(Clone, Default)]
 struct ApprovedScope {
     grants: GrantStore,
+    chat_grants: Vec<ChatGrant>,
 }
 
 impl ApprovedScope {
     fn covers(&mut self, policy: &ToolPolicy, prompt: &ApprovalPrompt) -> bool {
-        // Only an exact file read or executable launch can be saved. Writes,
-        // deletes, folder listings, commands and process control always ask.
+        // Deletes, commands, process control and unaddressable targets always
+        // ask; the card never offered to remember them.
         if !prompt.can_persist {
             return false;
         }
         // A path outside a workspace was already refused before this point, so
-        // an exact-resource grant can never act as a second workspace.
+        // neither kind of grant can act as a second workspace.
+        let path = Path::new(&prompt.scope_path);
+        let command = prompt.command.as_deref().unwrap_or("");
+        if !prompt.chat_id.is_empty()
+            && self.chat_grants.iter().any(|grant| {
+                grant.owner == policy.owner
+                    && grant.chat_id == prompt.chat_id
+                    && grant.access == prompt.access
+                    && grant.command == command
+                    && same_path(Path::new(&grant.path), path)
+            })
+        {
+            return true;
+        }
+        // Exact-file permissions saved by an earlier build still hold for the
+        // resource they named; new answers use the chat scope above instead.
         self.grants
             .covers(&policy.owner, &prompt.access, Path::new(&prompt.scope_path))
     }
 
-    /// Only an explicit "Allow Always (Only for This File)" answer is stored,
-    /// and only for the canonical resource the card showed.
+    /// Only an explicit "Allow Always" answer is stored. With a chat id it is
+    /// kept in memory for that chat only; without one it falls back to the
+    /// older exact-file permission on disk.
     fn remember(
         &mut self,
         policy: &ToolPolicy,
@@ -3409,14 +3633,45 @@ impl ApprovedScope {
         }
         match decision {
             ApprovalDecision::Denied | ApprovalDecision::Once => Ok(()),
-            ApprovalDecision::AlwaysResource => self.grants.insert(ResourceGrant {
-                id: uuid::Uuid::new_v4().to_string(),
-                owner: policy.owner.clone(),
-                path: path_text(&canonical_for_policy(Path::new(&prompt.scope_path))),
-                kind: prompt.access.clone(),
-                created_at: now_millis(),
-            }),
+            ApprovalDecision::AlwaysResource => {
+                let path = path_text(&canonical_for_policy(Path::new(&prompt.scope_path)));
+                let command = prompt.command.clone().unwrap_or_default();
+                if !prompt.chat_id.is_empty() {
+                    self.chat_grants.retain(|existing| {
+                        !(existing.owner == policy.owner
+                            && existing.chat_id == prompt.chat_id
+                            && existing.access == prompt.access
+                            && existing.command == command
+                            && same_path(Path::new(&existing.path), Path::new(&path)))
+                    });
+                    self.chat_grants.push(ChatGrant {
+                        owner: policy.owner.clone(),
+                        chat_id: prompt.chat_id.clone(),
+                        access: prompt.access.clone(),
+                        path,
+                        command,
+                    });
+                    if self.chat_grants.len() > MAX_GRANTS {
+                        let overflow = self.chat_grants.len() - MAX_GRANTS;
+                        self.chat_grants.drain(0..overflow);
+                    }
+                    return Ok(());
+                }
+                self.grants.insert(ResourceGrant {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    owner: policy.owner.clone(),
+                    path,
+                    kind: prompt.access.clone(),
+                    created_at: now_millis(),
+                })
+            }
         }
+    }
+
+    /// A narrowing mode switch revokes both kinds of standing consent.
+    fn clear(&mut self, owner: &str) -> Result<(), String> {
+        self.chat_grants.retain(|grant| grant.owner != owner);
+        self.grants.clear(owner).map(|_| ())
     }
 }
 
@@ -3589,14 +3844,67 @@ fn audit_target(request: &ToolRequest) -> String {
     String::new()
 }
 
+/// Metadata only: the panel needs to know that the agent touched a path or
+/// started a command, never the file contents or full tool result.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ToolActivity {
+    tool: String,
+    operation_id: String,
+    target: String,
+    ok: bool,
+    error: Option<String>,
+    at: i64,
+    process_id: Option<String>,
+    status: Option<String>,
+    command: Option<String>,
+    path: Option<String>,
+}
+
+fn emit_tool_activity(
+    app: &AppHandle,
+    request: &ToolRequest,
+    operation_id: &str,
+    response: &ToolResponse,
+) {
+    // Polling a background command from the agent is not a new operation; the
+    // panel terminal already follows the process it knows about.
+    if request.tool == "command_output" {
+        return;
+    }
+    let field = |key: &str| {
+        response
+            .data
+            .as_ref()
+            .and_then(|data| data.get(key))
+            .and_then(Value::as_str)
+            .map(|value| truncate_text(value, 300))
+    };
+    let activity = ToolActivity {
+        tool: truncate_text(&request.tool, 80),
+        operation_id: truncate_text(operation_id, 80),
+        target: audit_target(request),
+        ok: response.ok,
+        error: response
+            .error
+            .as_ref()
+            .map(|error| truncate_text(&error.code, 80)),
+        at: now_millis(),
+        process_id: field("processId"),
+        status: field("status"),
+        command: field("command"),
+        path: field("path"),
+    };
+    let _ = app.emit("desktop-tool:activity", activity);
+}
+
 fn append_audit(
     app: &AppHandle,
     policy: &ToolPolicy,
     request: &ToolRequest,
     operation_id: &str,
     response: &ToolResponse,
-) {
-    let Ok(directory) = app.path().app_data_dir() else {
+) {    let Ok(directory) = app.path().app_data_dir() else {
         return;
     };
     if fs::create_dir_all(&directory).is_err() {
@@ -3711,10 +4019,10 @@ pub async fn desktop_tool_set_policy(
         state.broker.cancel_all();
         if transition.revoke_grants {
             if let Ok(mut scopes) = state.scopes.lock() {
-                // A narrower mode must not inherit the saved file and
-                // executable permissions handed out by the broader one.
+                // A narrower mode must not inherit any standing consent handed
+                // out by the broader one, whether saved or chat-scoped.
                 scopes.grants.ensure_loaded(&app);
-                let _ = scopes.grants.clear(&grant_owner);
+                let _ = scopes.clear(&grant_owner);
             }
         }
     }
@@ -3794,6 +4102,7 @@ pub async fn desktop_tool_execute(
         state.cancels.finish(&operation_id);
     }
     append_audit(&app, &policy, &audit_request, &operation_id, &response);
+    emit_tool_activity(&app, &audit_request, &operation_id, &response);
     Ok(response)
 }
 
@@ -3973,9 +4282,7 @@ mod tests {
             assert!(entry.get("content").is_none(), "no file bytes are read");
             eprintln!(
                 "[real-downloads] {} · {} bytes · modified {}",
-                name,
-                entry["size"],
-                entry["modifiedAt"]
+                name, entry["size"], entry["modifiedAt"]
             );
         }
         assert_eq!(data["sortedBy"].as_str(), Some("lastModified"));
@@ -3989,7 +4296,10 @@ mod tests {
         write(&inside, b"inside");
         write(&outside, b"outside");
 
-        assert!(path_requires_approval(&policy(ToolMode::Ask, Some(&root)), &inside));
+        assert!(path_requires_approval(
+            &policy(ToolMode::Ask, Some(&root)),
+            &inside
+        ));
         assert!(!path_requires_approval(
             &policy(ToolMode::Workspace, Some(&root)),
             &inside
@@ -3998,8 +4308,14 @@ mod tests {
             &policy(ToolMode::Workspace, Some(&root)),
             &outside
         ));
-        assert!(!path_requires_approval(&policy(ToolMode::Full, None), &inside));
-        assert!(path_requires_approval(&policy(ToolMode::Workspace, None), &inside));
+        assert!(!path_requires_approval(
+            &policy(ToolMode::Full, None),
+            &inside
+        ));
+        assert!(path_requires_approval(
+            &policy(ToolMode::Workspace, None),
+            &inside
+        ));
 
         fs::remove_dir_all(root).expect("remove test root");
         let _ = fs::remove_file(outside);
@@ -4028,7 +4344,10 @@ mod tests {
         write(&root.join("notes.txt"), b"hello");
         write(&root.join(".env"), b"SECRET=1");
         write(&root.join("image.png"), b"\x89PNG");
-        write(&root.join("large.txt"), &vec![b'a'; MAX_READ_BYTES as usize + 1]);
+        write(
+            &root.join("large.txt"),
+            &vec![b'a'; MAX_READ_BYTES as usize + 1],
+        );
 
         let result = read_file(&root.join("notes.txt")).expect("read text");
         assert_eq!(result["content"], "hello");
@@ -4039,6 +4358,7 @@ mod tests {
             &policy(ToolMode::Full, None),
             &ToolRequest {
                 operation_id: None,
+                chat_id: None,
                 tool: "read_file".into(),
                 args: json!({ "path": root.join(".env").to_string_lossy() }),
             },
@@ -4085,13 +4405,15 @@ mod tests {
         let root = temp_root();
         write(&root.join("notes.txt"), b"hello");
         let request = ToolRequest {
-                operation_id: None,
+            operation_id: None,
+            chat_id: None,
             tool: "read_file".into(),
             args: json!({ "path": "../outside.txt" }),
         };
         assert!(resolve_request(&policy(ToolMode::Full, None), &request).is_err());
         let request = ToolRequest {
-                operation_id: None,
+            operation_id: None,
+            chat_id: None,
             tool: "read_file".into(),
             args: json!({ "path": root.join("notes.txt").to_string_lossy() }),
         };
@@ -4105,7 +4427,8 @@ mod tests {
         let file = root.join("notes.txt");
         write(&file, b"hello");
         let request = ToolRequest {
-                operation_id: None,
+            operation_id: None,
+            chat_id: None,
             tool: "read_file".into(),
             args: json!({ "path": file.to_string_lossy() }),
         };
@@ -4134,10 +4457,8 @@ mod tests {
     fn workspace_mode_allows_inside_and_requires_approval_outside() {
         let root = temp_root();
         let inside = root.join("inside.txt");
-        let outside = std::env::temp_dir().join(format!(
-            "vupsrouter-outside-{}.txt",
-            uuid::Uuid::new_v4()
-        ));
+        let outside =
+            std::env::temp_dir().join(format!("vupsrouter-outside-{}.txt", uuid::Uuid::new_v4()));
         write(&inside, b"inside");
         write(&outside, b"outside");
 
@@ -4145,6 +4466,7 @@ mod tests {
             &policy(ToolMode::Workspace, Some(&root)),
             &ToolRequest {
                 operation_id: None,
+                chat_id: None,
                 tool: "read_file".into(),
                 args: json!({ "path": inside.to_string_lossy() }),
             },
@@ -4158,6 +4480,7 @@ mod tests {
             &policy(ToolMode::Workspace, Some(&root)),
             &ToolRequest {
                 operation_id: None,
+                chat_id: None,
                 tool: "read_file".into(),
                 args: json!({ "path": outside.to_string_lossy() }),
             },
@@ -4187,6 +4510,7 @@ mod tests {
             &policy(ToolMode::Full, None),
             &ToolRequest {
                 operation_id: None,
+                chat_id: None,
                 tool: "run_shell".into(),
                 args: json!({}),
             },
@@ -4200,6 +4524,7 @@ mod tests {
             &policy(ToolMode::Full, None),
             &ToolRequest {
                 operation_id: None,
+                chat_id: None,
                 tool: "read_file".into(),
                 args: json!({}),
             },
@@ -4229,6 +4554,7 @@ mod tests {
                 &policy(ToolMode::Full, None),
                 &ToolRequest {
                     operation_id: Some("turn-forged".into()),
+                    chat_id: None,
                     tool: name.into(),
                     args: json!({ "path": "C:\\temp" }),
                 },
@@ -4240,7 +4566,11 @@ mod tests {
             );
             assert_eq!(asked, 0, "{name} must not raise a permission card");
             assert!(!response.ok, "{name} must not execute");
-            assert_eq!(response.error.expect("failure").code, "unknown_tool", "{name}");
+            assert_eq!(
+                response.error.expect("failure").code,
+                "unknown_tool",
+                "{name}"
+            );
         }
 
         // The tools this build actually advertises resolve, including the new
@@ -4266,6 +4596,16 @@ mod tests {
     fn tool(tool: &str, args: Value) -> ToolRequest {
         ToolRequest {
             operation_id: None,
+            chat_id: None,
+            tool: tool.into(),
+            args,
+        }
+    }
+
+    fn chat_tool(tool: &str, args: Value, chat: &str) -> ToolRequest {
+        ToolRequest {
+            operation_id: Some("turn-chat".into()),
+            chat_id: Some(chat.into()),
             tool: tool.into(),
             args,
         }
@@ -4290,7 +4630,9 @@ mod tests {
             let response = execute_tool_with(&policy, &request, &mut scope, |prompt| {
                 asked += 1;
                 assert!(
-                    prompt.scope_path.eq_ignore_ascii_case(&path_text(&downloads)),
+                    prompt
+                        .scope_path
+                        .eq_ignore_ascii_case(&path_text(&downloads)),
                     "the decision is about the folder, not one file"
                 );
                 ApprovalDecision::Once
@@ -4318,11 +4660,13 @@ mod tests {
         );
         let mut asked = 0usize;
         for _ in 0..2 {
-            assert!(execute_tool_with(&policy, &request, &mut scope, |_| {
-                asked += 1;
-                ApprovalDecision::Once
-            })
-            .ok);
+            assert!(
+                execute_tool_with(&policy, &request, &mut scope, |_| {
+                    asked += 1;
+                    ApprovalDecision::Once
+                })
+                .ok
+            );
         }
         assert_eq!(asked, 2, "the second operation asks again");
         assert!(scope.grants.grants.is_empty(), "nothing was persisted");
@@ -4369,13 +4713,16 @@ mod tests {
         // A restart keeps the persisted grant.
         let mut restarted = ApprovedScope {
             grants: scope.grants.clone(),
+            ..Default::default()
         };
         let mut asked_on_restart = 0usize;
-        assert!(execute_tool_with(&policy, &request, &mut restarted, |_| {
-            asked_on_restart += 1;
-            ApprovalDecision::Denied
-        })
-        .ok);
+        assert!(
+            execute_tool_with(&policy, &request, &mut restarted, |_| {
+                asked_on_restart += 1;
+                ApprovalDecision::Denied
+            })
+            .ok
+        );
         assert_eq!(asked_on_restart, 0, "the saved grant covers the restart");
 
         // Revoking brings the prompt back.
@@ -4388,6 +4735,135 @@ mod tests {
             ApprovalDecision::Denied
         });
         assert_eq!(asked_after, 1);
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn a_chat_grant_covers_repeats_in_only_that_chat() {
+        let root = temp_root();
+        let file = root.join("notes.txt");
+        write(&file, b"hello");
+        let policy = policy(ToolMode::Ask, None);
+        let mut scope = ApprovedScope::default();
+        let mut asked = 0usize;
+
+        let request = chat_tool(
+            "read_file",
+            json!({ "path": file.to_string_lossy() }),
+            "chat-a",
+        );
+        for _ in 0..2 {
+            let response = execute_tool_with(&policy, &request, &mut scope, |prompt| {
+                asked += 1;
+                assert_eq!(prompt.action, "contents");
+                assert!(prompt.can_persist, "an exact read is rememberable in a chat");
+                assert_eq!(prompt.chat_id, "chat-a");
+                ApprovalDecision::AlwaysResource
+            });
+            assert!(response.ok);
+        }
+        assert_eq!(asked, 1, "the chat answer is reused inside its chat");
+        assert_eq!(scope.chat_grants.len(), 1);
+        assert!(
+            scope.grants.grants.is_empty(),
+            "a chat answer never reaches the disk grant store"
+        );
+
+        // The same file asked by another chat is a new decision.
+        let other_chat = chat_tool(
+            "read_file",
+            json!({ "path": file.to_string_lossy() }),
+            "chat-b",
+        );
+        let mut asked_other = 0usize;
+        let denied = execute_tool_with(&policy, &other_chat, &mut scope, |_| {
+            asked_other += 1;
+            ApprovalDecision::Denied
+        });
+        assert!(!denied.ok, "a denied read does not run");
+        assert_eq!(asked_other, 1, "a grant cannot leak to another chat");
+
+        // Chat grants live in memory only, so a restart asks again.
+        let mut restarted = ApprovedScope::default();
+        let mut asked_restart = 0usize;
+        execute_tool_with(&policy, &request, &mut restarted, |_| {
+            asked_restart += 1;
+            ApprovalDecision::Denied
+        });
+        assert_eq!(asked_restart, 1, "a restart has to ask again");
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn a_chat_grant_covers_an_exact_write_but_never_a_delete() {
+        let root = temp_root();
+        let first = root.join("first.txt");
+        let second = root.join("second.txt");
+        let policy = policy(ToolMode::Ask, None);
+        let mut scope = ApprovedScope::default();
+        let mut write_prompts = 0usize;
+        let mut actions = Vec::new();
+
+        let write_request = |content: &str| {
+            chat_tool(
+                "write_file",
+                json!({ "path": first.to_string_lossy(), "content": content }),
+                "chat-a",
+            )
+        };
+        for content in ["one", "two"] {
+            let response = execute_tool_with(&policy, &write_request(content), &mut scope, |prompt| {
+                write_prompts += 1;
+                actions.push(prompt.action.clone());
+                assert!(prompt.can_persist, "a chat can remember this exact write");
+                ApprovalDecision::AlwaysResource
+            });
+            assert!(response.ok);
+        }
+        assert_eq!(
+            actions,
+            vec!["create".to_string()],
+            "only the first write asks; the grant covers the second by access kind"
+        );
+        assert_eq!(write_prompts, 1, "the second write to the same file is covered");
+        assert_eq!(
+            fs::read_to_string(&first).expect("read written file"),
+            "two",
+            "the covered write still changes the file"
+        );
+
+        // The grant names first.txt only.
+        let other_file = chat_tool(
+            "write_file",
+            json!({ "path": second.to_string_lossy(), "content": "other" }),
+            "chat-a",
+        );
+        let mut other_prompts = 0usize;
+        let denied = execute_tool_with(&policy, &other_file, &mut scope, |_| {
+            other_prompts += 1;
+            ApprovalDecision::Denied
+        });
+        assert!(!denied.ok, "the denied write does not run");
+        assert_eq!(other_prompts, 1, "a write grant never covers another file");
+
+        // Deleting the same file always prompts, even in the chat that
+        // remembered the write.
+        let delete_request = chat_tool(
+            "delete_path",
+            json!({ "path": first.to_string_lossy() }),
+            "chat-a",
+        );
+        let mut delete_prompts = 0usize;
+        let response = execute_tool_with(&policy, &delete_request, &mut scope, |prompt| {
+            delete_prompts += 1;
+            assert_eq!(prompt.action, "delete");
+            assert!(!prompt.can_persist, "a delete is a per-call decision");
+            ApprovalDecision::Once
+        });
+        assert!(response.ok);
+        assert_eq!(delete_prompts, 1);
 
         fs::remove_dir_all(root).expect("remove test root");
     }
@@ -4458,13 +4934,15 @@ mod tests {
         assert_eq!(scope.grants.grants.len(), 1);
 
         // The same file is covered.
-        assert!(execute_tool_with(
-            &policy,
-            &tool("read_file", json!({ "path": file.to_string_lossy() })),
-            &mut scope,
-            |_| ApprovalDecision::Denied,
-        )
-        .ok);
+        assert!(
+            execute_tool_with(
+                &policy,
+                &tool("read_file", json!({ "path": file.to_string_lossy() })),
+                &mut scope,
+                |_| ApprovalDecision::Denied,
+            )
+            .ok
+        );
         assert_eq!(asked, 1);
 
         // Another file in the same folder still asks.
@@ -4505,7 +4983,11 @@ mod tests {
         let ask = policy(ToolMode::Ask, None);
 
         for (tool_name, args, expected_action) in [
-            ("list_directory", json!({ "path": root.to_string_lossy() }), "list"),
+            (
+                "list_directory",
+                json!({ "path": root.to_string_lossy() }),
+                "list",
+            ),
             (
                 "read_file_metadata",
                 json!({ "path": file.to_string_lossy() }),
@@ -4530,8 +5012,11 @@ mod tests {
             );
         }
 
-        let read = resolve_request(&ask, &tool("read_file", json!({ "path": file.to_string_lossy() })))
-            .expect("resolve read");
+        let read = resolve_request(
+            &ask,
+            &tool("read_file", json!({ "path": file.to_string_lossy() })),
+        )
+        .expect("resolve read");
         assert!(read.approval.can_persist, "one existing file can be saved");
 
         fs::remove_dir_all(root).expect("remove test root");
@@ -4616,7 +5101,10 @@ mod tests {
                 "read_file",
                 json!({ "path": junction.join("secret.txt").to_string_lossy() }),
             ),
-            &mut ApprovedScope { grants },
+            &mut ApprovedScope {
+                grants,
+                ..Default::default()
+            },
             |_| {
                 asked += 1;
                 ApprovalDecision::Once
@@ -4641,7 +5129,10 @@ mod tests {
 
         let touched = SystemTime::now() - Duration::from_secs(3_600);
         let file = root.join("old.txt");
-        let handle = fs::OpenOptions::new().write(true).open(&file).expect("open");
+        let handle = fs::OpenOptions::new()
+            .write(true)
+            .open(&file)
+            .expect("open");
         handle.set_modified(touched).expect("set modified");
         drop(handle);
 
@@ -4650,7 +5141,9 @@ mod tests {
         assert_eq!(files.len(), 2, "only the two real files");
         assert_eq!(files[0]["name"], "new.txt", "newest first");
         assert_eq!(files[1]["name"], "old.txt");
-        assert!(files[0]["modifiedAt"].as_i64().unwrap() > files[1]["modifiedAt"].as_i64().unwrap());
+        assert!(
+            files[0]["modifiedAt"].as_i64().unwrap() > files[1]["modifiedAt"].as_i64().unwrap()
+        );
         assert!(files[0]["size"].as_u64().is_some());
         assert!(
             result["skippedSystemEntries"]
@@ -4667,11 +5160,9 @@ mod tests {
         assert!(!names.contains(&"Thumbs.db"));
         assert_eq!(result["sortedBy"], "lastModified");
 
-        let with_system = list_recent_files(
-            &root,
-            &json!({ "limit": 5, "includeSystemEntries": true }),
-        )
-        .expect("recent with system");
+        let with_system =
+            list_recent_files(&root, &json!({ "limit": 5, "includeSystemEntries": true }))
+                .expect("recent with system");
         let names: Vec<&str> = with_system["files"]
             .as_array()
             .unwrap()
@@ -4709,7 +5200,7 @@ mod tests {
     fn the_broker_answers_one_pending_request_exactly_once() {
         let broker = ApprovalBroker::default();
         let entry = Arc::new(PendingApproval {
-                operation_id: String::new(),
+            operation_id: String::new(),
             request_id: "req-1".into(),
             owner: "user_123".into(),
             decision: Mutex::new(None),
@@ -4723,7 +5214,9 @@ mod tests {
 
         // A joiner waits on the same entry the leader is waiting on.
         let joined = entry.clone();
-        let waiter = std::thread::spawn(move || ApprovalBroker::await_decision(&joined, Duration::from_secs(5)));
+        let waiter = std::thread::spawn(move || {
+            ApprovalBroker::await_decision(&joined, Duration::from_secs(5))
+        });
         std::thread::sleep(Duration::from_millis(50));
         broker
             .respond("user_123", "req-1", ApprovalDecision::Once)
@@ -4731,15 +5224,19 @@ mod tests {
         assert_eq!(waiter.join().unwrap(), ApprovalDecision::Once);
 
         // The entry is gone, so the same id can never authorize anything again.
-        assert!(broker.respond("user_123", "req-1", ApprovalDecision::Once).is_err());
-        assert!(broker.respond("user_123", "req-unknown", ApprovalDecision::Once).is_err());
+        assert!(broker
+            .respond("user_123", "req-1", ApprovalDecision::Once)
+            .is_err());
+        assert!(broker
+            .respond("user_123", "req-unknown", ApprovalDecision::Once)
+            .is_err());
     }
 
     #[test]
     fn another_account_cannot_answer_a_pending_request() {
         let broker = ApprovalBroker::default();
         let entry = Arc::new(PendingApproval {
-                operation_id: String::new(),
+            operation_id: String::new(),
             request_id: "req-2".into(),
             owner: "user_123".into(),
             decision: Mutex::new(None),
@@ -4760,7 +5257,7 @@ mod tests {
     #[test]
     fn an_unanswered_request_expires_as_a_denial() {
         let entry = Arc::new(PendingApproval {
-                operation_id: String::new(),
+            operation_id: String::new(),
             request_id: "req-3".into(),
             owner: "user_123".into(),
             decision: Mutex::new(None),
@@ -4777,18 +5274,14 @@ mod tests {
     fn cancelling_pending_approvals_denies_them() {
         let broker = ApprovalBroker::default();
         let entry = Arc::new(PendingApproval {
-                operation_id: String::new(),
+            operation_id: String::new(),
             request_id: "req-4".into(),
             owner: "user_123".into(),
             decision: Mutex::new(None),
             ready: Condvar::new(),
         });
         let joined = entry.clone();
-        broker
-            .pending
-            .lock()
-            .unwrap()
-            .insert("k4".into(), entry);
+        broker.pending.lock().unwrap().insert("k4".into(), entry);
         assert_eq!(broker.cancel_all(), vec!["req-4".to_string()]);
         assert_eq!(
             ApprovalBroker::await_decision(&joined, Duration::from_millis(40)),
@@ -4820,7 +5313,11 @@ mod tests {
         }
         assert_eq!(broker.cancel_operation("turn-a"), vec!["req-a".to_string()]);
         assert_eq!(
-            first.decision.lock().unwrap().unwrap_or(ApprovalDecision::Once),
+            first
+                .decision
+                .lock()
+                .unwrap()
+                .unwrap_or(ApprovalDecision::Once),
             ApprovalDecision::Denied,
             "the stopped operation is denied"
         );
@@ -4914,7 +5411,10 @@ mod tests {
 
         assert_eq!(asked, 1, "the card is answered exactly once");
         assert_eq!(response.error.expect("failure").code, "cancelled");
-        assert!(response.data.is_none(), "the approved read still never happened");
+        assert!(
+            response.data.is_none(),
+            "the approved read still never happened"
+        );
         assert!(scope.grants.grants.is_empty());
 
         fs::remove_dir_all(root).expect("remove test root");
@@ -4936,7 +5436,10 @@ mod tests {
 
         let failure = result.expect_err("a stopped search never reports success");
         assert_eq!(failure.code, "cancelled");
-        assert!(calls.get() > 2, "the scan noticed the stop instead of finishing");
+        assert!(
+            calls.get() > 2,
+            "the scan noticed the stop instead of finishing"
+        );
 
         fs::remove_dir_all(root).expect("remove test root");
     }
@@ -4958,7 +5461,11 @@ mod tests {
                 asked += 1;
                 ApprovalDecision::Denied
             });
-            assert_eq!(asked, 1, "denial is not cached as a grant (round {})", round);
+            assert_eq!(
+                asked, 1,
+                "denial is not cached as a grant (round {})",
+                round
+            );
             assert_eq!(response.error.as_ref().unwrap().code, "approval_denied");
         }
         assert!(scope.grants.grants.is_empty());
@@ -4974,7 +5481,10 @@ mod tests {
         let policy = policy(ToolMode::Ask, None);
         let resolved = resolve_request(
             &policy,
-            &tool("read_file_metadata", json!({ "path": folder.join("a.txt").to_string_lossy() })),
+            &tool(
+                "read_file_metadata",
+                json!({ "path": folder.join("a.txt").to_string_lossy() }),
+            ),
         )
         .expect("resolve");
         assert_eq!(resolved.approval.action, "metadata");
@@ -4986,7 +5496,10 @@ mod tests {
 
         let recent = resolve_request(
             &policy,
-            &tool("list_recent_files", json!({ "path": folder.to_string_lossy(), "limit": 5 })),
+            &tool(
+                "list_recent_files",
+                json!({ "path": folder.to_string_lossy(), "limit": 5 }),
+            ),
         )
         .expect("resolve recent");
         assert_eq!(recent.approval.action, "recent");
@@ -5024,7 +5537,15 @@ mod tests {
     fn the_recent_files_fast_path_prompts_once_for_the_folder() {
         let root = temp_root();
         let folder = root.join("Downloads");
-        for name in ["a.txt", "b.txt", "c.txt", "d.txt", "e.txt", "f.txt", "desktop.ini"] {
+        for name in [
+            "a.txt",
+            "b.txt",
+            "c.txt",
+            "d.txt",
+            "e.txt",
+            "f.txt",
+            "desktop.ini",
+        ] {
             write(&folder.join(name), b"x");
         }
         let policy = policy(ToolMode::Ask, None);
@@ -5032,7 +5553,10 @@ mod tests {
         let mut asked = 0usize;
         let recent = execute_tool_with(
             &policy,
-            &tool("list_recent_files", json!({ "path": folder.to_string_lossy(), "limit": 5 })),
+            &tool(
+                "list_recent_files",
+                json!({ "path": folder.to_string_lossy(), "limit": 5 }),
+            ),
             &mut scope,
             |prompt| {
                 asked += 1;
@@ -5071,12 +5595,18 @@ mod tests {
         let mut scope = ApprovedScope::default();
         let response = execute_tool_with(
             &policy,
-            &tool("list_recent_files", json!({ "path": folder.to_string_lossy(), "limit": 5 })),
+            &tool(
+                "list_recent_files",
+                json!({ "path": folder.to_string_lossy(), "limit": 5 }),
+            ),
             &mut scope,
             |_| ApprovalDecision::Denied,
         );
         assert!(!response.ok);
-        assert_eq!(response.error.as_ref().expect("error").code, "approval_denied");
+        assert_eq!(
+            response.error.as_ref().expect("error").code,
+            "approval_denied"
+        );
         assert!(
             scope.grants.grants.is_empty(),
             "a denial grants nothing and writes nothing"
@@ -5111,7 +5641,9 @@ mod tests {
             failure.message
         );
         assert!(failure.message.contains("not a VupsRouter setting"));
-        assert!(failure.message.contains("No elevation or permission change was attempted"));
+        assert!(failure
+            .message
+            .contains("No elevation or permission change was attempted"));
 
         let detailed = with_path(failure, Path::new(r"D:\OneDrive\Downloads"));
         assert!(
@@ -5128,7 +5660,10 @@ mod tests {
         let mut asked = 0usize;
         let response = execute_tool_with(
             &policy(ToolMode::Ask, None),
-            &tool("list_recent_files", json!({ "path": missing.to_string_lossy(), "limit": 5 })),
+            &tool(
+                "list_recent_files",
+                json!({ "path": missing.to_string_lossy(), "limit": 5 }),
+            ),
             &mut ApprovedScope::default(),
             |_| {
                 asked += 1;
@@ -5143,7 +5678,10 @@ mod tests {
             "Windows detail preserved: {}",
             failure.message
         );
-        assert_eq!(asked, 0, "a path that does not exist is not a permission event");
+        assert_eq!(
+            asked, 0,
+            "a path that does not exist is not a permission event"
+        );
 
         fs::remove_dir_all(root).expect("remove test root");
     }
@@ -5164,7 +5702,11 @@ mod tests {
         );
         let failure = response.error.expect("failure");
         assert_eq!(failure.code, "not_a_directory");
-        assert!(failure.message.contains(&path_text(&file)), "{}", failure.message);
+        assert!(
+            failure.message.contains(&path_text(&file)),
+            "{}",
+            failure.message
+        );
         assert!(
             !failure.message.contains(r"\\?\"),
             "verbatim paths stay out of user-facing text: {}",
@@ -5186,7 +5728,9 @@ mod tests {
         #[cfg(not(windows))]
         let created = std::os::unix::fs::symlink(&outside, &link).is_ok();
         if !created {
-            eprintln!("[skip] this account cannot create directory links; nothing to escape through");
+            eprintln!(
+                "[skip] this account cannot create directory links; nothing to escape through"
+            );
             fs::remove_dir_all(root).ok();
             fs::remove_dir_all(outside).ok();
             return;
@@ -5209,7 +5753,10 @@ mod tests {
             .iter()
             .filter_map(|entry| entry["name"].as_str())
             .collect();
-        assert!(!names.contains(&"escape"), "the link is not followed: {names:?}");
+        assert!(
+            !names.contains(&"escape"),
+            "the link is not followed: {names:?}"
+        );
 
         fs::remove_dir_all(root).ok();
         fs::remove_dir_all(outside).ok();
@@ -5247,7 +5794,10 @@ mod tests {
             &mut ApprovedScope::default(),
             |_| ApprovalDecision::Once,
         );
-        assert!(!response.ok, "a junction is not a way outside the workspace");
+        assert!(
+            !response.ok,
+            "a junction is not a way outside the workspace"
+        );
         let code = response.error.expect("failure").code;
         assert!(
             code == "symlink_rejected" || code == "outside_workspace",
@@ -5263,10 +5813,11 @@ mod tests {
     #[test]
     fn no_stored_policy_means_no_tool_access() {
         let slot = Mutex::new(None);
-        assert!(require_policy(&slot).is_err(), "closed until a mode is chosen");
-        slot.lock()
-            .unwrap()
-            .replace(policy(ToolMode::Ask, None));
+        assert!(
+            require_policy(&slot).is_err(),
+            "closed until a mode is chosen"
+        );
+        slot.lock().unwrap().replace(policy(ToolMode::Ask, None));
         assert_eq!(require_policy(&slot).unwrap().mode, ToolMode::Ask);
     }
 
@@ -5323,27 +5874,33 @@ mod tests {
         // Full access reads a normal folder without a card and leaves nothing behind.
         let mut scope = ApprovedScope::default();
         let mut asked = 0usize;
-        assert!(execute_tool_with(&policy(ToolMode::Full, None), &request, &mut scope, |_| {
-            asked += 1;
-            ApprovalDecision::Once
-        })
-        .ok);
+        assert!(
+            execute_tool_with(&policy(ToolMode::Full, None), &request, &mut scope, |_| {
+                asked += 1;
+                ApprovalDecision::Once
+            })
+            .ok
+        );
         assert_eq!(asked, 0);
 
         // Ask mode asks for the very next read.
-        assert!(execute_tool_with(&policy(ToolMode::Ask, None), &request, &mut scope, |_| {
-            asked += 1;
-            ApprovalDecision::Once
-        })
-        .ok);
+        assert!(
+            execute_tool_with(&policy(ToolMode::Ask, None), &request, &mut scope, |_| {
+                asked += 1;
+                ApprovalDecision::Once
+            })
+            .ok
+        );
         assert_eq!(asked, 1, "the broader mode left no approval behind");
 
         // The one-time approval is not reused by the following operation.
-        assert!(execute_tool_with(&policy(ToolMode::Ask, None), &request, &mut scope, |_| {
-            asked += 1;
-            ApprovalDecision::Once
-        })
-        .ok);
+        assert!(
+            execute_tool_with(&policy(ToolMode::Ask, None), &request, &mut scope, |_| {
+                asked += 1;
+                ApprovalDecision::Once
+            })
+            .ok
+        );
         assert_eq!(asked, 2, "allow once never authorizes a second operation");
 
         fs::remove_dir_all(root).expect("remove test root");
@@ -5407,7 +5964,10 @@ mod tests {
             kind: CONTENT_SCOPE.into(),
             created_at: 0,
         });
-        let mut narrowed = ApprovedScope { grants };
+        let mut narrowed = ApprovedScope {
+            grants,
+            ..Default::default()
+        };
         let mut asked = 0usize;
         let outside_response = execute_tool_with(
             &policy(ToolMode::Workspace, Some(&workspace)),
@@ -5433,19 +5993,21 @@ mod tests {
 
         // Inside the workspace nothing is asked.
         let mut inside_asked = 0usize;
-        assert!(execute_tool_with(
-            &policy(ToolMode::Workspace, Some(&workspace)),
-            &tool(
-                "read_file",
-                json!({ "path": workspace.join("inside.txt").to_string_lossy() }),
-            ),
-            &mut narrowed,
-            |_| {
-                inside_asked += 1;
-                ApprovalDecision::Denied
-            },
-        )
-        .ok);
+        assert!(
+            execute_tool_with(
+                &policy(ToolMode::Workspace, Some(&workspace)),
+                &tool(
+                    "read_file",
+                    json!({ "path": workspace.join("inside.txt").to_string_lossy() }),
+                ),
+                &mut narrowed,
+                |_| {
+                    inside_asked += 1;
+                    ApprovalDecision::Denied
+                },
+            )
+            .ok
+        );
         assert_eq!(inside_asked, 0);
 
         fs::remove_dir_all(root).expect("remove test root");
@@ -5543,11 +6105,19 @@ mod tests {
         .expect("extra fields are ignored, not honoured");
 
         let mut asked = 0usize;
-        let response = execute_tool_with(&policy(ToolMode::Ask, None), &request, &mut ApprovedScope::default(), |_| {
-            asked += 1;
-            ApprovalDecision::Denied
-        });
-        assert_eq!(asked, 1, "the stored policy decides, not the request payload");
+        let response = execute_tool_with(
+            &policy(ToolMode::Ask, None),
+            &request,
+            &mut ApprovedScope::default(),
+            |_| {
+                asked += 1;
+                ApprovalDecision::Denied
+            },
+        );
+        assert_eq!(
+            asked, 1,
+            "the stored policy decides, not the request payload"
+        );
         assert_eq!(response.error.expect("failure").code, "approval_denied");
 
         fs::remove_dir_all(root).expect("remove test root");
@@ -5574,7 +6144,10 @@ mod tests {
             },
         );
         assert!(created.ok);
-        assert_eq!(asked, 0, "Full access does not prompt for an ordinary write");
+        assert_eq!(
+            asked, 0,
+            "Full access does not prompt for an ordinary write"
+        );
         assert_eq!(created.data.unwrap()["created"], true);
         assert_eq!(fs::read_to_string(&file).expect("read back"), "alpha\n");
 
@@ -5589,7 +6162,10 @@ mod tests {
         );
         assert!(appended.ok);
         assert_eq!(appended.data.unwrap()["appended"], true);
-        assert_eq!(fs::read_to_string(&file).expect("read back"), "alpha\nbeta\n");
+        assert_eq!(
+            fs::read_to_string(&file).expect("read back"),
+            "alpha\nbeta\n"
+        );
 
         let edited = execute_tool_with(
             &full,
@@ -5606,7 +6182,10 @@ mod tests {
         );
         assert!(edited.ok);
         assert_eq!(edited.data.unwrap()["replacements"], 1);
-        assert_eq!(fs::read_to_string(&file).expect("read back"), "alpha\ngamma\n");
+        assert_eq!(
+            fs::read_to_string(&file).expect("read back"),
+            "alpha\ngamma\n"
+        );
 
         let read = execute_tool_with(
             &full,
@@ -5619,12 +6198,19 @@ mod tests {
 
         let metadata = execute_tool_with(
             &full,
-            &tool("read_file_metadata", json!({ "path": file.to_string_lossy() })),
+            &tool(
+                "read_file_metadata",
+                json!({ "path": file.to_string_lossy() }),
+            ),
             &mut scope,
             |_| ApprovalDecision::Denied,
         );
         assert!(metadata.ok);
-        assert_eq!(metadata.data.unwrap()["size"], 12, "the real size after both edits");
+        assert_eq!(
+            metadata.data.unwrap()["size"],
+            12,
+            "the real size after both edits"
+        );
 
         fs::remove_dir_all(root).expect("remove test root");
     }
@@ -5653,7 +6239,10 @@ mod tests {
         );
         assert!(written.ok);
         assert_eq!(asked, 0, "an ordinary workspace edit is not a prompt");
-        assert_eq!(fs::read_to_string(&inside).expect("inside written"), "inside\n");
+        assert_eq!(
+            fs::read_to_string(&inside).expect("inside written"),
+            "inside\n"
+        );
 
         let denied = execute_tool_with(
             &workspace,
@@ -5683,8 +6272,14 @@ mod tests {
         );
         assert!(!blocked.ok);
         assert_eq!(blocked.error.expect("failure").code, "outside_workspace");
-        assert_eq!(asked, 1, "the boundary is not a card that can be approved away");
-        assert!(!outside.exists(), "nothing outside the workspace was created");
+        assert_eq!(
+            asked, 1,
+            "the boundary is not a card that can be approved away"
+        );
+        assert!(
+            !outside.exists(),
+            "nothing outside the workspace was created"
+        );
 
         let allowed = execute_tool_with(
             &workspace,
@@ -5714,7 +6309,10 @@ mod tests {
         for content in ["one\n", "two\n"] {
             let response = execute_tool_with(
                 &ask,
-                &tool("write_file", json!({ "path": file.to_string_lossy(), "content": content })),
+                &tool(
+                    "write_file",
+                    json!({ "path": file.to_string_lossy(), "content": content }),
+                ),
                 &mut scope,
                 |_| {
                     asked += 1;
@@ -5747,7 +6345,10 @@ mod tests {
 
         let folder = execute_tool_with(
             &full,
-            &tool("create_directory", json!({ "path": nested.to_string_lossy() })),
+            &tool(
+                "create_directory",
+                json!({ "path": nested.to_string_lossy() }),
+            ),
             &mut scope,
             &mut approve,
         );
@@ -5757,7 +6358,10 @@ mod tests {
         let file = root.join("a.txt");
         let created = execute_tool_with(
             &full,
-            &tool("write_file", json!({ "path": file.to_string_lossy(), "content": "payload" })),
+            &tool(
+                "write_file",
+                json!({ "path": file.to_string_lossy(), "content": "payload" }),
+            ),
             &mut scope,
             &mut approve,
         );
@@ -5775,7 +6379,10 @@ mod tests {
         assert!(renamed.ok);
         let renamed_to = root.join("b.txt");
         assert!(!file.exists());
-        assert_eq!(fs::read_to_string(&renamed_to).expect("renamed file"), "payload");
+        assert_eq!(
+            fs::read_to_string(&renamed_to).expect("renamed file"),
+            "payload"
+        );
 
         let copied_to = nested.join("copy.txt");
         let copied = execute_tool_with(
@@ -5792,7 +6399,10 @@ mod tests {
         );
         assert!(copied.ok);
         assert_eq!(copied.data.unwrap()["copied"], true);
-        assert_eq!(fs::read_to_string(&copied_to).expect("copied file"), "payload");
+        assert_eq!(
+            fs::read_to_string(&copied_to).expect("copied file"),
+            "payload"
+        );
 
         let moved_to = nested.join("moved.txt");
         let moved = execute_tool_with(
@@ -5810,7 +6420,10 @@ mod tests {
         assert!(moved.ok);
         assert_eq!(moved.data.unwrap()["moved"], true);
         assert!(!copied_to.exists());
-        assert_eq!(fs::read_to_string(&moved_to).expect("moved file"), "payload");
+        assert_eq!(
+            fs::read_to_string(&moved_to).expect("moved file"),
+            "payload"
+        );
 
         let duplicate = execute_tool_with(
             &full,
@@ -5826,10 +6439,16 @@ mod tests {
         );
         assert!(!duplicate.ok);
         assert!(
-            matches!(duplicate.error.expect("failure").code.as_str(), "invalid_arguments" | "path_exists"),
+            matches!(
+                duplicate.error.expect("failure").code.as_str(),
+                "invalid_arguments" | "path_exists"
+            ),
             "copying onto itself is refused"
         );
-        assert_eq!(asked, 0, "Full access does not prompt for ordinary file work");
+        assert_eq!(
+            asked, 0,
+            "Full access does not prompt for ordinary file work"
+        );
 
         fs::remove_dir_all(root).expect("remove test root");
     }
@@ -5856,7 +6475,11 @@ mod tests {
         assert!(result.ok);
         let data = result.data.expect("matches");
         let matches = data["matches"].as_array().expect("match array");
-        assert_eq!(matches.len(), 1, "binary extensions and NUL files are not searched");
+        assert_eq!(
+            matches.len(),
+            1,
+            "binary extensions and NUL files are not searched"
+        );
         assert!(matches[0]["path"].as_str().unwrap().ends_with("notes.md"));
         assert_eq!(matches[0]["line"], 2);
         assert!(matches[0]["text"].as_str().unwrap().contains("needle"));
@@ -5868,7 +6491,10 @@ mod tests {
     fn binary_formats_are_metadata_and_open_only() {
         let root = temp_root();
         let pdf = root.join("report.pdf");
-        write(&pdf, b"%PDF-1.7\nneedle-like text that is not really a text document");
+        write(
+            &pdf,
+            b"%PDF-1.7\nneedle-like text that is not really a text document",
+        );
         let full = policy(ToolMode::Full, None);
         let mut scope = ApprovedScope::default();
 
@@ -5883,7 +6509,10 @@ mod tests {
 
         let write = execute_tool_with(
             &full,
-            &tool("write_file", json!({ "path": pdf.to_string_lossy(), "content": "replaced" })),
+            &tool(
+                "write_file",
+                json!({ "path": pdf.to_string_lossy(), "content": "replaced" }),
+            ),
             &mut scope,
             |_| ApprovalDecision::Denied,
         );
@@ -5897,7 +6526,10 @@ mod tests {
 
         let metadata = execute_tool_with(
             &full,
-            &tool("read_file_metadata", json!({ "path": pdf.to_string_lossy() })),
+            &tool(
+                "read_file_metadata",
+                json!({ "path": pdf.to_string_lossy() }),
+            ),
             &mut scope,
             |_| ApprovalDecision::Denied,
         );
@@ -5940,6 +6572,7 @@ mod tests {
         let processes = ProcessRegistry::default();
         let request = ToolRequest {
             operation_id: Some("turn-stop".into()),
+            chat_id: None,
             tool: "start_command".into(),
             args: json!({ "command": "Start-Sleep -Seconds 30", "shell": "powershell" }),
         };
@@ -5961,7 +6594,10 @@ mod tests {
 
         assert_eq!(processes.kill_operation("another-turn"), Vec::<u32>::new());
         let killed = processes.kill_operation("turn-stop");
-        assert!(killed.contains(&pid), "Stop kills the command this turn started");
+        assert!(
+            killed.contains(&pid),
+            "Stop kills the command this turn started"
+        );
 
         let snapshot = command_output(&processes, &process_id, 20).expect("output");
         assert_eq!(snapshot["running"], false);
@@ -6100,7 +6736,10 @@ mod tests {
 
         let metadata = execute_tool_with(
             &workspace,
-            &tool("read_file_metadata", json!({ "path": renamed.to_string_lossy() })),
+            &tool(
+                "read_file_metadata",
+                json!({ "path": renamed.to_string_lossy() }),
+            ),
             &mut scope,
             |_| {
                 asked += 1;
@@ -6158,7 +6797,10 @@ mod tests {
             },
         );
         assert!(allowed.ok, "{:?}", allowed.error);
-        assert_eq!(fs::read_to_string(&inside).expect("inside file"), "inside\n");
+        assert_eq!(
+            fs::read_to_string(&inside).expect("inside file"),
+            "inside\n"
+        );
 
         let denied = execute_tool_with(
             &workspace,
@@ -6175,7 +6817,10 @@ mod tests {
         assert!(!denied.ok);
         assert_eq!(denied.error.expect("refusal").code, "outside_workspace");
         assert_eq!(asked, 0, "the workspace boundary is not an approval card");
-        assert!(!outside.exists(), "nothing outside the workspace was created");
+        assert!(
+            !outside.exists(),
+            "nothing outside the workspace was created"
+        );
 
         fs::remove_dir_all(root).expect("remove test root");
         fs::remove_dir_all(outside_root).expect("remove outside root");
@@ -6265,17 +6910,25 @@ mod tests {
             error.message
         );
         assert!(
-            error.message.contains("No elevation or permission change was attempted"),
+            error
+                .message
+                .contains("No elevation or permission change was attempted"),
             "{}",
             error.message
         );
         assert!(
-            error.message.to_ascii_lowercase().contains("access is denied")
+            error
+                .message
+                .to_ascii_lowercase()
+                .contains("access is denied")
                 || error.message.contains("os error 5"),
             "the real Windows detail is preserved: {}",
             error.message
         );
-        assert!(asked <= 1, "at most one card, and it grants a read attempt only");
+        assert!(
+            asked <= 1,
+            "at most one card, and it grants a read attempt only"
+        );
         assert!(
             protected.exists(),
             "the folder is untouched and still present"
@@ -6450,7 +7103,12 @@ mod tests {
             "acceptance-a",
         );
         assert_eq!(prompts.len(), 2, "close asked exactly once");
-        let close_ok = closed.ok && closed.data.as_ref().map(|data| data["closed"] == true).unwrap_or(false);
+        let close_ok = closed.ok
+            && closed
+                .data
+                .as_ref()
+                .map(|data| data["closed"] == true)
+                .unwrap_or(false);
         if !close_ok {
             // Clean up only the exact process this test launched.
             let _ = close_app(&processes, &process_id, true);
@@ -6539,7 +7197,12 @@ mod tests {
             &processes,
             "acceptance-b",
         );
-        let close_ok = closed.ok && closed.data.as_ref().map(|data| data["closed"] == true).unwrap_or(false);
+        let close_ok = closed.ok
+            && closed
+                .data
+                .as_ref()
+                .map(|data| data["closed"] == true)
+                .unwrap_or(false);
         if !close_ok {
             let _ = close_app(&processes, &process_id, true);
             let _ = fs::remove_dir_all(&profile);
@@ -6565,6 +7228,125 @@ mod tests {
         );
     }
 
+    /// Acceptance F: an app started outside VupsRouter is listed as manageable
+    /// and closable, and close_app closes it by its numeric PID.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "opens a real WinForms window outside the registry and closes it; run with --ignored"]
+    fn acceptance_closes_a_windowed_app_it_did_not_launch() {
+        use std::process::{Command as ProcessCommand, Stdio};
+
+        struct StandaloneGuard {
+            child: std::process::Child,
+            armed: bool,
+        }
+        impl Drop for StandaloneGuard {
+            fn drop(&mut self) {
+                if self.armed {
+                    let _ = self.child.kill();
+                    let _ = self.child.wait();
+                }
+            }
+        }
+
+        let child = ProcessCommand::new("powershell.exe")
+            .args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Add-Type -AssemblyName System.Windows.Forms; \
+                 $form = New-Object System.Windows.Forms.Form; \
+                 $form.Text = 'VupsRouter close test'; \
+                 $form.Width = 320; \
+                 $form.Height = 200; \
+                 [System.Windows.Forms.Application]::Run($form)",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("start the standalone window");
+        let pid = child.id();
+        let mut guard = StandaloneGuard { child, armed: true };
+
+        let full = policy(ToolMode::Full, None);
+        let processes = ProcessRegistry::default();
+        let mut scope = ApprovedScope::default();
+        let mut observed = Value::Null;
+        let mut listed_ok = false;
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline {
+            let listed = execute_guarded(
+                &full,
+                &tool(
+                    "list_processes",
+                    json!({ "name": "VupsRouter close test", "limit": 20 }),
+                ),
+                &mut scope,
+                |_| panic!("listing processes needs no approval"),
+                &|| true,
+                &|| false,
+                &processes,
+                "acceptance-f",
+            );
+            assert!(listed.ok, "{:?}", listed.error);
+            let data = listed.data.expect("process list");
+            if let Some(entry) = data["processes"].as_array().and_then(|entries| {
+                entries
+                    .iter()
+                    .find(|entry| entry["pid"].as_u64() == Some(u64::from(pid)))
+            }) {
+                observed = entry.clone();
+                listed_ok = entry["managed"] == true && entry["canClose"] == true;
+                if listed_ok {
+                    break;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(400));
+        }
+        assert!(
+            listed_ok,
+            "the standalone window is listed as manageable and closable: {observed}"
+        );
+        assert_eq!(
+            observed["launchedByVupsRouter"], false,
+            "the window was not launched by VupsRouter"
+        );
+        assert_eq!(
+            observed["processId"],
+            Value::Null,
+            "an unmanaged window has no registry id; its numeric PID is enough"
+        );
+
+        let closed = execute_guarded(
+            &full,
+            &tool("close_app", json!({ "processId": pid })),
+            &mut scope,
+            |_| panic!("Full Access must not prompt for closing a listed app"),
+            &|| true,
+            &|| false,
+            &processes,
+            "acceptance-f",
+        );
+        assert!(closed.ok, "close failed: {:?}", closed.error);
+        let data = closed.data.expect("close result");
+        assert_eq!(data["closed"], true, "{data}");
+        assert_eq!(data["launchedByVupsRouter"], false, "{data}");
+        assert_eq!(data["pid"], pid, "{data}");
+
+        let wait = Instant::now() + Duration::from_secs(5);
+        while acceptance_process_running(pid) && Instant::now() < wait {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(
+            !acceptance_process_running(pid),
+            "the standalone window exited after the quiet close"
+        );
+        guard.armed = false;
+        let _ = guard.child.wait();
+    }
+
     /// Acceptance E: the agent command tool really runs both full suites and
     /// returns their exit code and output. Each suite runs in its own project
     /// folder through `run_command`, not through a test shortcut.
@@ -6580,7 +7362,10 @@ mod tests {
         let full = policy(ToolMode::Full, None);
 
         for (label, cwd) in [("client", client), ("server", server)] {
-            assert!(cwd.join("package.json").is_file(), "{label} has a package.json");
+            assert!(
+                cwd.join("package.json").is_file(),
+                "{label} has a package.json"
+            );
             let result = execute_tool_with(
                 &full,
                 &tool(

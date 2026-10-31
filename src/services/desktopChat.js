@@ -38,11 +38,70 @@ export function requestError(error) {
   // a server-build gap rather than a rejected message. The caller can resend
   // the same turn without local tools, so keep it apart from real failures.
   const routeMissing = status === 404 || status === 405;
+  // Axios adds transport codes such as ERR_BAD_REQUEST that name the HTTP
+  // library, not the failure. Only a code the server itself sent is evidence;
+  // anything else falls back to the tool-turn code and keeps the real message.
+  const serverCode = typeof data?.code === "string" && data.code.trim() ? data.code.trim() : "";
+  const transportCode =
+    typeof error?.code === "string" && error.code && !error.code.startsWith("ERR_") ? error.code : "";
   return new DesktopChatError(
     data?.message || error?.message || "The desktop tool request failed.",
-    routeMissing ? "desktop_tools_unavailable" : data?.code || error?.code || "desktop_chat_failed",
+    routeMissing
+      ? "desktop_tools_unavailable"
+      : status === null
+        ? "network_error"
+        : serverCode || transportCode || "desktop_chat_failed",
     status
   );
+}
+
+// A tool round has no client-side side effects until its response arrives, so
+// re-asking after a transient server answer cannot run a file operation twice.
+// A lost response stays ambiguous for that reason too: the tool calls it may
+// have contained were never executed, so nothing is duplicated by retrying.
+const RETRY_DELAYS_MS = [350, 900];
+
+function retryableDesktopFailure(failure) {
+  if (!failure) return false;
+  if (failure.status === null) return true;
+  if (failure.status === 409) return true;
+  if (failure.status === 429) return failure.code === "concurrency_limit" || failure.code === "run_busy";
+  return failure.status === 500 || failure.status === 502 || failure.status === 503 || failure.status === 504;
+}
+
+function waitForRetry(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortError());
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener?.("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(timer);
+      reject(abortError());
+    }
+    signal?.addEventListener?.("abort", onAbort, { once: true });
+  });
+}
+
+async function postDesktopToolRound(body, { signal } = {}) {
+  let lastFailure = null;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const response = await apiClient.post("/chat/desktop-tools", body, { signal, timeout: 0 });
+      return response.data;
+    } catch (error) {
+      if (signal?.aborted) throw abortError();
+      const failure = requestError(error);
+      lastFailure = failure;
+      if (attempt >= RETRY_DELAYS_MS.length || !retryableDesktopFailure(failure)) throw failure;
+      await waitForRetry(RETRY_DELAYS_MS[attempt], signal);
+    }
+  }
+  throw lastFailure;
 }
 
 function toolContent(value) {
@@ -778,6 +837,7 @@ export async function runDesktopToolChat({
   signal,
   assistantMessageId,
   operationId,
+  chatId,
   userText,
   searchRoots = [],
   executeTool,
@@ -791,8 +851,12 @@ export async function runDesktopToolChat({
   const toolExecutor = typeof executeTool === "function" ? executeTool : executeDesktopTool;
   // Every native call carries the turn's operation id, so Stop can cancel the
   // exact paused approval or running scan and cannot touch another chat's work.
+  // The chat id scopes "Allow Always" answers to this conversation only.
   const executeForOperation = (tool, args) =>
-    toolExecutor(tool, args, operationId ? { operationId } : undefined);
+    toolExecutor(tool, args, {
+      ...(operationId ? { operationId } : {}),
+      ...(chatId ? { chatId } : {})
+    });
   let step = 0;
 
   try {
@@ -840,12 +904,15 @@ export async function runDesktopToolChat({
       try {
         // A model step may legitimately take minutes (long reasoning, a large
         // tool result). Stop still aborts through the signal; there is no
-        // artificial wall-clock cutoff on this request.
-        const response = await apiClient.post("/chat/desktop-tools", body, { signal, timeout: 0 });
-        data = response.data;
+        // artificial wall-clock cutoff on this request. A busy or unreachable
+        // round is retried a bounded number of times before the turn is failed.
+        data = await postDesktopToolRound(body, { signal });
       } catch (error) {
         if (signal?.aborted) throw abortError();
-        const failure = requestError(error);
+        // postDesktopToolRound already mapped the HTTP failure into this
+        // taxonomy; mapping it again would erase the server status and turn a
+        // 404 into a null-status network error.
+        const failure = error instanceof DesktopChatError ? error : requestError(error);
         // The provider cannot receive tool definitions, so the model can never
         // see these tools. The tools already ran on the real filesystem, so the
         // verified local result is the answer; handing the turn to a model that

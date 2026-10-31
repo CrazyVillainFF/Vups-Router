@@ -255,10 +255,20 @@ test("a plain question on an unsupported provider still reports the real error",
   assert.equal(server.posted.length, 1);
 });
 
-test("the chat page hands configured workspace folders to the desktop tool run", () => {
+test("the chat page hands only the chat's own workspace folder to the desktop tool run", () => {
   const source = readFileSync(new URL("../src/ChatPage.jsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
-  assert.match(source, /const \{ activeWorkspace, workspaces, owner: workspaceOwner \} = useWorkspaces\(\);/);
-  assert.match(source, /searchRoots: workspaces\.map\(\(workspace\) => workspace\?\.path\)\.filter\(Boolean\)/);
+  assert.match(
+    source,
+    /const \{ activeWorkspace, workspaces, owner: workspaceOwner, workspaceForChat, bindChatWorkspace \} = useWorkspaces\(\);/
+  );
+  assert.match(source, /const boundChatWorkspace = chatScope \? workspaceForChat\(chatScope\) : null;/);
+  assert.match(source, /const chatWorkspace = boundChatWorkspace \|\| \(draftChat \? activeWorkspace : null\);/);
+  assert.match(source, /searchRoots: chatWorkspace\?\.path \? \[chatWorkspace\.path\] : \[\]/);
+  assert.doesNotMatch(
+    source,
+    /searchRoots: workspaces\.map/,
+    "a chat never searches every registered workspace"
+  );
 });
 
 test("the fast path reuses the registered tool names, not new ones", () => {

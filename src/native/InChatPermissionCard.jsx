@@ -49,6 +49,18 @@ const FILE_ACTIONS = new Set(["contents", "write", "append", "edit"]);
 const ITEM_ACTIONS = new Set(["metadata", "open", "rename", "move", "copy", "delete"]);
 const PROCESS_ACTIONS = new Set(["close", "terminate", "stop_command", "command_output"]);
 const COMMAND_ACTIONS = new Set(["command", "start_command"]);
+// These can never be remembered for a chat: no stable file target, or the
+// result cannot be undone.
+const ALWAYS_ASK_ACTIONS = new Set([
+  "delete",
+  "command",
+  "start_command",
+  "stop_command",
+  "command_output",
+  "close",
+  "terminate",
+  "open_url"
+]);
 
 function actionText(request) {
   return ACTION_TEXT[request.action] || FALLBACK_ACTION[request.access] || "Use a local item";
@@ -123,8 +135,14 @@ export default function InChatPermissionCard({ request, busy, error, onRespond }
   const target = targetDetails(request);
   const warning = warningText(request);
   // The native layer decides whether a saved grant is safe and meaningful. The
-  // card never assumes it: a folder, command or write is always per call.
+  // card never assumes it: deletes and execution actions always stay per call.
   const canRemember = request.canPersist === true;
+  const chatScoped = request.chatScoped === true;
+  const hint = !chatScoped
+    ? "Only a single file or app can be remembered."
+    : ALWAYS_ASK_ACTIONS.has(request.action)
+      ? "Deleting, shell commands, process control and links always ask."
+      : "This item cannot be remembered for this chat.";
 
   useEffect(() => {
     firstButtonRef.current?.focus({ preventScroll: true });
@@ -175,7 +193,7 @@ export default function InChatPermissionCard({ request, busy, error, onRespond }
       ) : null}
 
       {!canRemember ? (
-        <p className="vr-permission-card__hint">Only a single file or app can be remembered.</p>
+        <p className="vr-permission-card__hint">{hint}</p>
       ) : null}
 
       <div className="vr-permission-card__actions">
@@ -196,7 +214,7 @@ export default function InChatPermissionCard({ request, busy, error, onRespond }
           onClick={() => onRespond("always")}
         >
           <ShieldCheck size={14} aria-hidden="true" />
-          Allow Always (Only for This File)
+          {chatScoped ? "Allow Always (Only for This Chat)" : "Allow Always (Only for This File)"}
         </button>
         <button
           type="button"

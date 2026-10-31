@@ -4,6 +4,7 @@ mod composer_files;
 mod desktop_exec;
 mod desktop_server;
 mod desktop_tools;
+mod panel_browser;
 mod workspace;
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
@@ -12,10 +13,10 @@ fn main() {
     tauri::Builder::default()
         .manage(desktop_tools::DesktopToolState::default())
         .manage(composer_files::ComposerFileState::default())
+        .manage(panel_browser::BrowserState::default())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let url = desktop_server::start(app.handle().clone())
-                .map_err(std::io::Error::other)?;
+            let url = desktop_server::start(app.handle().clone()).map_err(std::io::Error::other)?;
             let url = url
                 .parse()
                 .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
@@ -35,6 +36,24 @@ fn main() {
             workspace::workspace_remove,
             workspace::workspace_scan,
             workspace::workspace_read,
+            workspace::workspace_read_text,
+            workspace::workspace_tree,
+            workspace::workspace_search,
+            workspace::workspace_git_review,
+            panel_browser::panel_browser_create,
+            panel_browser::panel_browser_set_bounds,
+            panel_browser::panel_browser_navigate,
+            panel_browser::panel_browser_back,
+            panel_browser::panel_browser_forward,
+            panel_browser::panel_browser_reload,
+            panel_browser::panel_browser_status,
+            panel_browser::panel_browser_inspect,
+            panel_browser::panel_browser_click,
+            panel_browser::panel_browser_type,
+            panel_browser::panel_browser_scroll,
+            panel_browser::panel_browser_screenshot,
+            panel_browser::panel_browser_close,
+            panel_browser::panel_browser_close_all,
             desktop_tools::desktop_tool_set_policy,
             desktop_tools::desktop_tool_policy_status,
             desktop_tools::desktop_tool_execute,

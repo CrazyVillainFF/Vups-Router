@@ -54,15 +54,10 @@ pub fn start(app: AppHandle) -> Result<String, String> {
         }
     });
 
-    Ok(format!(
-        "http://127.0.0.1:{port}/chat?native=windows"
-    ))
+    Ok(format!("http://127.0.0.1:{port}/chat?native=windows"))
 }
 
-async fn handle_request(
-    State(state): State<ServerState>,
-    request: Request<Body>,
-) -> Response {
+async fn handle_request(State(state): State<ServerState>, request: Request<Body>) -> Response {
     if request.uri().path() == "/api" || request.uri().path().starts_with("/api/") {
         return proxy_api(State(state), request).await;
     }
@@ -81,7 +76,11 @@ async fn serve_asset(State(state): State<ServerState>, request: Request<Body>) -
         resolver.get("index.html".to_string())
     } else {
         resolver.get(path.to_string()).or_else(|| {
-            if path.rsplit('/').next().is_some_and(|name| !name.contains('.')) {
+            if path
+                .rsplit('/')
+                .next()
+                .is_some_and(|name| !name.contains('.'))
+            {
                 resolver.get("index.html".to_string())
             } else {
                 None
@@ -225,11 +224,19 @@ async fn proxy_api(State(state): State<ServerState>, request: Request<Body>) -> 
 
     builder
         .body(Body::from_stream(upstream.bytes_stream()))
-        .unwrap_or_else(|_| api_error(StatusCode::BAD_GATEWAY, "The backend response could not be read."))
+        .unwrap_or_else(|_| {
+            api_error(
+                StatusCode::BAD_GATEWAY,
+                "The backend response could not be read.",
+            )
+        })
 }
 
 fn rewrite_cookie(value: &str) -> String {
-    let mut parts = value.split(';').map(str::trim).filter(|part| !part.is_empty());
+    let mut parts = value
+        .split(';')
+        .map(str::trim)
+        .filter(|part| !part.is_empty());
     let Some(name_and_value) = parts.next() else {
         return value.to_string();
     };

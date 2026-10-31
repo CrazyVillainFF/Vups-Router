@@ -99,6 +99,105 @@ fn hide_console(command: &mut Command) {
 #[cfg(not(windows))]
 fn hide_console(_command: &mut Command) {}
 
+/// Windows-critical processes and VupsRouter itself are never closed, even
+/// when the user asks: terminating them can sign the user out or kill the
+/// agent mid-turn. Everything else with a visible window is fair game.
+fn protected_process_name(name: &str) -> bool {
+    let lower = name.trim().to_ascii_lowercase();
+    let lower = lower.strip_suffix(".exe").unwrap_or(&lower);
+    matches!(
+        lower,
+        "system"
+            | "idle"
+            | "registry"
+            | "memory compression"
+            | "smss"
+            | "csrss"
+            | "wininit"
+            | "winlogon"
+            | "services"
+            | "lsass"
+            | "svchost"
+            | "dwm"
+            | "fontdrvhost"
+            | "sihost"
+            | "taskhostw"
+            | "explorer"
+            | "searchhost"
+            | "startmenuexperiencehost"
+            | "shellexperiencehost"
+            | "textinputhost"
+            | "runtimebroker"
+            | "vupsrouter"
+    )
+}
+
+#[derive(Clone, Debug)]
+struct WindowProcess {
+    pid: u32,
+    name: String,
+    title: String,
+}
+
+/// Resolves one PID to its process name and main-window title. Returns
+/// `Ok(None)` when Windows no longer has that process.
+fn window_process_info(pid: u32) -> Result<Option<WindowProcess>, ExecError> {
+    if pid == 0 {
+        return Ok(None);
+    }
+    let script = format!(
+        "$p = Get-Process -Id {pid} -ErrorAction SilentlyContinue; \
+         if ($p) {{ [pscustomobject]@{{ pid = $p.Id; name = $p.ProcessName; title = [string]$p.MainWindowTitle }} \
+         | ConvertTo-Json -Compress }}"
+    );
+    let raw = run_powershell(&script, PROCESS_LIST_TIMEOUT)?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let parsed: Value = serde_json::from_str(trimmed).map_err(|error| {
+        ExecError::new(
+            "process_lookup_failed",
+            format!("Windows returned an unreadable process record: {error}."),
+        )
+    })?;
+    Ok(Some(WindowProcess {
+        pid: parsed
+            .get("pid")
+            .and_then(Value::as_u64)
+            .unwrap_or(pid as u64) as u32,
+        name: parsed
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        title: parsed
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+    }))
+}
+
+fn process_exists(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    let mut command = Command::new("tasklist.exe");
+    command.args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"]);
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    hide_console(&mut command);
+    match command.output() {
+        Ok(output) if output.status.success() => {
+            String::from_utf8_lossy(&output.stdout).contains(&format!("\"{pid}\""))
+        }
+        _ => false,
+    }
+}
+
 fn taskkill(pid: u32, force: bool, tree: bool) -> bool {
     if pid == 0 {
         return false;
@@ -134,7 +233,8 @@ impl OutputBuffer {
         }
         if chunk.len() >= MAX_OUTPUT_BYTES {
             self.bytes.clear();
-            self.bytes.extend_from_slice(&chunk[chunk.len() - MAX_OUTPUT_BYTES..]);
+            self.bytes
+                .extend_from_slice(&chunk[chunk.len() - MAX_OUTPUT_BYTES..]);
             self.truncated = true;
             return;
         }
@@ -562,13 +662,13 @@ impl ProcessRegistry {
     }
 
     pub fn close(&self, key: &str, force: bool) -> Result<Value, ExecError> {
-        let process = self.find(key).ok_or_else(|| {
-            ExecError::new(
-                "unknown_process",
-                "VupsRouter can only close apps it launched itself. That id or PID is not in its \
-                 process registry, so no unrelated process was touched.",
-            )
-        })?;
+        match self.find(key) {
+            Some(process) => self.close_managed(process, force),
+            None => close_unmanaged(key, force),
+        }
+    }
+
+    fn close_managed(&self, process: Arc<ManagedProcess>, force: bool) -> Result<Value, ExecError> {
         if process.kind != ProcessKind::App {
             return Err(ExecError::new(
                 "not_an_app",
@@ -586,6 +686,8 @@ impl ProcessRegistry {
                 "processId": snapshot["processId"],
                 "pid": snapshot["pid"],
                 "label": snapshot["label"],
+                "managed": true,
+                "launchedByVupsRouter": true,
                 "alreadyExited": true,
                 "closed": true,
                 "forced": false,
@@ -641,6 +743,8 @@ impl ProcessRegistry {
             "processId": snapshot["processId"],
             "pid": snapshot["pid"],
             "label": snapshot["label"],
+            "managed": true,
+            "launchedByVupsRouter": true,
             "closed": !still_running,
             "stillRunning": still_running,
             "forced": force,
@@ -655,6 +759,97 @@ impl ProcessRegistry {
             }
         }))
     }
+}
+
+/// Closes an app that VupsRouter did not start, identified by its numeric PID
+/// from `list_processes`. Only a process that currently owns a main window can
+/// be targeted, and Windows-critical processes are refused outright.
+fn close_unmanaged(key: &str, force: bool) -> Result<Value, ExecError> {
+    let pid: u32 = key.trim().parse().map_err(|_| {
+        ExecError::new(
+            "unknown_process",
+            "Use the processId or the numeric PID that list_processes reported. No process was touched.",
+        )
+    })?;
+    let info = window_process_info(pid)?.ok_or_else(|| {
+        ExecError::new(
+            "not_running",
+            format!("PID {pid} is not running, so nothing was closed."),
+        )
+    })?;
+    if info.title.trim().is_empty() {
+        return Err(ExecError::new(
+            "not_a_window_app",
+            format!(
+                "PID {pid} ({}) has no visible main window, so VupsRouter will not close it. \
+                 Only windowed apps can be closed; no process was touched.",
+                info.name
+            ),
+        ));
+    }
+    if protected_process_name(&info.name) {
+        return Err(ExecError::new(
+            "protected_process",
+            format!(
+                "{} is a protected Windows process and VupsRouter never closes it. No process was touched.",
+                info.name
+            ),
+        ));
+    }
+    let label = format!("{} — {}", info.name, truncate_chars(info.title.trim(), 120));
+    // Graceful close posts WM_CLOSE to the app's windows, so it can save or
+    // ask questions. Forcing with /T is reserved for explicit approval.
+    let mut closed = taskkill(pid, force, force);
+    let wait = if force {
+        Duration::from_secs(4)
+    } else {
+        Duration::from_secs(6)
+    };
+    let deadline = Instant::now() + wait;
+    while Instant::now() < deadline {
+        if !process_exists(pid) {
+            closed = true;
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    let still_running = process_exists(pid);
+    if force && still_running {
+        return Err(ExecError::new(
+            "close_failed",
+            format!(
+                "Windows did not terminate PID {pid} ({label}). No data was invented; the process \
+                 is still running and may need to be closed from its own window."
+            ),
+        ));
+    }
+    if !closed && still_running {
+        return Err(ExecError::new(
+            "close_failed",
+            format!("Windows refused to close PID {pid} ({label}). It is still running."),
+        ));
+    }
+    Ok(json!({
+        "processId": Value::Null,
+        "pid": info.pid,
+        "label": label,
+        "name": info.name,
+        "title": info.title,
+        "managed": true,
+        "launchedByVupsRouter": false,
+        "closed": !still_running,
+        "stillRunning": still_running,
+        "forced": force,
+        "alreadyExited": false,
+        "exitCode": Value::Null,
+        "note": if still_running {
+            "Windows sent a close request, but the app did not exit. Ask the user before force-terminating it."
+        } else if force {
+            "The app's process tree was force-terminated after approval."
+        } else {
+            "The app was asked to close normally; it was not launched by VupsRouter."
+        }
+    }))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -701,7 +896,9 @@ impl CommandSpec {
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| ExecError::new("invalid_arguments", "The command tool needs a command."))?;
+            .ok_or_else(|| {
+                ExecError::new("invalid_arguments", "The command tool needs a command.")
+            })?;
         if command.chars().count() > MAX_COMMAND_CHARS {
             return Err(ExecError::new(
                 "invalid_arguments",
@@ -737,7 +934,10 @@ impl CommandSpec {
                 if !canonical.is_dir() {
                     return Err(ExecError::new(
                         "not_a_directory",
-                        format!("The working directory is not a folder: {}.", display_path(&canonical)),
+                        format!(
+                            "The working directory is not a folder: {}.",
+                            display_path(&canonical)
+                        ),
                     ));
                 }
                 canonical
@@ -990,7 +1190,11 @@ pub fn start_command(
     }))
 }
 
-pub fn command_output(registry: &ProcessRegistry, key: &str, tail_lines: usize) -> Result<Value, ExecError> {
+pub fn command_output(
+    registry: &ProcessRegistry,
+    key: &str,
+    tail_lines: usize,
+) -> Result<Value, ExecError> {
     let process = registry.find(key).ok_or_else(|| {
         ExecError::new(
             "unknown_process",
@@ -1197,7 +1401,11 @@ const PROCESS_SCRIPT: &str = r#"
 } | Sort-Object name | Select-Object -First 200) | ConvertTo-Json -Compress
 "#;
 
-fn capture(program: &str, args: &[String], timeout: Duration) -> Result<(String, String, Option<i32>), ExecError> {
+fn capture(
+    program: &str,
+    args: &[String],
+    timeout: Duration,
+) -> Result<(String, String, Option<i32>), ExecError> {
     let mut command = Command::new(program);
     command
         .args(args)
@@ -1276,7 +1484,9 @@ fn run_powershell(script: &str, timeout: Duration) -> Result<String, ExecError> 
                     "powershell_failed",
                     format!(
                         "Windows PowerShell could not complete the request (exit code {}). {}",
-                        status.map(|code| code.to_string()).unwrap_or_else(|| "unknown".into()),
+                        status
+                            .map(|code| code.to_string())
+                            .unwrap_or_else(|| "unknown".into()),
                         truncate_chars(stderr.trim(), 300)
                     ),
                 ));
@@ -1313,7 +1523,10 @@ fn run_powershell(script: &str, timeout: Duration) -> Result<String, ExecError> 
 }
 
 fn resolve_launcher(path: PathBuf) -> PathBuf {
-    let Some(stem) = path.file_stem().map(|value| value.to_string_lossy().to_string()) else {
+    let Some(stem) = path
+        .file_stem()
+        .map(|value| value.to_string_lossy().to_string())
+    else {
         return path;
     };
     let lower = stem.to_ascii_lowercase();
@@ -1337,13 +1550,11 @@ fn resolve_launcher(path: PathBuf) -> PathBuf {
 
 fn normalize_app(raw: Value) -> Option<InstalledApp> {
     let name = raw.get("name")?.as_str()?.trim();
-    let path = raw
-        .get("path")?
-        .as_str()?
-        .trim()
-        .trim_matches('"')
-        .trim();
-    let source = raw.get("source").and_then(Value::as_str).unwrap_or("start-menu");
+    let path = raw.get("path")?.as_str()?.trim().trim_matches('"').trim();
+    let source = raw
+        .get("source")
+        .and_then(Value::as_str)
+        .unwrap_or("start-menu");
     if name.is_empty() || path.is_empty() {
         return None;
     }
@@ -1407,7 +1618,11 @@ pub fn discover_apps(force_refresh: bool) -> Result<Vec<InstalledApp>, ExecError
         _ => Vec::new(),
     };
     let mut apps: Vec<InstalledApp> = items.into_iter().filter_map(normalize_app).collect();
-    apps.sort_by(|left, right| left.name.to_ascii_lowercase().cmp(&right.name.to_ascii_lowercase()));
+    apps.sort_by(|left, right| {
+        left.name
+            .to_ascii_lowercase()
+            .cmp(&right.name.to_ascii_lowercase())
+    });
     apps.dedup_by(|left, right| {
         left.name.eq_ignore_ascii_case(&right.name) && left.path.eq_ignore_ascii_case(&right.path)
     });
@@ -1451,7 +1666,12 @@ pub fn search_apps(force_refresh: bool, query: &str) -> Result<Vec<InstalledApp>
         left_score
             .cmp(right_score)
             .then_with(|| left.name.len().cmp(&right.name.len()))
-            .then_with(|| right.name.to_ascii_lowercase().cmp(&left.name.to_ascii_lowercase()))
+            .then_with(|| {
+                right
+                    .name
+                    .to_ascii_lowercase()
+                    .cmp(&left.name.to_ascii_lowercase())
+            })
     });
     Ok(scored.into_iter().map(|(_, app)| app).collect())
 }
@@ -1514,10 +1734,7 @@ pub fn find_app_plan(
         if !canonical.is_file() {
             return Err(ExecError::new(
                 "not_a_file",
-                format!(
-                    "That path is not a file: {}.",
-                    display_path(&canonical)
-                ),
+                format!("That path is not a file: {}.", display_path(&canonical)),
             ));
         }
         let exe = resolve_launcher(strip_verbatim(&canonical));
@@ -1533,12 +1750,15 @@ pub fn find_app_plan(
             alternatives: Vec::new(),
         });
     }
-    let query = name.map(str::trim).filter(|value| !value.is_empty()).ok_or_else(|| {
-        ExecError::new(
-            "invalid_arguments",
-            "Provide the app name or an absolute executable path.",
-        )
-    })?;
+    let query = name
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            ExecError::new(
+                "invalid_arguments",
+                "Provide the app name or an absolute executable path.",
+            )
+        })?;
     let matches = search_apps(false, query)?;
     let Some(first) = matches.first() else {
         return Err(ExecError::new(
@@ -1622,7 +1842,10 @@ pub fn list_processes(
         Value::Object(_) => vec![parsed],
         _ => Vec::new(),
     };
-    let needle = name.map(str::trim).map(str::to_ascii_lowercase).filter(|value| !value.is_empty());
+    let needle = name
+        .map(str::trim)
+        .map(str::to_ascii_lowercase)
+        .filter(|value| !value.is_empty());
     let limit = limit.clamp(1, 100);
     let managed = registry.list();
     let mut processes = Vec::new();
@@ -1648,22 +1871,24 @@ pub fn list_processes(
             }
         }
         let pid = item.get("pid").and_then(Value::as_u64).unwrap_or(0);
-        // Marking the processes VupsRouter actually started is what keeps a
-        // close request honest: everything else is visible but off limits.
+        // Every windowed app is manageable now; only Windows-critical
+        // processes and VupsRouter itself stay off limits.
         let owned = managed.iter().find(|process| u64::from(process.pid) == pid);
         let running = owned
             .and_then(|process| process.state.lock().ok().map(|state| state.running))
-            .unwrap_or(false);
+            .unwrap_or(true);
+        let protected = protected_process_name(&process_name);
         processes.push(json!({
             "pid": pid,
             "name": process_name,
             "title": title,
             "startedAt": item.get("startedAt").cloned().unwrap_or(Value::Null),
-            "managed": owned.is_some(),
+            "managed": true,
+            "launchedByVupsRouter": owned.is_some(),
             "processId": owned.map(|process| process.id.clone()),
-            "kind": owned.map(|process| process.kind.as_str()),
+            "kind": owned.map(|process| process.kind.as_str()).unwrap_or("app"),
             "running": running,
-            "canClose": owned.map(|process| process.kind == ProcessKind::App).unwrap_or(false),
+            "canClose": !protected,
             "canStop": owned.map(|process| process.kind == ProcessKind::Command).unwrap_or(false)
         }));
     }
@@ -1671,7 +1896,7 @@ pub fn list_processes(
         "processes": processes,
         "count": processes.len(),
         "filter": name.unwrap_or(""),
-        "note": "Lists processes that have a visible main window. Only entries with managed=true were started by VupsRouter; use their processId with close_app or stop_command. No other process can be closed by these tools."
+        "note": "Every entry with canClose=true can be closed with close_app, passing its processId when present or otherwise its numeric pid; it does not have to be launched by VupsRouter. managed=true means VupsRouter tracks the visible app, while launchedByVupsRouter=true only marks processes it started. Protected Windows processes and VupsRouter itself are refused."
     }))
 }
 
@@ -1684,6 +1909,31 @@ mod tests {
         assert_eq!(Shell::parse(None).unwrap(), Shell::PowerShell);
         assert_eq!(Shell::parse(Some("cmd")).unwrap(), Shell::Cmd);
         assert!(Shell::parse(Some("bash")).is_err());
+    }
+
+    #[test]
+    fn every_windowed_app_is_closable_except_windows_critical_processes() {
+        for name in [
+            "explorer",
+            "explorer.exe",
+            "WinLogon",
+            "lsass.exe",
+            "dwm",
+            "services",
+            "VupsRouter.exe",
+        ] {
+            assert!(protected_process_name(name), "{name} must stay protected");
+        }
+        for name in [
+            "chrome",
+            "chrome.exe",
+            "msedge",
+            "notepad",
+            "Code",
+            "WINWORD.EXE",
+        ] {
+            assert!(!protected_process_name(name), "{name} must be closable");
+        }
     }
 
     #[test]
@@ -1710,9 +1960,14 @@ mod tests {
     #[test]
     fn app_discovery_finds_installed_programs_without_a_hardcoded_list() {
         let apps = discover_apps(true).expect("discovery");
-        assert!(apps.len() > 5, "this machine has Start Menu apps: {}", apps.len());
         assert!(
-            apps.iter().any(|app| app.path.to_ascii_lowercase().ends_with(".exe")),
+            apps.len() > 5,
+            "this machine has Start Menu apps: {}",
+            apps.len()
+        );
+        assert!(
+            apps.iter()
+                .any(|app| app.path.to_ascii_lowercase().ends_with(".exe")),
             "every discovered entry resolves to a real executable"
         );
         let chrome = apps
@@ -1771,14 +2026,11 @@ mod tests {
         assert!(outcome.cancelled);
         assert!(started.elapsed() < Duration::from_secs(10));
         assert!(
-            registry
-                .list()
-                .iter()
-                .all(|process| !process
-                    .state
-                    .lock()
-                    .map(|state| state.running)
-                    .unwrap_or(false)),
+            registry.list().iter().all(|process| !process
+                .state
+                .lock()
+                .map(|state| state.running)
+                .unwrap_or(false)),
             "no command is left running after the stop"
         );
     }

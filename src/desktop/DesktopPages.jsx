@@ -131,9 +131,11 @@ function FolderAccessSection() {
     <section className="vr-settings-group">
       <h2>Local file access</h2>
       <p className="vr-page-note">
-        Files and apps you approved with &quot;Allow Always (Only for This File)&quot; &mdash; one exact file or
-        executable, never its folder. Entries store only a path and permission type &mdash; no keys, no file contents,
-        and no permission to modify or delete &mdash; and revoking one makes the next access ask again.
+        Only approvals saved to disk are listed here: files and apps you approved with &quot;Allow Always&quot; &mdash;
+        one exact file or executable, never its folder. Entries store only a path and permission type &mdash; no keys,
+        no file contents, and no permission to modify or delete &mdash; and revoking one makes the next access ask
+        again. Answers given with &quot;Allow Always (Only for This Chat)&quot; are not stored here because they live
+        in memory for that chat only and disappear when the app closes.
       </p>
       {status === "web" ? (
         <p className="vr-setting-hint">
@@ -507,8 +509,8 @@ export function HelpPage() {
           <p>Search matches task titles and conversation text. Rename tasks inline, delete them permanently, and inspect daily request usage in the sidebar.</p>
         </article>
         <article className="vr-card">
-          <h2>What is not included</h2>
-          <p>AI shell commands, file writes, administrator actions, and unattended execution are not implemented. Local tools are read-only and always require the selected permission policy.</p>
+          <h2>Local tools and limits</h2>
+          <p>Every model uses the same local tool registry: read, edit, rename, launch apps, and run shell commands. Writes and commands always show an approval card, and deletes, process control, and links always ask. Administrator actions are never attempted, nothing runs unattended, and Windows permissions are never bypassed.</p>
         </article>
         <article className="vr-card">
           <h2>Privacy and safety</h2>

@@ -24,13 +24,15 @@ import {
   FolderSimple,
   CaretDown,
   CaretUp,
+  Wrench,
 } from "@phosphor-icons/react";
 import PromptBar from "./components/reactbits/PromptBar.jsx";
 import NativeChatControls from "./native/NativeChatControls.jsx";
 import NativePermissionDialog from "./native/NativePermissionDialog.jsx";
 import InChatPermissionCard from "./native/InChatPermissionCard.jsx";
+import ToolAccessDialog from "./native/ToolAccessDialog.jsx";
 import HoldToDeleteDialog from "./components/HoldToDeleteDialog.jsx";
-import { NATIVE_SHELLS, detectNativeShell } from "./native/shell.js";
+import { NATIVE_SHELLS, detectNativeShell, isTauriRuntime } from "./native/shell.js";
 import {
   DEFAULT_PERMISSION_MODE,
   isPermissionMode,
@@ -227,6 +229,66 @@ const handleDictate =
 
 function generateId() {
   return Math.random().toString(36).slice(2, 11);
+}
+
+// A chat-scoped "Allow Always" answer lives in native memory keyed by this id.
+// The map only remembers which id a saved conversation used; it is never a
+// permission by itself, so losing or clearing it can only cause a re-ask.
+const CHAT_SCOPE_STORAGE_PREFIX = "vupsrouter.desktop.chat-scope.v1";
+const CHAT_SCOPE_LIMIT = 200;
+
+function newChatScopeId() {
+  return `chat_scope_${generateId()}${generateId()}`;
+}
+
+function chatScopeStorageKey(owner) {
+  return `${CHAT_SCOPE_STORAGE_PREFIX}.${owner || "guest"}`;
+}
+
+function readChatScopes(owner) {
+  const storage = localBrowserStorage();
+  if (!storage) return {};
+  try {
+    const parsed = JSON.parse(storage.getItem(chatScopeStorageKey(owner)) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeChatScopes(owner, scopes) {
+  const storage = localBrowserStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(
+      chatScopeStorageKey(owner),
+      JSON.stringify(Object.fromEntries(Object.entries(scopes).slice(-CHAT_SCOPE_LIMIT)))
+    );
+  } catch {
+    // A full or blocked storage only means the scope id is re-created later,
+    // which at worst asks for permission again.
+  }
+}
+
+function chatScopeForConversation(owner, conversationId) {
+  const id = typeof conversationId === "string" ? conversationId.trim() : "";
+  if (!id) return "";
+  const scopes = readChatScopes(owner);
+  if (typeof scopes[id] === "string" && scopes[id]) return scopes[id];
+  const scope = newChatScopeId();
+  scopes[id] = scope;
+  writeChatScopes(owner, scopes);
+  return scope;
+}
+
+function rememberChatScope(owner, conversationId, scopeId) {
+  const id = typeof conversationId === "string" ? conversationId.trim() : "";
+  const scope = typeof scopeId === "string" ? scopeId.trim() : "";
+  if (!id || !scope) return;
+  const scopes = readChatScopes(owner);
+  if (scopes[id] === scope) return;
+  scopes[id] = scope;
+  writeChatScopes(owner, scopes);
 }
 
 function toLocalMessage(message, artifactMap = null) {
@@ -1156,8 +1218,16 @@ export default function ChatPage() {
     refreshUsage
   } = useTasks();
   const { preferences } = usePreferences();
-  const { activeWorkspace, workspaces, owner: workspaceOwner } = useWorkspaces();
+  const { activeWorkspace, workspaces, owner: workspaceOwner, workspaceForChat, bindChatWorkspace } = useWorkspaces();
   const activeConvId = searchParams.get("task") || "";
+  // A local task has not reached the server yet, so it still counts as a draft
+  // for choosing an initial folder; a saved chat keeps only its own binding.
+  const draftChat = !activeConvId || String(activeConvId).startsWith("local-");
+  const [chatScope, setChatScope] = useState("");
+  // A chat owns its folder. Only a draft may start from the folder selected in
+  // the app; a saved chat never borrows another chat's workspace.
+  const boundChatWorkspace = chatScope ? workspaceForChat(chatScope) : null;
+  const chatWorkspace = boundChatWorkspace || (draftChat ? activeWorkspace : null);
 
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1198,6 +1268,7 @@ export default function ChatPage() {
   const [permissionApplying, setPermissionApplying] = useState(false);
   const policySyncRef = useRef("");
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+  const [toolAccessOpen, setToolAccessOpen] = useState(false);
   const [workspaceAttachment, setWorkspaceAttachment] = useState(null);
   const [draftInsertion, setDraftInsertion] = useState(null);
   const abortRef = useRef(null);
@@ -1206,6 +1277,9 @@ export default function ChatPage() {
   const initializedRef = useRef(false);
   const requestSeqRef = useRef(0);
   const loadedTaskRef = useRef("");
+  // A brand-new chat has no id yet; this scope id is remapped to the server's
+  // conversation id as soon as the first answer reports it.
+  const draftChatScopeRef = useRef("");
   const continuationGuardRef = useRef(null);
   if (!continuationGuardRef.current) continuationGuardRef.current = createContinuationGuard();
   const [handoffState, setHandoffState] = useState({
@@ -1213,6 +1287,19 @@ export default function ChatPage() {
     sourceId: null,
     error: ""
   });
+
+  useEffect(() => {
+    if (!workspaceOwner) {
+      setChatScope("");
+      return;
+    }
+    if (!activeConvId) {
+      if (!draftChatScopeRef.current) draftChatScopeRef.current = newChatScopeId();
+      setChatScope(draftChatScopeRef.current);
+      return;
+    }
+    setChatScope(chatScopeForConversation(workspaceOwner, activeConvId));
+  }, [activeConvId, workspaceOwner]);
 
   useEffect(() => {
     if (!draftRequest) return;
@@ -1223,7 +1310,7 @@ export default function ChatPage() {
     if (nativeShell !== NATIVE_SHELLS.windows || !workspaceOwner) return;
     let cancelled = false;
     const signature = `${workspaceOwner}|${permissionMode}|${
-      permissionMode === "workspace" ? activeWorkspace?.id || "" : ""
+      permissionMode === "workspace" ? chatWorkspace?.id || "" : ""
     }`;
     const changed = Boolean(policySyncRef.current) && policySyncRef.current !== signature;
     policySyncRef.current = signature;
@@ -1236,7 +1323,7 @@ export default function ChatPage() {
     setDesktopToolPolicy({
       owner: workspaceOwner,
       mode: permissionMode,
-      workspaceId: permissionMode === "workspace" ? activeWorkspace?.id : null
+      workspaceId: permissionMode === "workspace" ? chatWorkspace?.id || null : null
     }).then(() => {
       if (!cancelled) setNativeToolBridgeError("");
     }).catch(error => {
@@ -1247,7 +1334,7 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [nativeShell, workspaceOwner, permissionMode, activeWorkspace?.id]);
+  }, [nativeShell, workspaceOwner, permissionMode, chatWorkspace?.id]);
 
   function beginRequest() {
     const controller = new AbortController();
@@ -1283,6 +1370,18 @@ export default function ChatPage() {
       else next.delete("task");
       return next;
     }, { replace });
+  }
+
+  // The native layer keys chat-scoped approvals by this id. A saved chat keeps
+  // the same id across reloads; a new chat gets one that becomes its saved
+  // chat's id when the server reports the conversation.
+  function currentChatScope() {
+    if (activeConvId) return chatScopeForConversation(workspaceOwner, activeConvId);
+    if (!draftChatScopeRef.current) {
+      draftChatScopeRef.current = newChatScopeId();
+      setChatScope(draftChatScopeRef.current);
+    }
+    return draftChatScopeRef.current;
   }
 
   async function loadTask(id) {
@@ -1443,7 +1542,7 @@ export default function ChatPage() {
         await setDesktopToolPolicy({
           owner: workspaceOwner,
           mode,
-          workspaceId: mode === "workspace" ? activeWorkspace?.id : null
+          workspaceId: mode === "workspace" ? chatWorkspace?.id || null : null
         });
         setNativeToolBridgeError("");
       } catch (error) {
@@ -1702,6 +1801,10 @@ export default function ChatPage() {
 
   function resetConversation() {
     invalidateInFlight();
+    // A new chat is a new approval scope and a new workspace decision; the
+    // previous chat's remembered answers and folder must not follow it.
+    draftChatScopeRef.current = newChatScopeId();
+    setChatScope(draftChatScopeRef.current);
     setMessages([]);
     setNotice("");
     setComposerWarning("");
@@ -2063,7 +2166,7 @@ export default function ChatPage() {
         await setDesktopToolPolicy({
           owner: workspaceOwner,
           mode: permissionMode,
-          workspaceId: permissionMode === "workspace" ? activeWorkspace?.id : null
+          workspaceId: permissionMode === "workspace" ? chatWorkspace?.id || null : null
         });
       } catch (error) {
         sendingRef.current = false;
@@ -2112,7 +2215,15 @@ export default function ChatPage() {
     // Local tools are a bonus on a plain question but the whole point of the
     // turn once a project folder is picked, so only the second case owes the
     // user an explanation when the server cannot run them.
-    const warnAboutSkippedTools = Boolean(activeWorkspace?.id);
+    const warnAboutSkippedTools = Boolean(chatWorkspace?.id);
+    // "Allow Always" answers are scoped to this chat and kept in native memory.
+    const chatScopeId = useDesktopTools ? currentChatScope() : "";
+    // A draft chat inherits the folder selected in the app; that choice becomes
+    // this chat's own before the first local tool call, and the saved chat
+    // restores it on reload instead of following the global selection.
+    if (draftChat && chatWorkspace?.id && chatScopeId) {
+      bindChatWorkspace(chatScopeId, chatWorkspace.id);
+    }
     try {
       const requestOptions = {
         conversationId: activeConvId,
@@ -2127,16 +2238,23 @@ export default function ChatPage() {
         signal: controller.signal,
         assistantMessageId: assistantId,
         operationId: assistantId,
+        chatId: chatScopeId || undefined,
         userText: requestText || text,
-        // Configured workspace folders are already user-picked, so a name
-        // lookup may include them without asking for the folder again.
-        searchRoots: workspaces.map((workspace) => workspace?.path).filter(Boolean),
+        // Only this chat's folder is in scope. Another chat's workspace can
+        // never be searched just because it exists in the app.
+        searchRoots: chatWorkspace?.path ? [chatWorkspace.path] : [],
         onMeta: ({ conversationId, messageId }) => {
           if (!isCurrentRequest(seq)) return;
           if (String(activeConvId || "").startsWith("local-")) {
             removeTask(activeConvId).catch(() => {});
           }
           syncTaskParam(conversationId);
+          // The first answer of a new chat names the saved conversation; bind
+          // the scope id used this turn so its remembered answers survive a
+          // reload and a switch back to this chat.
+          if (chatScopeId && conversationId) {
+            rememberChatScope(workspaceOwner, conversationId, chatScopeId);
+          }
           setMessages((prev) => markTurnMeta(prev, assistantId, { messageId, conversationId }));
           setConversations((prev) =>
             prev.some((conversation) => conversation.id === conversationId)
@@ -2457,11 +2575,23 @@ export default function ChatPage() {
           {activeRow && !activeRow.shared && !activeRow.vups ? (
             <span className="vr-chat-header__provider">{activeRow.provider}</span>
           ) : null}
-          {activeWorkspace ? (
-            <span className="vr-header-workspace" title={activeWorkspace.path}>
+          {chatWorkspace ? (
+            <span className="vr-header-workspace" title={chatWorkspace.path}>
               <FolderSimple size={13} aria-hidden="true" />
-              {activeWorkspace.title}
+              {chatWorkspace.title}
             </span>
+          ) : null}
+          {nativeShell === NATIVE_SHELLS.windows ? (
+            <button
+              type="button"
+              className="vr-header-tool-status"
+              onClick={() => setToolAccessOpen(true)}
+              aria-label="Tool access status"
+              title="Tool access status"
+            >
+              <Wrench size={13} aria-hidden="true" />
+              <span>Tools</span>
+            </button>
           ) : null}
         </header>
         {messages.length === 0 ? (
@@ -2559,16 +2689,34 @@ export default function ChatPage() {
               <Link to="/settings">Open API settings</Link>
             </div>
           )}
-          {activeWorkspace ? (
+          {nativeShell === NATIVE_SHELLS.windows && (chatWorkspace || workspaces.length > 0) ? (
             <div className="vr-workspace-bar">
               <span className="vr-workspace-bar__icon" aria-hidden="true"><FolderSimple size={16} /></span>
               <span className="vr-workspace-bar__copy">
-                <strong>{activeWorkspace.title}</strong>
-                <span title={activeWorkspace.path}>{activeWorkspace.path}</span>
+                <strong>{chatWorkspace ? chatWorkspace.title : "No folder for this chat"}</strong>
+                <span title={chatWorkspace?.path || ""}>
+                  {chatWorkspace
+                    ? chatWorkspace.path
+                    : "Choose one of your folders to give this chat a real project workspace."}
+                </span>
               </span>
-              <button type="button" onClick={() => setWorkspacePickerOpen(true)} disabled={loading}>
-                Attach workspace files
-              </button>
+              <select
+                className="vr-workspace-select"
+                aria-label="Folder for this chat"
+                value={chatWorkspace?.id || ""}
+                onChange={event => bindChatWorkspace(chatScope, event.target.value)}
+                disabled={loading || !chatScope}
+              >
+                <option value="">No folder</option>
+                {workspaces.map(workspace => (
+                  <option key={workspace.id} value={workspace.id}>{workspace.title}</option>
+                ))}
+              </select>
+              {chatWorkspace ? (
+                <button type="button" onClick={() => setWorkspacePickerOpen(true)} disabled={loading}>
+                  Attach workspace files
+                </button>
+              ) : null}
             </div>
           ) : null}
           <div className="vr-mode-switch" role="group" aria-label="Assistant mode">
@@ -2686,6 +2834,21 @@ export default function ChatPage() {
         open={workspacePickerOpen}
         onClose={() => setWorkspacePickerOpen(false)}
         onAttach={files => setWorkspaceAttachment({ files, key: Date.now() })}
+      />
+      <ToolAccessDialog
+        open={toolAccessOpen}
+        onClose={() => setToolAccessOpen(false)}
+        status={{
+          windowsShell: nativeShell === NATIVE_SHELLS.windows,
+          tauriAvailable: isTauriRuntime(),
+          serverToolEndpoint: !serverLacksToolEndpoint,
+          model: activeRow?.name || "",
+          provider: activeRow?.provider || "",
+          permissionMode,
+          workspace: chatWorkspace,
+          bridgeError: nativeToolBridgeError,
+          waitingApprovals: approvalRequests.length
+        }}
       />
       <HoldToDeleteDialog
         open={Boolean(deleteModelTarget)}

@@ -45,12 +45,70 @@ const SKIPPED_DIRECTORIES: &[&str] = &[
 ];
 
 const TEXT_EXTENSIONS: &[&str] = &[
-    "txt", "md", "markdown", "mdx", "json", "jsonc", "js", "jsx", "mjs", "cjs", "ts", "tsx",
-    "mts", "cts", "css", "scss", "sass", "less", "html", "htm", "xml", "py", "rb", "go", "rs",
-    "java", "kt", "kts", "swift", "c", "h", "cc", "cpp", "cxx", "hpp", "cs", "php", "sh", "bash",
-    "zsh", "fish", "ps1", "bat", "cmd", "sql", "graphql", "gql", "yml", "yaml", "toml", "ini",
-    "cfg", "conf", "csv", "tsv", "log", "vue", "svelte", "astro", "properties", "gradle", "cmake",
-    "make", "env",
+    "txt",
+    "md",
+    "markdown",
+    "mdx",
+    "json",
+    "jsonc",
+    "js",
+    "jsx",
+    "mjs",
+    "cjs",
+    "ts",
+    "tsx",
+    "mts",
+    "cts",
+    "css",
+    "scss",
+    "sass",
+    "less",
+    "html",
+    "htm",
+    "xml",
+    "py",
+    "rb",
+    "go",
+    "rs",
+    "java",
+    "kt",
+    "kts",
+    "swift",
+    "c",
+    "h",
+    "cc",
+    "cpp",
+    "cxx",
+    "hpp",
+    "cs",
+    "php",
+    "sh",
+    "bash",
+    "zsh",
+    "fish",
+    "ps1",
+    "bat",
+    "cmd",
+    "sql",
+    "graphql",
+    "gql",
+    "yml",
+    "yaml",
+    "toml",
+    "ini",
+    "cfg",
+    "conf",
+    "csv",
+    "tsv",
+    "log",
+    "vue",
+    "svelte",
+    "astro",
+    "properties",
+    "gradle",
+    "cmake",
+    "make",
+    "env",
 ];
 
 const TEXT_FILENAMES: &[&str] = &[
@@ -282,7 +340,9 @@ fn scan_folder(root: &Path, options: ScanOptions) -> ScanBudget {
             if file_type.is_dir() {
                 let relative = format!("{}/", relative_path(root, &path));
                 if !options.include_generated
-                    && SKIPPED_DIRECTORIES.iter().any(|skip| *skip == name.as_str())
+                    && SKIPPED_DIRECTORIES
+                        .iter()
+                        .any(|skip| *skip == name.as_str())
                 {
                     budget.excluded.push(ExcludedEntry {
                         path: relative,
@@ -350,7 +410,12 @@ fn scan_folder(root: &Path, options: ScanOptions) -> ScanBudget {
     budget
 }
 
-fn scan_report(token: String, root: &Path, budget: ScanBudget, options: ScanOptions) -> FolderReport {
+fn scan_report(
+    token: String,
+    root: &Path,
+    budget: ScanBudget,
+    options: ScanOptions,
+) -> FolderReport {
     FolderReport {
         token,
         name: root
@@ -462,7 +527,11 @@ fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
     if bytes.len() >= 3 && bytes[0] == 0xff && bytes[1] == 0xd8 && bytes[2] == 0xff {
         return Some("image/jpeg");
     }
-    if bytes.len() >= 6 && &bytes[0..4] == b"GIF8" && (bytes[4] == 0x37 || bytes[4] == 0x39) && bytes[5] == 0x61 {
+    if bytes.len() >= 6
+        && &bytes[0..4] == b"GIF8"
+        && (bytes[4] == 0x37 || bytes[4] == 0x39)
+        && bytes[5] == 0x61
+    {
         return Some("image/gif");
     }
     if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
@@ -521,10 +590,15 @@ fn read_one(root: &Path, path: &str, options: ScanOptions) -> ReadPayload {
         Ok(parts) => parts,
         Err(message) => return failure(&message),
     };
-    if !options.include_secrets && is_sensitive_name(parts.last().map(String::as_str).unwrap_or("")) {
-        return failure("Secret file — turn on \"Include secret files\" for this folder to read it.");
+    if !options.include_secrets && is_sensitive_name(parts.last().map(String::as_str).unwrap_or(""))
+    {
+        return failure(
+            "Secret file — turn on \"Include secret files\" for this folder to read it.",
+        );
     }
-    let candidate = parts.iter().fold(root.to_path_buf(), |current, part| current.join(part));
+    let candidate = parts
+        .iter()
+        .fold(root.to_path_buf(), |current, part| current.join(part));
     let metadata = match fs::symlink_metadata(&candidate) {
         Ok(metadata) => metadata,
         Err(_) => return failure("That file could not be read."),
@@ -546,7 +620,9 @@ fn read_one(root: &Path, path: &str, options: ScanOptions) -> ReadPayload {
     let mut kind = classification(&name);
     if kind == "secret" {
         if !options.include_secrets {
-            return failure("Secret file — turn on \"Include secret files\" for this folder to read it.");
+            return failure(
+                "Secret file — turn on \"Include secret files\" for this folder to read it.",
+            );
         }
         kind = "text";
     }
@@ -621,7 +697,10 @@ pub async fn composer_read_files(
             .cloned()
             .ok_or_else(|| "The folder selection expired. Pick the folder again.".to_string())?
     };
-    let FolderRoot { path: root, options } = selection;
+    let FolderRoot {
+        path: root,
+        options,
+    } = selection;
     tauri::async_runtime::spawn_blocking(move || {
         let mut total = 0u64;
         let mut payloads = Vec::with_capacity(paths.len());
@@ -664,7 +743,10 @@ mod tests {
     fn rejects_traversal_and_absolute_paths() {
         assert!(safe_relative("../secrets.txt").is_err());
         assert!(safe_relative("C:\\Windows\\win.ini").is_err());
-        assert_eq!(safe_relative("assets/hero.png").unwrap(), vec!["assets", "hero.png"]);
+        assert_eq!(
+            safe_relative("assets/hero.png").unwrap(),
+            vec!["assets", "hero.png"]
+        );
     }
 
     #[test]
@@ -684,17 +766,28 @@ mod tests {
         fs::write(root.join("src/main.rs"), "fn main() {}").unwrap();
         fs::write(root.join("index.html"), "<html></html>").unwrap();
         fs::write(root.join(".env"), "TOKEN=x").unwrap();
-        fs::write(root.join("logo.png"), [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).unwrap();
+        fs::write(
+            root.join("logo.png"),
+            [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+        )
+        .unwrap();
         fs::write(root.join("node_modules/pkg/ignored.js"), "x").unwrap();
 
         let report = scan_folder(&root, ScanOptions::default());
-        let paths: Vec<_> = report.entries.iter().map(|entry| entry.path.as_str()).collect();
+        let paths: Vec<_> = report
+            .entries
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .collect();
         assert!(paths.contains(&"src/main.rs"));
         assert!(paths.contains(&"index.html"));
         assert!(paths.contains(&"logo.png"));
         assert!(paths.contains(&"node_modules/pkg/ignored.js"));
         assert!(paths.contains(&".env"));
-        assert!(report.excluded.is_empty(), "nothing readable is skipped by default");
+        assert!(
+            report.excluded.is_empty(),
+            "nothing readable is skipped by default"
+        );
         fs::remove_dir_all(&root).unwrap();
     }
 
@@ -702,12 +795,20 @@ mod tests {
     fn narrow_scan_options_still_exclude_generated_folders_and_secrets() {
         let root = std::env::temp_dir().join(format!("vups-narrow-{}", Uuid::new_v4()));
         fs::create_dir_all(root.join("node_modules/pkg")).unwrap();
-        fs::write(root.join("node_modules/pkg/index.js"), "module.exports = 1;").unwrap();
+        fs::write(
+            root.join("node_modules/pkg/index.js"),
+            "module.exports = 1;",
+        )
+        .unwrap();
         fs::write(root.join(".env"), "TOKEN=abc").unwrap();
         fs::write(root.join("main.js"), "export {};").unwrap();
 
         let defaults = scan_folder(&root, ScanOptions::default());
-        let default_paths: Vec<_> = defaults.entries.iter().map(|entry| entry.path.as_str()).collect();
+        let default_paths: Vec<_> = defaults
+            .entries
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .collect();
         assert!(default_paths.contains(&"node_modules/pkg/index.js"));
         assert!(default_paths.contains(&".env"));
         assert!(defaults.excluded.is_empty());
@@ -719,10 +820,17 @@ mod tests {
                 include_secrets: false,
             },
         );
-        let paths: Vec<_> = narrow.entries.iter().map(|entry| entry.path.as_str()).collect();
+        let paths: Vec<_> = narrow
+            .entries
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .collect();
         assert!(!paths.contains(&"node_modules/pkg/index.js"));
         assert!(!paths.contains(&".env"));
-        assert!(narrow.excluded.iter().any(|entry| entry.kind == "directory"));
+        assert!(narrow
+            .excluded
+            .iter()
+            .any(|entry| entry.kind == "directory"));
         assert!(narrow.excluded.iter().any(|entry| entry.kind == "secret"));
         fs::remove_dir_all(&root).unwrap();
     }
@@ -747,8 +855,13 @@ mod tests {
                 include_secrets: false,
             },
         );
-        assert!(denied.error.is_some(), "an explicitly narrow scan still refuses secrets");
-        assert!(read_one(&root, "notes.md", ScanOptions::default()).error.is_none());
+        assert!(
+            denied.error.is_some(),
+            "an explicitly narrow scan still refuses secrets"
+        );
+        assert!(read_one(&root, "notes.md", ScanOptions::default())
+            .error
+            .is_none());
         fs::remove_dir_all(&root).unwrap();
     }
 }

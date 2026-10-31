@@ -53,6 +53,10 @@ export function desktopToolLabel(name) {
   return DESKTOP_TOOL_LABELS[name] || "Using a local Windows tool";
 }
 
+export function desktopToolNames() {
+  return Object.keys(DESKTOP_TOOL_LABELS);
+}
+
 export async function setDesktopToolPolicy({ owner, mode, workspaceId }) {
   requireDesktop();
   try {
@@ -77,14 +81,17 @@ export async function getDesktopToolPolicy() {
   }
 }
 
-export async function executeDesktopTool(tool, args, { operationId } = {}) {
+export async function executeDesktopTool(tool, args, { operationId, chatId } = {}) {
   requireDesktop();
   try {
     return await invoke("desktop_tool_execute", {
       request: {
         tool,
         args: args && typeof args === "object" ? args : {},
-        operationId: typeof operationId === "string" && operationId ? operationId : null
+        operationId: typeof operationId === "string" && operationId ? operationId : null,
+        // Scopes "Allow Always (Only for This Chat)" to the asking chat. The
+        // native layer keeps that grant in memory only.
+        chatId: typeof chatId === "string" && chatId ? chatId : null
       }
     });
   } catch (error) {
@@ -114,9 +121,11 @@ export function normalizeDesktopToolPrompt(payload) {
           ? `Access ${scopePath}`
           : "Approve a local Windows operation",
     access,
-    // The native layer decides whether this exact file or executable may be
-    // remembered. The card must never infer a broader grant than that.
+    // The native layer decides whether this exact target may be remembered for
+    // the asking chat. The card must never infer a broader grant than that.
     canPersist: request.canPersist === true,
+    // An empty chat id means an older exact-file grant, not a chat grant.
+    chatScoped: typeof request.chatId === "string" && request.chatId !== "",
     readOnly: request.readOnly !== false,
     modifiesData: request.modifiesData === true,
     destructive: request.destructive === true,

@@ -9,6 +9,13 @@ import {
   renameWorkspace as renameWorkspaceBridge,
   scanWorkspace
 } from "./workspaceBridge.js";
+import {
+  chatWorkspaceFor,
+  readChatBindings,
+  setChatBinding,
+  withoutWorkspace,
+  writeChatBindings
+} from "./chatWorkspaceBindings.js";
 
 const WorkspaceContext = createContext(null);
 
@@ -50,12 +57,14 @@ export function WorkspaceProvider({ children }) {
   const supported = isTauriRuntime();
   const [workspaces, setWorkspaces] = useState([]);
   const [activeId, setActiveId] = useState(() => loadActiveId(owner));
+  const [chatBindings, setChatBindings] = useState(() => readChatBindings(browserStorage(), owner));
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     setActiveId(loadActiveId(owner));
+    setChatBindings(readChatBindings(browserStorage(), owner));
     if (!supported || !owner) {
       setWorkspaces([]);
       setError("");
@@ -175,6 +184,12 @@ export function WorkspaceProvider({ children }) {
           }
           return next;
         });
+        // A removed folder must not stay attached to any chat.
+        setChatBindings(current => {
+          const next = withoutWorkspace(current, id);
+          writeChatBindings(browserStorage(), owner, next);
+          return next;
+        });
       } catch (removeError) {
         setError(removeError.message);
         throw removeError;
@@ -183,6 +198,24 @@ export function WorkspaceProvider({ children }) {
       }
     },
     [activeId, owner]
+  );
+
+  const workspaceForChat = useCallback(
+    chatKey => chatWorkspaceFor(workspaces, chatBindings, chatKey),
+    [chatBindings, workspaces]
+  );
+
+  // Attaching or replacing a chat's folder is an explicit user decision. An
+  // empty id detaches the chat without touching any other chat or the folder.
+  const bindChatWorkspace = useCallback(
+    (chatKey, workspaceId) => {
+      setChatBindings(current => {
+        const next = setChatBinding(current, chatKey, workspaceId, workspaces);
+        writeChatBindings(browserStorage(), owner, next);
+        return next;
+      });
+    },
+    [workspaces, owner]
   );
 
   const scanWorkspaceById = useCallback(
@@ -215,6 +248,8 @@ export function WorkspaceProvider({ children }) {
       selectWorkspace,
       renameWorkspace,
       removeWorkspace,
+      workspaceForChat,
+      bindChatWorkspace,
       scanWorkspace: scanWorkspaceById,
       readFile
     }),
@@ -232,6 +267,8 @@ export function WorkspaceProvider({ children }) {
       selectWorkspace,
       renameWorkspace,
       removeWorkspace,
+      workspaceForChat,
+      bindChatWorkspace,
       scanWorkspaceById,
       readFile
     ]

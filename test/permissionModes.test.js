@@ -122,9 +122,11 @@ test("the native layer, not the selector, decides every read", () => {
   // Stop denies only the cards raised by the operation that was stopped.
   assert.match(rustSource, /fn cancel_operation\(&self, operation_id: &str\)/);
   assert.match(rustSource, /operation_id: String/);
-  // A narrower mode also drops the saved exact-file grants.
+  // A narrower mode drops saved exact-file grants and chat-scoped answers.
   assert.match(rustSource, /transition\.revoke_grants/);
-  assert.match(rustSource, /scopes\.grants\.clear\(&grant_owner\)/);
+  assert.match(rustSource, /fn clear\(&mut self, owner: &str\)/);
+  assert.match(rustSource, /scopes\.clear\(&grant_owner\)/);
+  assert.match(rustSource, /self\.chat_grants\.retain\(\|grant\| grant\.owner != owner\)/);
   assert.match(rustSource, /next\.mode\.breadth\(\) < existing\.mode\.breadth\(\)/);
   // Workspace mode blocks outside paths outright; no card can widen it.
   assert.match(rustSource, /policy\.mode == ToolMode::Workspace/);

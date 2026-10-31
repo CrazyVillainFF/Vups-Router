@@ -8,7 +8,7 @@ export const WINDOWS_PERMISSION_MODES = Object.freeze([
     shortLabel: "Ask",
     risk: "Review",
     description:
-      "Every protected local operation waits for an in-chat card naming the action, target and risk; switching here from a broader mode clears saved grants first. \"Allow Once\" covers that one call, and \"Allow Always (Only for This File)\" saves only the exact file or executable, revocable in Settings."
+      "Every protected local operation waits for an in-chat card naming the action, target and risk; switching here from a broader mode clears saved grants first. \"Allow Once\" covers that one call, and \"Allow Always (Only for This Chat)\" answers repeats for that target in the same chat only, held in memory until the chat or app ends. Deletes, shell commands, process control and links always ask; exact-file grants stay revocable in Settings."
   },
   {
     id: "workspace",

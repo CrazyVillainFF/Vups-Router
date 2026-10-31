@@ -34,7 +34,7 @@ test("desktop tool failures never fall through to the generic card", () => {
     const error = Object.assign(new Error("That API route does not exist."), { code, status: 404 });
     assert.equal(classifyChatError(error), "desktop_tools", code);
     const presented = presentChatError(error, { modelLabel: "Vups v3 Galax" });
-    assert.equal(presented.title, "Local Windows tools unavailable", code);
+    assert.match(presented.title, /Local (Windows tools unavailable|tools stopped)/, code);
     assert.doesNotMatch(presented.message, /something went wrong/i, code);
     assert.equal(presented.canSwitchModel, false, code);
   }
@@ -48,17 +48,139 @@ test("an expired session on the tool route keeps its own card", () => {
 test("a server-side tool failure the client has never seen still explains itself", () => {
   // Reproduced against the deployed backend: the tool route answered
   // 400 "The provider rejected the request (HTTP 400)... not a valid model ID"
-  // with code "bad_request", which no client-side code list covered, so the turn
-  // rendered the generic card.
+  // with code "bad_request", which no client-side code list covered. It must
+  // not be relabelled as missing local tools — the provider's sentence is the
+  // evidence the user needs.
   const error = new DesktopChatError(
     "The provider rejected the request (HTTP 400). Provider said: vups-v3-galax is not a valid model ID",
     "bad_request",
     400
   );
-  assert.equal(classifyChatError(error), "desktop_tools");
+  assert.notEqual(classifyChatError(error), "desktop_tools");
   const presented = presentChatError(error, { modelLabel: "Vups v3 Galax" });
-  assert.equal(presented.title, "Local Windows tools unavailable");
+  assert.match(presented.message, /not a valid model ID/);
+  assert.doesNotMatch(presented.title, /Local Windows tools unavailable/);
   assert.doesNotMatch(presented.message, /something went wrong/i);
+});
+
+test("a failure after real local work says what was kept instead of denying it", () => {
+  const error = new DesktopChatError("The local tool request stopped while the round was running.", "desktop_chat_failed", 400);
+  error.toolSteps = [
+    { tool: "write_file", label: "Write index.html", ok: true },
+    { tool: "write_file", label: "Write style.css", ok: true },
+    { tool: "write_file", label: "Write script.js", ok: false }
+  ];
+  error.filesystemCompleted = true;
+
+  const presented = presentChatError(error, { modelLabel: "Vups v3 Galax" });
+  assert.equal(presented.title, "Local tools stopped partway");
+  assert.match(presented.message, /2 local steps/);
+  assert.match(presented.message, /finished and are kept/);
+  assert.doesNotMatch(presented.message, /did not happen/);
+  assert.match(presented.message, /stopped while the round was running/i);
+});
+
+test("a tool-route rejection with its own sentence shows that sentence", () => {
+  const error = new DesktopChatError("A previous tool call names a local tool this server does not offer.", "desktop_chat_failed", 400);
+  const presented = presentChatError(error);
+  assert.equal(presented.title, "Local tools stopped");
+  assert.match(presented.message, /does not offer/);
+});
+
+test("an exhausted busy run reads as a busy model, not a missing tool", () => {
+  const presented = presentChatError(new DesktopChatError("This desktop tool run is already waiting for a model response.", "run_busy", 409));
+  assert.equal(presented.category, "rate_limit");
+  assert.match(presented.title, /busy/i);
+  assert.doesNotMatch(presented.title, /unavailable/i);
+});
+
+test("transient tool rounds are retried before the turn fails", async () => {
+  const original = apiClient.post;
+  const calls = [];
+  apiClient.post = async () => {
+    calls.push(Date.now());
+    if (calls.length === 1) {
+      const error = new Error("Request failed with status code 409");
+      error.response = { status: 409, data: { code: "run_busy", message: "This desktop tool run is already waiting for a model response." } };
+      throw error;
+    }
+    return { data: { type: "final", content: "Recovered.", finishReason: "stop" } };
+  };
+
+  try {
+    const result = await runDesktopToolChat({
+      messages: [{ role: "user", content: "Write the three files." }],
+      operationId: "retry_operation_1"
+    });
+    assert.equal(result.content, "Recovered.");
+    assert.equal(calls.length, 2, "one busy round is retried, then the answer arrives");
+  } finally {
+    apiClient.post = original;
+  }
+});
+
+test("a dropped connection is retried and no local tool runs twice", async () => {
+  const original = apiClient.post;
+  const executed = [];
+  let attempts = 0;
+  apiClient.post = async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      // The response never arrived, so any tool calls it might have carried
+      // were never executed by the app; retrying cannot duplicate work.
+      throw Object.assign(new Error("Network Error"), { code: "ERR_NETWORK" });
+    }
+    if (attempts === 2) {
+      return {
+        data: {
+          type: "tool_calls",
+          toolCalls: [{ id: "call_1", type: "function", function: { name: "read_file", arguments: "{\"path\":\"C:\\\\a.txt\"}" } }],
+          assistantMessage: { role: "assistant", content: null }
+        }
+      };
+    }
+    return { data: { type: "final", content: "Done.", finishReason: "stop" } };
+  };
+
+  try {
+    const result = await runDesktopToolChat({
+      messages: [{ role: "user", content: "Please continue writing the project." }],
+      operationId: "retry_operation_2",
+      executeTool: async (tool) => {
+        executed.push(tool);
+        return { ok: true, data: { content: "hello" } };
+      }
+    });
+    assert.equal(result.content, "Done.");
+    assert.equal(attempts, 3, "the dropped round was retried once, then the loop continued");
+    assert.deepEqual(executed, ["read_file"], "the tool ran exactly once");
+  } finally {
+    apiClient.post = original;
+  }
+});
+
+test("a 400 validation answer is not retried", async () => {
+  const original = apiClient.post;
+  let attempts = 0;
+  apiClient.post = async () => {
+    attempts += 1;
+    const error = new Error("Request failed with status code 400");
+    error.response = { status: 400, data: { message: "A previous tool call is larger than the server can replay." } };
+    throw error;
+  };
+
+  try {
+    await assert.rejects(
+      () => runDesktopToolChat({ messages: [{ role: "user", content: "Continue." }], operationId: "retry_operation_3" }),
+      (error) => {
+        assert.match(error.message, /larger than the server can replay/i);
+        return true;
+      }
+    );
+    assert.equal(attempts, 1);
+  } finally {
+    apiClient.post = original;
+  }
 });
 
 test("the too-many-steps card tells the user to narrow the request", () => {
@@ -91,7 +213,7 @@ test("a plain question on a server without the endpoint sends no warning card", 
   const source = chatPageSource.replace(/\r\n/g, "\n");
   // The card is only owed to the user when a project folder made tools the
   // point of the turn; otherwise every message would carry a feature notice.
-  assert.match(source, /const warnAboutSkippedTools = Boolean\(activeWorkspace\?\.id\);/);
+  assert.match(source, /const warnAboutSkippedTools = Boolean\(chatWorkspace\?\.id\);/);
   assert.match(source, /if \(warnAboutSkippedTools\) setComposerWarning\(reason\);/);
   assert.doesNotMatch(source, /\n\s*setComposerWarning\(reason\);/);
 });

@@ -3,6 +3,7 @@ use std::{
     collections::HashMap,
     fs,
     path::{Component, Path, PathBuf},
+    process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Manager};
@@ -15,6 +16,11 @@ const MAX_PATH_CHARS: usize = 1024;
 const MAX_SCAN_ENTRIES: usize = 1000;
 const MAX_SCAN_DEPTH: usize = 8;
 const MAX_READ_BYTES: u64 = 128 * 1024;
+const MAX_TREE_ENTRIES: usize = 800;
+const MAX_SEARCH_FILES: usize = 2500;
+const MAX_SEARCH_HITS: usize = 120;
+const MAX_SEARCH_PREVIEW: usize = 200;
+const MAX_DIFF_BYTES: usize = 400 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,6 +70,69 @@ pub struct ReadResult {
     path: String,
     content: String,
     size: u64,
+    truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TreeEntry {
+    name: String,
+    path: String,
+    kind: String,
+    size: u64,
+    modified_at: i64,
+    readable: bool,
+    restricted: bool,
+    hidden: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TreeResult {
+    path: String,
+    entries: Vec<TreeEntry>,
+    truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    path: String,
+    name: String,
+    kind: String,
+    line: Option<u64>,
+    preview: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchResult {
+    hits: Vec<SearchHit>,
+    scanned: usize,
+    truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitFile {
+    path: String,
+    index_status: String,
+    worktree_status: String,
+    kind: String,
+    staged: bool,
+    unstaged: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitReview {
+    branch: String,
+    head: String,
+    files: Vec<GitFile>,
+    staged_diff: String,
+    unstaged_diff: String,
+    diagnostics: Vec<String>,
+    truncated: bool,
 }
 
 fn now_millis() -> i64 {
@@ -262,11 +331,9 @@ pub(crate) fn sensitive_file(name: &str) -> bool {
     if name.starts_with("secret") || name.starts_with("credential") {
         return true;
     }
-    [
-        ".pem", ".key", ".p12", ".pfx", ".keystore", ".jks", ".der",
-    ]
-    .iter()
-    .any(|extension| name.ends_with(extension))
+    [".pem", ".key", ".p12", ".pfx", ".keystore", ".jks", ".der"]
+        .iter()
+        .any(|extension| name.ends_with(extension))
 }
 
 pub(crate) fn skipped_file(name: &str) -> bool {
@@ -282,65 +349,12 @@ pub(crate) fn skipped_file(name: &str) -> bool {
         return true;
     }
     if [
-        ".crt",
-        ".cer",
-        ".map",
-        ".png",
-        ".jpg",
-        ".jpeg",
-        ".gif",
-        ".webp",
-        ".ico",
-        ".bmp",
-        ".tiff",
-        ".avif",
-        ".heic",
-        ".svg",
-        ".mp3",
-        ".wav",
-        ".ogg",
-        ".flac",
-        ".mp4",
-        ".mov",
-        ".avi",
-        ".mkv",
-        ".webm",
-        ".zip",
-        ".gz",
-        ".tgz",
-        ".bz2",
-        ".xz",
-        ".7z",
-        ".rar",
-        ".tar",
-        ".pdf",
-        ".doc",
-        ".docx",
-        ".xls",
-        ".xlsx",
-        ".ppt",
-        ".pptx",
-        ".exe",
-        ".dll",
-        ".so",
-        ".dylib",
-        ".bin",
-        ".wasm",
-        ".woff",
-        ".woff2",
-        ".ttf",
-        ".otf",
-        ".eot",
-        ".sqlite",
-        ".sqlite3",
-        ".db",
-        ".class",
-        ".jar",
-        ".pyc",
-        ".o",
-        ".a",
-        ".lib",
-        ".obj",
+        ".crt", ".cer", ".map", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".tiff",
+        ".avif", ".heic", ".svg", ".mp3", ".wav", ".ogg", ".flac", ".mp4", ".mov", ".avi", ".mkv",
+        ".webm", ".zip", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar", ".tar", ".pdf", ".doc",
+        ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".exe", ".dll", ".so", ".dylib", ".bin",
+        ".wasm", ".woff", ".woff2", ".ttf", ".otf", ".eot", ".sqlite", ".sqlite3", ".db", ".class",
+        ".jar", ".pyc", ".o", ".a", ".lib", ".obj",
     ]
     .iter()
     .any(|extension| name.ends_with(extension))
@@ -535,6 +549,14 @@ fn safe_components(requested: &str) -> Result<Vec<String>, String> {
 }
 
 fn read_workspace_path(root: &Path, requested: &str) -> Result<ReadResult, String> {
+    read_workspace_path_with(root, requested, false)
+}
+
+fn read_workspace_path_with(
+    root: &Path,
+    requested: &str,
+    allow_empty: bool,
+) -> Result<ReadResult, String> {
     let parts = safe_components(requested)?;
     if parts
         .iter()
@@ -567,11 +589,11 @@ fn read_workspace_path(root: &Path, requested: &str) -> Result<ReadResult, Strin
     }
     let bytes = fs::read(&canonical).map_err(|_| "This file could not be read.".to_string())?;
     if bytes.contains(&0) {
-        return Err("Only UTF-8 text files can be attached.".into());
+        return Err("Only UTF-8 text files can be opened.".into());
     }
-    let content = String::from_utf8(bytes)
-        .map_err(|_| "Only UTF-8 text files can be attached.".to_string())?;
-    if content.trim().is_empty() {
+    let content =
+        String::from_utf8(bytes).map_err(|_| "Only UTF-8 text files can be opened.".to_string())?;
+    if content.is_empty() && !allow_empty {
         return Err("This file is empty or unreadable.".into());
     }
 
@@ -579,6 +601,410 @@ fn read_workspace_path(root: &Path, requested: &str) -> Result<ReadResult, Strin
         path: parts.join("/"),
         size: metadata.len(),
         content,
+        truncated: false,
+    })
+}
+
+fn relative_display(root: &Path, path: &Path) -> String {
+    relative_path(root, path).unwrap_or_default()
+}
+
+fn modified_at(metadata: &fs::Metadata) -> i64 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or_default()
+}
+
+fn resolve_workspace_directory(root: &Path, requested: &str) -> Result<PathBuf, String> {
+    if requested.trim().is_empty() {
+        return Ok(root.to_path_buf());
+    }
+    let parts = safe_components(requested)?;
+    if parts.iter().any(|part| skipped_directory(part)) {
+        return Err("This folder is excluded from workspaces.".into());
+    }
+    let candidate = parts
+        .iter()
+        .fold(root.to_path_buf(), |path, part| path.join(part));
+    let metadata = fs::symlink_metadata(&candidate)
+        .map_err(|_| "This workspace folder is unavailable.".to_string())?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err("That workspace item is not a folder.".into());
+    }
+    let canonical = candidate
+        .canonicalize()
+        .map_err(|_| "This workspace folder is unavailable.".to_string())?;
+    if !canonical.starts_with(root) {
+        return Err("That folder is outside the workspace.".into());
+    }
+    Ok(canonical)
+}
+
+fn list_workspace_directory(root: &Path, directory: &Path) -> Result<TreeResult, String> {
+    let read_dir = fs::read_dir(directory)
+        .map_err(|_| "This workspace folder could not be listed.".to_string())?;
+    let mut entries = Vec::new();
+    let mut truncated = false;
+    for child in read_dir {
+        if entries.len() >= MAX_TREE_ENTRIES {
+            truncated = true;
+            break;
+        }
+        let Ok(child) = child else { continue };
+        let path = child.path();
+        let name = child.file_name().to_string_lossy().to_string();
+        let Ok(metadata) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        let kind = if metadata.is_dir() {
+            "directory"
+        } else if metadata.is_file() {
+            "file"
+        } else {
+            continue;
+        };
+        let restricted = if kind == "directory" {
+            skipped_directory(&name)
+        } else {
+            skipped_file(&name)
+        };
+        let readable = kind == "file"
+            && !restricted
+            && metadata.len() <= MAX_READ_BYTES
+            && looks_like_text(
+                &path,
+                &path
+                    .extension()
+                    .map(|value| value.to_string_lossy().to_ascii_lowercase())
+                    .unwrap_or_default(),
+            );
+        entries.push(TreeEntry {
+            path: relative_display(root, &path),
+            hidden: name.starts_with('.'),
+            name,
+            kind: kind.to_string(),
+            size: metadata.len(),
+            modified_at: modified_at(&metadata),
+            readable,
+            restricted,
+        });
+    }
+    entries.sort_by(|left, right| {
+        let left_dir = left.kind == "directory";
+        let right_dir = right.kind == "directory";
+        right_dir
+            .cmp(&left_dir)
+            .then_with(|| left.name.to_ascii_lowercase().cmp(&right.name.to_ascii_lowercase()))
+    });
+    Ok(TreeResult {
+        path: relative_display(root, directory),
+        entries,
+        truncated,
+    })
+}
+
+fn preview_line(line: &str) -> String {
+    let trimmed = line.trim();
+    let preview: String = trimmed.chars().take(MAX_SEARCH_PREVIEW).collect();
+    if trimmed.chars().count() > MAX_SEARCH_PREVIEW {
+        format!("{preview}…")
+    } else {
+        preview
+    }
+}
+
+fn search_workspace(root: &Path, query: &str) -> Result<SearchResult, String> {
+    let needle = query.trim().to_lowercase();
+    if needle.is_empty() {
+        return Ok(SearchResult {
+            hits: Vec::new(),
+            scanned: 0,
+            truncated: false,
+        });
+    }
+    let mut hits = Vec::new();
+    let mut scanned = 0usize;
+    let mut truncated = false;
+    let mut stack = vec![(root.to_path_buf(), 0usize)];
+    while let Some((directory, depth)) = stack.pop() {
+        if hits.len() >= MAX_SEARCH_HITS || scanned >= MAX_SEARCH_FILES {
+            truncated = true;
+            break;
+        }
+        let Ok(read_dir) = fs::read_dir(&directory) else {
+            continue;
+        };
+        let mut children: Vec<_> = read_dir.filter_map(Result::ok).collect();
+        children.sort_by_key(|entry| entry.file_name());
+        for child in children {
+            if hits.len() >= MAX_SEARCH_HITS || scanned >= MAX_SEARCH_FILES {
+                truncated = true;
+                break;
+            }
+            let path = child.path();
+            let name = child.file_name().to_string_lossy().to_string();
+            let Ok(metadata) = fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if metadata.file_type().is_symlink() {
+                continue;
+            }
+            if metadata.is_dir() {
+                if skipped_directory(&name) || depth >= MAX_SCAN_DEPTH {
+                    if depth >= MAX_SCAN_DEPTH {
+                        truncated = true;
+                    }
+                    continue;
+                }
+                stack.push((path, depth + 1));
+                continue;
+            }
+            if !metadata.is_file() || metadata.len() > MAX_READ_BYTES {
+                continue;
+            }
+            scanned += 1;
+            let relative = relative_display(root, &path);
+            if name.to_lowercase().contains(&needle) {
+                hits.push(SearchHit {
+                    path: relative.clone(),
+                    name: name.clone(),
+                    kind: "name".into(),
+                    line: None,
+                    preview: String::new(),
+                });
+                if hits.len() >= MAX_SEARCH_HITS {
+                    truncated = true;
+                    break;
+                }
+            }
+            if skipped_file(&name) {
+                continue;
+            }
+            let Ok(bytes) = fs::read(&path) else {
+                continue;
+            };
+            if bytes.contains(&0) {
+                continue;
+            }
+            let Ok(text) = String::from_utf8(bytes) else {
+                continue;
+            };
+            let mut content_hits = 0usize;
+            for (index, line) in text.lines().enumerate() {
+                if content_hits >= 3 {
+                    break;
+                }
+                if line.to_lowercase().contains(&needle) {
+                    content_hits += 1;
+                    hits.push(SearchHit {
+                        path: relative.clone(),
+                        name: name.clone(),
+                        kind: "content".into(),
+                        line: Some(index as u64 + 1),
+                        preview: preview_line(line),
+                    });
+                    if hits.len() >= MAX_SEARCH_HITS {
+                        truncated = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    Ok(SearchResult {
+        hits,
+        scanned,
+        truncated,
+    })
+}
+
+fn hide_git_console(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+}
+
+fn git_output(root: &Path, args: &[&str]) -> Result<String, String> {
+    let mut command = Command::new("git");
+    command.arg("-C").arg(root);
+    command.args(["-c", "core.quotepath=false"]);
+    command.args(args);
+    hide_git_console(&mut command);
+    let output = command.output().map_err(|error| match error.kind() {
+        std::io::ErrorKind::NotFound => {
+            "Git is not installed, or git.exe is not on PATH.".to_string()
+        }
+        _ => "Git could not be started for this workspace.".to_string(),
+    })?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr);
+        let detail = detail.trim();
+        return Err(if detail.is_empty() {
+            "Git reported that this folder cannot be reviewed.".to_string()
+        } else {
+            format!("Git reported: {detail}")
+        });
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn parse_git_status(raw: &[u8]) -> Vec<GitFile> {
+    let mut files = Vec::new();
+    let mut fields = raw.split(|byte| *byte == 0).peekable();
+    while let Some(record) = fields.next() {
+        if record.len() < 4 {
+            continue;
+        }
+        let index_status = record[0] as char;
+        let worktree_status = record[1] as char;
+        let path = String::from_utf8_lossy(&record[3..]).to_string();
+        // With --porcelain -z a rename record is followed by the old path.
+        if index_status == 'R' || index_status == 'C' || worktree_status == 'R' || worktree_status == 'C'
+        {
+            let _ = fields.next();
+        }
+        if path.is_empty() {
+            continue;
+        }
+        let staged = index_status != ' ' && index_status != '?';
+        let unstaged = worktree_status != ' ' || index_status == '?';
+        let kind = if index_status == '?' {
+            "untracked"
+        } else if index_status == 'U' || worktree_status == 'U' || (index_status == 'A' && worktree_status == 'A') || (index_status == 'D' && worktree_status == 'D') {
+            "conflict"
+        } else if index_status == 'R' || worktree_status == 'R' {
+            "renamed"
+        } else if index_status == 'A' {
+            "added"
+        } else if index_status == 'D' || worktree_status == 'D' {
+            "deleted"
+        } else {
+            "modified"
+        };
+        files.push(GitFile {
+            path,
+            index_status: index_status.to_string(),
+            worktree_status: worktree_status.to_string(),
+            kind: kind.into(),
+            staged,
+            unstaged,
+        });
+    }
+    files
+}
+
+fn limit_diff(text: String) -> (String, bool) {
+    if text.len() <= MAX_DIFF_BYTES {
+        return (text, false);
+    }
+    let mut boundary = MAX_DIFF_BYTES;
+    while boundary > 0 && !text.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    (format!("{}\n… diff truncated …\n", &text[..boundary]), true)
+}
+
+fn review_workspace_git(root: &Path) -> Result<GitReview, String> {
+    let scope = ".";
+    if let Err(error) = git_output(root, &["rev-parse", "--is-inside-work-tree"]) {
+        return Err(if error.contains("not a git repository") {
+            "This workspace is not a Git repository.".to_string()
+        } else {
+            error
+        });
+    }
+    let branch = git_output(root, &["rev-parse", "--abbrev-ref", "HEAD"])
+        .map(|value| value.trim().to_string())
+        .unwrap_or_default();
+    let head = git_output(root, &["rev-parse", "--short", "HEAD"])
+        .map(|value| value.trim().to_string())
+        .unwrap_or_default();
+    let status = git_output(
+        root,
+        &[
+            "--no-optional-locks",
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--",
+            scope,
+        ],
+    )?;
+    let files = parse_git_status(status.as_bytes());
+    let staged_raw = git_output(
+        root,
+        &[
+            "--no-optional-locks",
+            "diff",
+            "--cached",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--unified=3",
+            "--",
+            scope,
+        ],
+    )?;
+    let unstaged_raw = git_output(
+        root,
+        &[
+            "--no-optional-locks",
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--unified=3",
+            "--",
+            scope,
+        ],
+    )?;
+    let (staged_diff, staged_truncated) = limit_diff(staged_raw);
+    let (unstaged_diff, unstaged_truncated) = limit_diff(unstaged_raw);
+    let mut diagnostics = Vec::new();
+    for args in [
+        vec![
+            "--no-optional-locks",
+            "diff",
+            "--check",
+            "--",
+            scope,
+        ],
+        vec![
+            "--no-optional-locks",
+            "diff",
+            "--cached",
+            "--check",
+            "--",
+            scope,
+        ],
+    ] {
+        let result = git_output(root, &args);
+        if let Ok(text) = result {
+            for line in text.lines().take(40) {
+                if !line.trim().is_empty() {
+                    diagnostics.push(line.to_string());
+                }
+            }
+        }
+    }
+    Ok(GitReview {
+        branch,
+        head,
+        files,
+        staged_diff,
+        unstaged_diff,
+        diagnostics,
+        truncated: staged_truncated || unstaged_truncated,
     })
 }
 
@@ -695,6 +1121,76 @@ pub async fn workspace_read(
         .map_err(|_| "Could not read this workspace file.".to_string())?
 }
 
+#[tauri::command]
+pub async fn workspace_read_text(
+    app: AppHandle,
+    owner: String,
+    id: String,
+    path: String,
+) -> Result<ReadResult, String> {
+    let owner = normalize_owner(&owner)?;
+    let store = load_store(&app)?;
+    let workspace = find_workspace(&store, &owner, &id)?.clone();
+    let root = canonical_directory(Path::new(&workspace.path))?;
+    tauri::async_runtime::spawn_blocking(move || read_workspace_path_with(&root, &path, true))
+        .await
+        .map_err(|_| "Could not read this workspace file.".to_string())?
+}
+
+#[tauri::command]
+pub async fn workspace_tree(
+    app: AppHandle,
+    owner: String,
+    id: String,
+    path: String,
+) -> Result<TreeResult, String> {
+    let owner = normalize_owner(&owner)?;
+    let store = load_store(&app)?;
+    let workspace = find_workspace(&store, &owner, &id)?.clone();
+    let root = canonical_directory(Path::new(&workspace.path))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let directory = resolve_workspace_directory(&root, &path)?;
+        list_workspace_directory(&root, &directory)
+    })
+    .await
+    .map_err(|_| "Could not list this workspace folder.".to_string())?
+}
+
+#[tauri::command]
+pub async fn workspace_search(
+    app: AppHandle,
+    owner: String,
+    id: String,
+    query: String,
+) -> Result<SearchResult, String> {
+    let owner = normalize_owner(&owner)?;
+    let store = load_store(&app)?;
+    let workspace = find_workspace(&store, &owner, &id)?.clone();
+    let root = canonical_directory(Path::new(&workspace.path))?;
+    let query = query.trim().to_string();
+    if query.chars().count() > 120 {
+        return Err("Keep the search under 120 characters.".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || search_workspace(&root, &query))
+        .await
+        .map_err(|_| "Could not search the workspace.".to_string())?
+}
+
+#[tauri::command]
+pub async fn workspace_git_review(
+    app: AppHandle,
+    owner: String,
+    id: String,
+) -> Result<GitReview, String> {
+    let owner = normalize_owner(&owner)?;
+    let store = load_store(&app)?;
+    let workspace = find_workspace(&store, &owner, &id)?.clone();
+    let root = canonical_directory(Path::new(&workspace.path))?;
+    tauri::async_runtime::spawn_blocking(move || review_workspace_git(&root))
+        .await
+        .map_err(|_| "Could not review this workspace's Git changes.".to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -799,6 +1295,156 @@ mod tests {
         assert!(read_workspace_path(&root, "image.png").is_err());
         assert!(read_workspace_path(&root, "large.txt").is_err());
         assert!(read_workspace_path(&root, "empty.txt").is_err());
+
+        // The panel may open an empty file so it can be filled in, while the
+        // agent-facing reader keeps refusing empty attachments.
+        let empty = read_workspace_path_with(&root, "empty.txt", true).expect("read empty");
+        assert_eq!(empty.content, "");
+        assert_eq!(empty.size, 0);
+        assert!(!empty.truncated);
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn tree_lists_real_entries_and_marks_protected_ones() {
+        let root = test_root();
+        write(&root.join("src").join("main.rs"), b"fn main() {}\n");
+        write(&root.join("README.md"), b"# Read me\n");
+        write(&root.join(".env"), b"SECRET=1\n");
+        write(&root.join("node_modules").join("pkg").join("index.js"), b"x\n");
+        write(&root.join("image.png"), b"not an image");
+
+        let result = list_workspace_directory(&root, &root).expect("list root");
+        assert_eq!(result.path, "");
+        let names: Vec<&str> = result.entries.iter().map(|entry| entry.name.as_str()).collect();
+        assert!(names.contains(&"src"));
+        assert!(names.contains(&"README.md"));
+        assert!(names.contains(&".env"));
+        assert!(names.contains(&"node_modules"));
+        assert!(names.contains(&"image.png"));
+        // Directories are listed before files.
+        assert_eq!(names[0], "node_modules");
+        assert_eq!(names[1], "src");
+
+        let env = result.entries.iter().find(|entry| entry.name == ".env").unwrap();
+        assert!(env.restricted);
+        assert!(!env.readable);
+        assert!(env.hidden);
+        let readme = result.entries.iter().find(|entry| entry.name == "README.md").unwrap();
+        assert!(readme.readable);
+        assert!(!readme.restricted);
+        assert_eq!(readme.size, 10);
+        let dependencies = result
+            .entries
+            .iter()
+            .find(|entry| entry.name == "node_modules")
+            .unwrap();
+        assert!(dependencies.restricted);
+
+        let nested = list_workspace_directory(&root, &root.join("src")).expect("list src");
+        assert_eq!(nested.path, "src");
+        assert_eq!(nested.entries[0].path, "src/main.rs");
+        assert!(resolve_workspace_directory(&root, "node_modules").is_err());
+        assert!(resolve_workspace_directory(&root, "src/../../").is_err());
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn search_finds_file_names_and_text_but_never_secret_contents() {
+        let root = test_root();
+        write(&root.join("src").join("main.rs"), b"fn main() {\n    let marker = 1;\n}\n");
+        write(&root.join("lookup-target.txt"), b"nothing to match here\n");
+        write(&root.join("notes.md"), b"the marker appears here too\n");
+        write(&root.join(".env"), b"marker=SECRET\n");
+        write(
+            &root.join("node_modules").join("pkg").join("index.js"),
+            b"marker\n",
+        );
+
+        let by_name = search_workspace(&root, "LOOKUP-TARGET").expect("search name");
+        assert_eq!(by_name.hits.len(), 1);
+        assert_eq!(by_name.hits[0].path, "lookup-target.txt");
+        assert_eq!(by_name.hits[0].kind, "name");
+
+        let by_text = search_workspace(&root, "marker").expect("search content");
+        assert!(by_text.hits.iter().any(|hit| hit.path == "notes.md" && hit.line == Some(1)));
+        assert!(by_text.hits.iter().any(|hit| hit.path == "src/main.rs" && hit.line == Some(2)));
+        assert!(!by_text.hits.iter().any(|hit| hit.path.contains(".env")));
+        assert!(!by_text.hits.iter().any(|hit| hit.path.contains("node_modules")));
+
+        let empty = search_workspace(&root, "   ").expect("empty query");
+        assert!(empty.hits.is_empty());
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn git_status_parsing_separates_staged_and_unstaged_files() {
+        let files = parse_git_status(
+            b" M src/app.js\0A  src/new.js\0?? notes.txt\0R  src/renamed.js\0src/old.js\0",
+        );
+        assert_eq!(files.len(), 4);
+        assert_eq!(files[0].path, "src/app.js");
+        assert!(!files[0].staged);
+        assert!(files[0].unstaged);
+        assert_eq!(files[0].kind, "modified");
+        assert_eq!(files[1].path, "src/new.js");
+        assert!(files[1].staged);
+        assert!(!files[1].unstaged);
+        assert_eq!(files[1].kind, "added");
+        assert_eq!(files[2].path, "notes.txt");
+        assert_eq!(files[2].kind, "untracked");
+        assert!(files[2].unstaged);
+        assert_eq!(files[3].path, "src/renamed.js");
+        assert_eq!(files[3].kind, "renamed");
+        assert!(files[3].staged);
+    }
+
+    #[test]
+    fn git_review_reads_staged_and_unstaged_changes_without_touching_them() {
+        let root = test_root();
+        let setup = |args: &[&str]| {
+            let status = Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .output()
+                .expect("git");
+            assert!(status.status.success(), "git {:?}", args);
+        };
+        setup(&["init"]);
+        setup(&["config", "user.email", "panel-test@vupsrouter.invalid"]);
+        setup(&["config", "user.name", "Panel Test"]);
+        write(&root.join("app.js"), b"const value = 1;\n");
+        setup(&["add", "app.js"]);
+        setup(&["commit", "-m", "initial"]);
+        write(&root.join("app.js"), b"const value = 2;\n");
+        write(&root.join("staged.js"), b"export const staged = true;\n");
+        setup(&["add", "staged.js"]);
+        write(&root.join("untracked.js"), b"export const pending = true;\n");
+
+        let review = review_workspace_git(&root).expect("review");
+        assert!(review.files.iter().any(|file| file.path == "app.js" && file.unstaged));
+        assert!(review.files.iter().any(|file| file.path == "staged.js" && file.staged));
+        assert!(review.files.iter().any(|file| file.path == "untracked.js" && file.kind == "untracked"));
+        assert!(review.staged_diff.contains("staged.js"));
+        assert!(review.unstaged_diff.contains("app.js"));
+        assert!(!review.unstaged_diff.contains("staged.js"));
+        assert!(!review.head.is_empty());
+
+        // Review is read-only: the working tree and index are exactly as left.
+        let status_after = Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["status", "--porcelain"])
+            .output()
+            .expect("git status");
+        let text = String::from_utf8_lossy(&status_after.stdout);
+        assert!(text.contains("M app.js"));
+        assert!(text.contains("A  staged.js"));
+        assert!(text.contains("?? untracked.js"));
 
         fs::remove_dir_all(root).expect("remove test root");
     }

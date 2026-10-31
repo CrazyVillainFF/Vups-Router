@@ -46,6 +46,7 @@ test("the native prompt is normalized before it can reach the UI", () => {
   assert.equal(prompt.scopeName, "Downloads");
   assert.equal(prompt.access, "read");
   assert.equal(prompt.canPersist, false, "the client never invents persistence the native layer did not allow");
+  assert.equal(prompt.chatScoped, false, "a prompt without a chat id is not a chat-scoped grant");
 
   // A prompt with no identity or no scope can never be answered, so it must not
   // open a card the user cannot act on.
@@ -129,6 +130,28 @@ test("only the native canPersist flag enables Allow Always, and it names one fil
   assert.equal(file.access, "contents");
   assert.equal(file.scopePath, "C:\\Users\\Vishnu\\Downloads\\notes.txt");
 
+  // A chat prompt carries the native chat id, so the card can offer the
+  // chat-scoped action instead of the older exact-file one.
+  const chatFile = normalizeDesktopToolPrompt({
+    payload: {
+      requestId: "req-chat-file",
+      tool: "edit_file",
+      action: "edit",
+      scopePath: "C:\\project\\Vups Router\\index.html",
+      scopeName: "index.html",
+      summary: "Edit index.html",
+      access: "write",
+      readOnly: false,
+      modifiesData: true,
+      chatId: "chat_scope_abc123",
+      canPersist: true,
+      expiresAt: Date.now() + 60_000
+    }
+  });
+  assert.equal(chatFile.chatScoped, true);
+  assert.equal(chatFile.canPersist, true);
+  assert.equal(normalizeDesktopToolPrompt({ payload: { requestId: "req-x", scopePath: "C:\\tmp\\a.txt", chatId: 42 } }).chatScoped, false);
+
   const launch = normalizeDesktopToolPrompt({
     payload: {
       requestId: "req-launch",
@@ -148,6 +171,103 @@ test("only the native canPersist flag enables Allow Always, and it names one fil
     payload: { requestId: "req-forged", scopePath: "C:\\tmp\\a.txt", canPersist: "yes" }
   });
   assert.equal(forged.canPersist, false);
+});
+
+test("every local call carries its chat and operation so grants cannot leak between chats", async () => {
+  const original = apiClient.post;
+  const calls = [];
+  apiClient.post = async (url, body) => {
+    calls.push(body);
+    if (calls.length % 2 === 1) {
+      return {
+        data: {
+          type: "tool_calls",
+          toolCalls: [
+            {
+              id: "call_folder",
+              type: "function",
+              function: { name: "get_windows_known_folder", arguments: JSON.stringify({ name: "downloads" }) }
+            }
+          ],
+          assistantMessage: { role: "assistant", content: null }
+        }
+      };
+    }
+    return {
+      data: {
+        type: "final",
+        content: "Done.",
+        conversationId: body.conversationId,
+        message: { messageId: "m-done" },
+        finishReason: "stop"
+      }
+    };
+  };
+  const captured = [];
+  const executeTool = async (tool, args, options) => {
+    captured.push({ tool, options });
+    return { ok: true, data: { name: "downloads", path: "C:\\Users\\Vishnu\\Downloads" } };
+  };
+  try {
+    await runDesktopToolChat({
+      conversationId: "conv-alpha",
+      chatId: "chat_scope_alpha",
+      operationId: "op-alpha",
+      messages: [{ role: "user", content: "Use the local folder tool." }],
+      executeTool
+    });
+    await runDesktopToolChat({
+      conversationId: "conv-beta",
+      chatId: "chat_scope_beta",
+      operationId: "op-beta",
+      messages: [{ role: "user", content: "Use the local folder tool." }],
+      executeTool
+    });
+
+    assert.deepEqual(
+      captured.map(entry => entry.options),
+      [
+        { operationId: "op-alpha", chatId: "chat_scope_alpha" },
+        { operationId: "op-beta", chatId: "chat_scope_beta" }
+      ],
+      "each chat's grant answers only reach the chat that asked"
+    );
+    assert.match(bridgeSource, /chatId: typeof chatId === "string" && chatId \? chatId : null/);
+    assert.match(bridgeSource, /invoke\("desktop_tool_execute"/);
+  } finally {
+    apiClient.post = original;
+  }
+});
+
+test("a saved chat keeps one scope id while a new chat starts empty", () => {
+  assert.match(chatPageSource, /const CHAT_SCOPE_STORAGE_PREFIX = "vupsrouter\.desktop\.chat-scope\.v1"/);
+  assert.match(chatPageSource, /function currentChatScope\(\)/);
+  assert.match(chatPageSource, /chatScopeForConversation\(workspaceOwner, activeConvId\)/);
+  assert.match(chatPageSource, /chatId: chatScopeId \|\| undefined/);
+  assert.match(
+    chatPageSource,
+    /rememberChatScope\(workspaceOwner, conversationId, chatScopeId\)/,
+    "the first saved answer binds the draft scope to the server conversation"
+  );
+  assert.match(
+    chatPageSource,
+    /draftChatScopeRef\.current = newChatScopeId\(\);/,
+    "starting a new chat or resetting abandons the old draft scope"
+  );
+  assert.equal(
+    chatPageSource.match(/chatScopeForConversation\(/g)?.length,
+    3,
+    "one helper definition, one display effect and one send-time lookup share the helper"
+  );
+
+  // Enforcement is native: chat grants are in memory, keyed by chat, and never
+  // written to the disk grant store.
+  assert.match(rustSource, /struct ChatGrant \{/);
+  assert.match(rustSource, /chat_grants: Vec<ChatGrant>/);
+  assert.match(rustSource, /fn action_chat_rememberable\(action: &str\) -> bool/);
+  assert.match(rustSource, /fn chat_target_can_remember\(prompt: &ApprovalPrompt\) -> bool/);
+  assert.match(rustSource, /fn prompt_can_remember\(prompt: &ApprovalPrompt\) -> bool/);
+  assert.match(rustSource, /"delete"/);
 });
 
 test("new capability results are summarized from native data and never invented", () => {
@@ -239,7 +359,9 @@ test("the approval card is short, in-chat, and offers exactly three actions", ()
   assert.match(cardSource, /\{target\.location\}/, "the exact path is shown");
   assert.match(cardSource, /request\.scopePath/, "the location comes from the native scope");
   assert.match(cardSource, /Allow Once/);
-  assert.match(cardSource, /Allow Always \(Only for This File\)/);
+  assert.match(cardSource, /Allow Always \(Only for This Chat\)/, "the in-chat action names the real scope");
+  assert.match(cardSource, /Allow Always \(Only for This File\)/, "the no-chat fallback stays exact");
+  assert.match(cardSource, /request\.chatScoped === true/, "the native chat id decides which label applies");
   assert.match(cardSource, /Deny/);
   assert.doesNotMatch(cardSource, /Access requested|Changes your data|scopeCopy|ACCESS_LINES|OPERATION_LINES/);
 
@@ -250,10 +372,12 @@ test("the approval card is short, in-chat, and offers exactly three actions", ()
   assert.match(cardSource, /This changes a file on your PC/);
   assert.match(cardSource, /role="note"/);
 
-  // The button is visible for every request but only usable for one exact file
-  // or app; when disabled the card says why in one line.
+  // The button is visible for every request but only usable when the native
+  // layer allows remembering; when disabled the card says why in one line.
   assert.match(cardSource, /disabled=\{busy \|\| !canRemember\}/);
   assert.match(cardSource, /Only a single file or app can be remembered/);
+  assert.match(cardSource, /This item cannot be remembered for this chat/);
+  assert.match(cardSource, /Deleting, shell commands, process control and links always ask/);
 
   // Applying a decision is a transient state, not a result line.
   assert.match(cardSource, /Applying…/);

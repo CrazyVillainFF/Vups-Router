@@ -83,6 +83,8 @@ const fileRequest = {
   summary: "Read notes.txt",
   access: "contents",
   readOnly: true,
+  chatId: "chat_scope_render",
+  chatScoped: true,
   canPersist: true
 };
 
@@ -114,8 +116,8 @@ test("the compact card names the action, the file and its location", async () =>
   assert.equal(pathNode.getAttribute("title"), "C:\\Users\\Vishnu\\Downloads", "the full path stays available");
   assert.doesNotMatch(pathNode.textContent, /^\\\\\?\\/, "no verbatim Windows path in the UI");
 
-  assert.deepEqual(buttons(container), ["Allow Once", "Allow Always (Only for This File)", "Deny"]);
-  assert.deepEqual(buttonStates(container), [false, false, false], "an exact file can be remembered");
+  assert.deepEqual(buttons(container), ["Allow Once", "Allow Always (Only for This Chat)", "Deny"]);
+  assert.deepEqual(buttonStates(container), [false, false, false], "this chat can remember the exact file");
 
   // The previous card explained at length; the new one is only the request.
   assert.doesNotMatch(text, /Access requested|Changes your data|Approving this covers|Waiting for approval|Expires in/);
@@ -138,7 +140,7 @@ test("a button press reports the decision and nothing else", async () => {
   assert.deepEqual(sent, ["once", "always", "deny"]);
 });
 
-test("folder requests keep Allow Always visible but cannot use it", async () => {
+test("without a chat, a folder request cannot use the exact-file action", async () => {
   const { default: Card } = await loadCard();
   const container = render(
     React.createElement(Card, {
@@ -150,6 +152,8 @@ test("folder requests keep Allow Always visible but cannot use it", async () => 
         access: "read",
         scopePath: "C:\\Users\\Vishnu\\Downloads",
         scopeName: "Downloads",
+        chatId: "",
+        chatScoped: false,
         canPersist: false
       },
       busy: false,
@@ -163,10 +167,60 @@ test("folder requests keep Allow Always visible but cannot use it", async () => 
   assert.match(container.textContent, /Downloads/);
   assert.match(container.textContent, /Only a single file or app can be remembered/);
   assert.deepEqual(buttons(container), ["Allow Once", "Allow Always (Only for This File)", "Deny"]);
-  assert.deepEqual(buttonStates(container), [false, true, false], "a folder is never a saved grant");
+  assert.deepEqual(buttonStates(container), [false, true, false], "a folder is never a saved grant without a chat");
 
   const [folderLabel] = [...container.querySelectorAll(".vr-permission-card__row dt")].map(node => node.textContent);
   assert.equal(folderLabel, "Folder");
+});
+
+test("a chat can remember an ordinary folder action, while deletes always ask", async () => {
+  const { default: Card } = await loadCard();
+  const folder = render(
+    React.createElement(Card, {
+      request: {
+        ...fileRequest,
+        requestId: "req-chat-folder",
+        tool: "list_recent_files",
+        action: "recent",
+        access: "read",
+        scopePath: "C:\\Users\\Vishnu\\Downloads",
+        scopeName: "Downloads",
+        canPersist: true
+      },
+      busy: false,
+      error: "",
+      onRespond() {}
+    })
+  );
+  assert.match(folder.textContent, /Downloads/);
+  assert.deepEqual(buttons(folder), ["Allow Once", "Allow Always (Only for This Chat)", "Deny"]);
+  assert.deepEqual(buttonStates(folder), [false, false, false]);
+  assert.doesNotMatch(folder.textContent, /cannot be remembered/);
+
+  const remove = render(
+    React.createElement(Card, {
+      request: {
+        ...fileRequest,
+        requestId: "req-chat-delete",
+        tool: "delete_path",
+        action: "delete",
+        access: "delete",
+        scopePath: "C:\\Users\\Vishnu\\Downloads\\notes.txt",
+        scopeName: "notes.txt",
+        destructive: true,
+        canPersist: false
+      },
+      busy: false,
+      error: "",
+      onRespond() {}
+    })
+  );
+  assert.match(
+    remove.textContent,
+    /Deleting, shell commands, process control and links always ask/,
+    "the card explains why this one is per call"
+  );
+  assert.deepEqual(buttonStates(remove), [false, true, false]);
 });
 
 test("write, delete, command and terminate cards show the real target and risk", async () => {
@@ -184,7 +238,7 @@ test("write, delete, command and terminate cards show the real target and risk",
         scopeName: "agent-test.txt",
         readOnly: false,
         modifiesData: true,
-        canPersist: false
+        canPersist: true
       },
       onRespond() {}
     })
@@ -193,8 +247,8 @@ test("write, delete, command and terminate cards show the real target and risk",
   assert.match(write.textContent, /agent-test\.txt/);
   assert.match(write.textContent, /C:\\tmp/);
   assert.match(write.textContent, /This changes a file on your PC\./);
-  assert.deepEqual(buttons(write), ["Allow Once", "Allow Always (Only for This File)", "Deny"]);
-  assert.deepEqual(buttonStates(write), [false, true, false]);
+  assert.deepEqual(buttons(write), ["Allow Once", "Allow Always (Only for This Chat)", "Deny"]);
+  assert.deepEqual(buttonStates(write), [false, false, false], "a chat may remember this exact write target");
 
   const remove = render(
     React.createElement(Card, {
@@ -215,6 +269,7 @@ test("write, delete, command and terminate cards show the real target and risk",
   );
   assert.match(remove.textContent, /Delete an item permanently/);
   assert.match(remove.textContent, /This cannot be undone\./);
+  assert.match(remove.textContent, /Deleting, shell commands, process control and links always ask/);
   assert.deepEqual(buttonStates(remove), [false, true, false]);
 
   const command = render(
@@ -242,6 +297,7 @@ test("write, delete, command and terminate cards show the real target and risk",
   assert.match(command.textContent, /Location/);
   assert.match(command.textContent, /C:\\project\\Vups Router/);
   assert.match(command.textContent, /This runs a command on your PC\./);
+  assert.match(command.textContent, /always ask/);
   assert.deepEqual(buttonStates(command), [false, true, false]);
 
   const terminate = render(
@@ -264,6 +320,7 @@ test("write, delete, command and terminate cards show the real target and risk",
   assert.match(terminate.textContent, /Force-close an app/);
   assert.match(terminate.textContent, /Process 4242/);
   assert.match(terminate.textContent, /This cannot be undone\./);
+  assert.match(terminate.textContent, /always ask/);
   assert.doesNotMatch(terminate.textContent, /Location/, "a process id is not a filesystem location");
   assert.deepEqual(buttonStates(terminate), [false, true, false]);
 });

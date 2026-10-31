@@ -30,7 +30,8 @@ const RATE_CODES = new Set([
   "vups_rate_limited",
   "vups_token_rate_limited",
   "vups_concurrency_limited",
-  "omniroute_rate_limited"
+  "omniroute_rate_limited",
+  "run_busy"
 ]);
 // Match credential failures, not every sentence that happens to mention a key.
 // The proxy's bare HTTP 400 fallback says "Check the API key, model ID, and API
@@ -229,11 +230,12 @@ export function classifyChatError(error) {
     if (!isMissingApiKeyError(error)) return "access_denied";
     return isMissingKeyEvidence(error) ? "missing_api_key" : "invalid_api_key";
   }
-  // After the credential branch so an expired session keeps its own card.
-  // Anything the desktop tool service raised is about local tools, whatever code
-  // the server attached, so a new server-side failure cannot become "Something
-  // went wrong".
-  if (DESKTOP_TOOL_CODES.has(code) || code === "tool_round_limit" || error?.name === "DesktopChatError") {
+  // Desktop tool failures are only the ones this client or its route owns: a
+  // missing endpoint, an unrecognized answer, the round budget. A provider,
+  // quota or validation error that happened to surface during a tool turn keeps
+  // its own category below, so its real sentence is not replaced by "local
+  // Windows tools did not run".
+  if (DESKTOP_TOOL_CODES.has(code) || code === "tool_round_limit") {
     return "desktop_tools";
   }
   if (code.endsWith("_unavailable") || code === "provider_unavailable" || code === "upstream_unavailable") {
@@ -400,11 +402,37 @@ export function presentChatError(error, { modelLabel = "", now = new Date() } = 
     retry = false;
     canSwitchModel = false;
   } else if (category === "desktop_tools") {
-    title = "Local Windows tools unavailable";
-    message =
-      code === "tool_round_limit"
-        ? "The assistant used too many local tool steps for one request. Ask for fewer files or a narrower piece of work, or split the task into smaller steps."
-        : "The local Windows tools could not run against the connected server, so the requested local work did not happen. Send the message again, or chat without local tools.";
+    const detail = backendAdvice(error);
+    // A tool turn can fail after the native layer already wrote real files.
+    // Claiming "the requested local work did not happen" then contradicts the
+    // results sitting above the card, so completed steps are stated as kept.
+    const completed = Array.isArray(error?.toolSteps)
+      ? error.toolSteps.filter(step => step?.ok).length
+      : error?.filesystemCompleted === true ? 1 : 0;
+    if (code === "tool_round_limit") {
+      title = "Local Windows tools unavailable";
+      message =
+        "The assistant used too many local tool steps for one request. Ask for fewer files or a narrower piece of work, or split the task into smaller steps.";
+    } else if (completed > 0) {
+      title = "Local tools stopped partway";
+      message =
+        `${completed === 1 ? "One local step" : `${completed} local steps`} finished and are kept above. ` +
+        `The remaining step did not run${detail ? `: ${detail}` : "."} ` +
+        "Send the remaining request again — work that already succeeded is not repeated.";
+    } else if (code === "desktop_tools_unavailable") {
+      title = "Local Windows tools unavailable";
+      message =
+        "The local Windows tools could not run against the connected server, so the requested local work did not happen. Send the message again, or chat without local tools.";
+    } else if (detail && !/^request failed with status code\s+\d+/i.test(detail)) {
+      // The route or bridge stated its own reason. It is evidence, so it is
+      // shown verbatim instead of an invented "tools are unavailable".
+      title = "Local tools stopped";
+      message = `${detail} No further local step ran.`;
+    } else {
+      title = "Local Windows tools unavailable";
+      message =
+        "The local Windows tools could not run against the connected server, so the requested local work did not happen. Send the message again, or chat without local tools.";
+    }
     canSwitchModel = false;
   } else if (category === "timeout") {
     // Reached only when the connection itself stops producing data (or an
