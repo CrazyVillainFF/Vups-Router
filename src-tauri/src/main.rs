@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod composer_files;
 mod desktop_exec;
 mod desktop_server;
 mod desktop_tools;
@@ -10,6 +11,7 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 fn main() {
     tauri::Builder::default()
         .manage(desktop_tools::DesktopToolState::default())
+        .manage(composer_files::ComposerFileState::default())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let url = desktop_server::start(app.handle().clone())
@@ -41,7 +43,10 @@ fn main() {
             desktop_tools::desktop_tool_grant_revoke,
             desktop_tools::desktop_tool_grants_clear,
             desktop_tools::desktop_tool_approvals_cancel,
-            desktop_tools::desktop_tool_cancel_operation
+            desktop_tools::desktop_tool_cancel_operation,
+            composer_files::composer_pick_folder,
+            composer_files::composer_release_folder,
+            composer_files::composer_read_files
         ])
         .build(tauri::generate_context!())
         .expect("error while building VupsRouter")

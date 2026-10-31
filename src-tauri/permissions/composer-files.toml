@@ -1,0 +1,8 @@
+[[permission]]
+identifier = "allow-composer-files"
+description = "Allow the composer to enumerate one user-selected folder and read only the files the user chose to attach. These commands never run through the assistant permission engine."
+commands.allow = [
+  "composer_pick_folder",
+  "composer_release_folder",
+  "composer_read_files"
+]

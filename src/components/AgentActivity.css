@@ -59,6 +59,13 @@
   transition: transform 0.18s ease;
 }
 
+/* The animated marker only exists while the turn is live; the head's height is
+   unchanged (Bouncy is 13px tall inside a 30px row) so nothing jumps when the
+   turn settles. */
+.vr-activity__loader {
+  margin-right: 2px;
+}
+
 .vr-activity:not([data-open]) .vr-activity__chevron {
   transform: rotate(-90deg);
 }

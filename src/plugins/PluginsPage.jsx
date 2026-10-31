@@ -19,6 +19,7 @@ import {
 } from "@phosphor-icons/react";
 import HoldToDeleteDialog from "../components/HoldToDeleteDialog.jsx";
 import ExternalAnchor from "../components/ExternalLink.jsx";
+import { QuantumLoader } from "../components/LoadingVisuals.jsx";
 import {
   executePluginTool,
   fetchPluginActivity,
@@ -373,7 +374,10 @@ export default function PluginsPage() {
         </div>
 
         {loading ? (
-          <div className="vr-plugin-loading" role="status"><CircleNotch size={20} className="vr-spin" /> Loading plugin catalog…</div>
+          <div className="vr-plugin-loading" role="status">
+            <QuantumLoader decorative />
+            <span>Loading plugin catalog…</span>
+          </div>
         ) : filtered.length === 0 ? (
           <div className="vr-card vr-empty-card">
             <Sparkle size={20} />

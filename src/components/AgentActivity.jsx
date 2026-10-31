@@ -16,6 +16,7 @@ import {
 } from "../chat/activity.js";
 import { generationProgress } from "../chat/progress.js";
 import ThoughtLine from "./reactbits/ThoughtLine.jsx";
+import { ThinkingBouncy } from "./LoadingVisuals.jsx";
 import "./AgentActivity.css";
 
 const STATUS_TEXT = {
@@ -148,6 +149,7 @@ export default function AgentActivity({
       <span className="vr-activity__chevron" aria-hidden="true">
         <CaretDown size={12} weight="bold" />
       </span>
+      {active ? <ThinkingBouncy className="vr-activity__loader" /> : null}
       <ThoughtLine
         className="vr-activity__thought"
         working={active}

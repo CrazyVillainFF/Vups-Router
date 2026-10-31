@@ -4,6 +4,7 @@ import { Button, TextField, Alert, CircularProgress, IconButton, InputAdornment 
 import ChatPage from "./ChatPage.jsx";
 import SettingsPage from "./SettingsPage.jsx";
 import VupsLogo from "./components/VupsLogo.jsx";
+import { QuantumLoader } from "./components/LoadingVisuals.jsx";
 import PageMeta from "./components/PageMeta.jsx";
 import { PrivacyPolicy, TermsOfService, CookiePolicy } from "./legal/LegalPages.jsx";
 import { ForgotPasswordPage } from "./auth/PasswordRecovery.jsx";
@@ -380,12 +381,8 @@ export default function App() {
       element={
         <React.Suspense
           fallback={
-            <div
-              role="status"
-              aria-label="Loading motion lab"
-              style={{ minHeight: "60svh", display: "grid", placeItems: "center" }}
-            >
-              <CircularProgress size={28} />
+            <div style={{ minHeight: "60svh", display: "grid", placeItems: "center" }}>
+              <QuantumLoader label="Loading motion lab" />
             </div>
           }
         >

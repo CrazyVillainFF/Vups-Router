@@ -21,6 +21,7 @@ const APPROVAL = `/desktop-auth?ticket=${TICKET}&client=windows`;
 const COMPILED = {
   "pages/DesktopAuthPage.jsx": "DesktopAuthPage.mjs",
   "components/PageMeta.jsx": "PageMeta.mjs",
+  "components/LoadingVisuals.jsx": "LoadingVisuals.mjs",
   "context/AuthContext.jsx": "AuthContext.mjs"
 };
 
@@ -29,7 +30,9 @@ async function compile(relative) {
   const from = path.join(srcDir, relative);
   const to = path.join(outDir, COMPILED[relative]);
   const { code } = await transformWithEsbuild(readFileSync(from, "utf8"), from, { loader: "jsx", jsx: "automatic" });
-  const rewritten = code.replace(/from "(\.[^"]*)"/g, (match, specifier) => {
+  const withoutCss = code.replace(/^import\s+["'][^"']+\.css["'];\s*$/gm, "");
+  const rewritten = withoutCss.replace(/from "(\.[^"]*)"/g, (match, specifier) => {
+    if (specifier.endsWith(".css")) return match;
     const target = path.resolve(path.dirname(from), specifier);
     const targetRelative = path.relative(srcDir, target).split(path.sep).join("/");
     if (COMPILED[targetRelative]) return `from "./${COMPILED[targetRelative]}"`;
@@ -77,6 +80,7 @@ before(async () => {
   ({ MemoryRouter, Routes, Route, useLocation } = await import("react-router-dom"));
   AuthProvider = (await loadCompiled("context/AuthContext.jsx")).AuthProvider;
   await loadCompiled("components/PageMeta.jsx");
+  await loadCompiled("components/LoadingVisuals.jsx");
   DesktopAuthPage = (await loadCompiled("pages/DesktopAuthPage.jsx")).default;
   apiClient.defaults.baseURL = "https://api.test/api";
 });

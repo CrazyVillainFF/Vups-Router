@@ -33,11 +33,8 @@ import HoldToDeleteDialog from "./components/HoldToDeleteDialog.jsx";
 import { NATIVE_SHELLS, detectNativeShell } from "./native/shell.js";
 import {
   DEFAULT_PERMISSION_MODE,
-  attachmentPermissionDetails,
   isPermissionMode,
   loadPermissionMode,
-  permissionDecision,
-  permissionModeInfo,
   savePermissionMode,
 } from "./native/permissions.js";
 import AgentActivity from "./components/AgentActivity.jsx";
@@ -69,10 +66,13 @@ import {
 } from "./chat/messageActions.js";
 import {
   ACCEPTED_IMAGE_ACCEPT_ATTR,
+  ATTACHMENT_LIMITS,
   IMAGE_LIMITS,
-  TEXT_ATTACHMENT_ACCEPT_ATTR,
+  NATIVE_ATTACHMENT_ACCEPT_ATTR,
   TEXT_LIMITS,
+  attachmentTotals,
   contentWithTextAttachments,
+  fileIdentity,
   formatBytes,
   generateAttachmentId,
   isImageFile,
@@ -80,11 +80,22 @@ import {
   readImageAttachment,
   readTextAttachment,
   readyTextAttachments,
+  skipRecord,
   textAttachmentChars,
   toPayloadImages,
+  unsupportedAttachmentReason,
   validateImageFile,
   validateTextFile,
 } from "./chat/attachments.js";
+import {
+  folderAttachmentFromReport,
+  prepareFolderAttachment,
+} from "./chat/folderAttachments.js";
+import {
+  pickComposerFolder,
+  readComposerFiles,
+  releaseComposerFolder,
+} from "./desktop/composerFiles.js";
 import { streamChatResponse } from "./services/chat.js";
 import { runDesktopToolChat } from "./services/desktopChat.js";
 import {
@@ -152,7 +163,10 @@ import "./chat.css";
 
 const VUPS_EFFORTS = ["Precise", "Balanced", "Creative"];
 const EFFORT_TEMPERATURE = { Precise: 0.3, Balanced: 0.7, Creative: 1.0 };
-const MAX_USER_MESSAGE_CHARS = 32000;
+// Mirrors the server's per-message cap so folder text is not rejected earlier
+// on the client than the backend that accepts it.
+const MAX_USER_MESSAGE_CHARS = 2_000_000;
+const USER_MESSAGE_LIMIT_WARNING = `That message and its attached text are too long. Keep the total under ${MAX_USER_MESSAGE_CHARS.toLocaleString("en-US")} characters.`;
 const CHAT_MODE_STORAGE_KEY = "vupsrouter.chat.mode";
 const VUPS_MODES = [
   { key: "general", name: "General", description: "Everyday answers, research, and coding help" },
@@ -1173,8 +1187,6 @@ export default function ChatPage() {
   const [permissionMode, setPermissionMode] = useState(
     () => loadPermissionMode(localBrowserStorage()) || DEFAULT_PERMISSION_MODE
   );
-  const [permissionRequest, setPermissionRequest] = useState(null);
-  const pendingPermissionResolve = useRef(null);
   const [approvalRequests, setApprovalRequests] = useState([]);
   const [approvalBusyId, setApprovalBusyId] = useState("");
   const [approvalError, setApprovalError] = useState("");
@@ -1458,34 +1470,6 @@ export default function ChatPage() {
     applyPermissionMode(mode);
   }
 
-  function authorizeNativeAttachments(attachments) {
-    if (nativeShell !== NATIVE_SHELLS.windows) return Promise.resolve(true);
-    const decision = permissionDecision(permissionMode, attachments);
-    if (decision.allowed) return Promise.resolve(true);
-    // A dropped resolver would leave the composer waiting forever: PromptBar only
-    // re-opens its send guard once this promise settles.
-    pendingPermissionResolve.current?.(false);
-    return new Promise((resolve) => {
-      pendingPermissionResolve.current = (allowed) => {
-        pendingPermissionResolve.current = null;
-        resolve(allowed);
-      };
-      setPermissionRequest({
-        resolve: allowed => pendingPermissionResolve.current?.(allowed),
-        items: decision.items,
-        description: permissionModeInfo(permissionMode).description
-      });
-    });
-  }
-
-  useEffect(() => () => pendingPermissionResolve.current?.(false), []);
-
-  function settlePermissionRequest(allowed) {
-    const request = permissionRequest;
-    setPermissionRequest(null);
-    request?.resolve?.(allowed);
-  }
-
   // The native tool layer pauses the file operation until this card is
   // answered, so the card can only ever say "waiting": it grants nothing itself.
   useEffect(() => {
@@ -1578,9 +1562,20 @@ export default function ChatPage() {
     setApprovalError("");
   }
 
-  async function beforeComposerSend(text, attachments) {
+  async function beforeComposerSend(text, attachments, meta) {
     if (!canSubmitComposer(text, attachments)) return false;
-    return authorizeNativeAttachments(attachments);
+    const images = (Array.isArray(attachments) ? attachments : []).filter(
+      (item) => item && typeof item === "object" && typeof item.dataUrl === "string"
+    );
+    if (images.length === 0) return true;
+    const selectedRow =
+      catalog.find((row) => row.key === meta?.model?.key) || meta?.model || activeRow;
+    if (selectedRow?.vision !== false) return true;
+    const label = chatReference(selectedRow).model || selectedRow?.name || "this model";
+    setComposerWarning(
+      `The selected model (${label}) does not accept images. Choose a vision-capable model in API settings.`
+    );
+    return false;
   }
 
   // Starts a fresh conversation locally with a bounded handoff. The existing
@@ -1720,101 +1715,227 @@ export default function ChatPage() {
     }
   }
 
-  // Called by the composer with real Files (picker, drop, paste, folder, or
-  // Android camera). Validation problems become error chips instead of
-  // blocking the whole pick.
-  async function pickAttachments(files) {
-    const input = [...(files || [])];
-    const selected = [];
-    let imageCount = 0;
-    let textCount = 0;
-    let skipped = 0;
-    let imageBytes = 0;
-    let textBytes = 0;
+  // Called by the composer with real Files (picker, drop, paste, or Android
+  // camera). Every file that cannot be attached returns a named reason in the
+  // summary instead of a generic "some files were skipped" chip.
+  async function pickAttachments(files, { source, existing } = {}) {
+    const declared = [...(files || [])];
+    const input = declared.slice(0, 400);
+    const prior = attachmentTotals(existing);
+    const items = [];
+    const skipped = [];
+    const seen = new Set(
+      (Array.isArray(existing) ? existing : [])
+        .filter(item => item && item.status !== "error")
+        .map(item => item.originKey)
+        .filter(Boolean)
+    );
+    let imageCount = prior.images;
+    let textCount = prior.texts;
+    let imageBytes = prior.imageBytes;
+    let textBytes = prior.textBytes;
+    let textChars = prior.textChars;
+    let folderFileCount = (Array.isArray(existing) ? existing : []).filter(
+      (item) => item && item.status !== "error" && item.kind !== "image"
+    ).length;
+    let failed = 0;
 
     for (const file of input) {
-      if (isImageFile(file) && imageCount < IMAGE_LIMITS.count) {
-        if (imageBytes + Number(file.size || 0) <= IMAGE_LIMITS.totalBytes) {
-          imageCount += 1;
-          imageBytes += Number(file.size || 0);
-          selected.push(file);
-          continue;
-        }
-      } else if (isTextAttachmentFile(file) && textCount < TEXT_LIMITS.count) {
-        if (textBytes + Number(file.size || 0) <= TEXT_LIMITS.totalBytes) {
-          textCount += 1;
-          textBytes += Number(file.size || 0);
-          selected.push(file);
-          continue;
-        }
+      const originKey = fileIdentity(file);
+      if (originKey && seen.has(originKey)) {
+        skipped.push(skipRecord(file, "Already attached to this message."));
+        continue;
       }
-      skipped += 1;
-    }
-
-    const items = await Promise.all(
-      selected.map(async (file) => {
-        const source = file.attachmentSource || (file.webkitRelativePath ? "folder" : "picker");
-        if (isImageFile(file)) {
-          const check = validateImageFile(file);
-          if (!check.ok) {
-            return {
-              id: generateAttachmentId(),
-              name: file.name || "image",
-              status: "error",
-              error: check.error,
-            };
-          }
-          try {
-            const item = await readImageAttachment(file);
-            return {
-              ...item,
-              kind: "image",
-              source,
-              path: file.relativePath || file.webkitRelativePath || file.name
-            };
-          } catch {
-            return {
-              id: generateAttachmentId(),
-              name: file.name || "image",
-              status: "error",
-              error: "That image could not be read.",
-            };
-          }
-        }
-
-        const check = validateTextFile(file);
+      const fileSource = source || file.attachmentSource || (file.webkitRelativePath ? "folder" : "picker");
+      if (isImageFile(file)) {
+        const check = validateImageFile(file, { remaining: IMAGE_LIMITS.count - imageCount });
         if (!check.ok) {
-          return {
-            id: generateAttachmentId(),
-            name: file.name || "file",
-            status: "error",
-            error: check.error,
-          };
+          skipped.push(skipRecord(file, check.error));
+          continue;
         }
         try {
-          return await readTextAttachment(file, generateAttachmentId(), source);
+          const item = await readImageAttachment(file);
+          if (imageBytes + item.size > IMAGE_LIMITS.totalBytes) {
+            skipped.push(skipRecord(file, `Images for one message must total ${formatBytes(IMAGE_LIMITS.totalBytes)} or less.`));
+            continue;
+          }
+          item.source = fileSource;
+          item.path = file.relativePath || file.webkitRelativePath || file.name;
+          item.sensitive = Boolean(file.sensitive);
+          item.originKey = originKey;
+          items.push(item);
+          if (originKey) seen.add(originKey);
+          imageCount += 1;
+          imageBytes += item.size;
         } catch (error) {
-          return {
+          failed += 1;
+          items.push({
             id: generateAttachmentId(),
+            kind: "image",
+            name: file.name || "image",
+            status: "error",
+            error: error?.message || "That image could not be read.",
+            retryFile: file
+          });
+        }
+        continue;
+      }
+
+      if (isTextAttachmentFile(file)) {
+        if (folderFileCount >= ATTACHMENT_LIMITS.folderFile) {
+          skipped.push(
+            skipRecord(file, `Attach up to ${ATTACHMENT_LIMITS.folderFile} folders and files per message.`)
+          );
+          continue;
+        }
+        const check = validateTextFile(file, { remaining: TEXT_LIMITS.count - textCount });
+        if (!check.ok) {
+          skipped.push(skipRecord(file, check.error));
+          continue;
+        }
+        try {
+          const item = await readTextAttachment(file, generateAttachmentId(), fileSource);
+          if (textBytes + item.size > TEXT_LIMITS.totalBytes) {
+            skipped.push(skipRecord(file, `Text attachments for one message must total ${formatBytes(TEXT_LIMITS.totalBytes)} or less.`));
+            continue;
+          }
+          if (textChars + item.text.length > TEXT_LIMITS.totalChars) {
+            skipped.push(skipRecord(file, `Text attachments for one message are limited to ${TEXT_LIMITS.totalChars.toLocaleString()} characters.`));
+            continue;
+          }
+          item.originKey = originKey;
+          items.push(item);
+          if (originKey) seen.add(originKey);
+          folderFileCount += 1;
+          textCount += 1;
+          textBytes += item.size;
+          textChars += item.text.length;
+        } catch (error) {
+          failed += 1;
+          items.push({
+            id: generateAttachmentId(),
+            kind: "text",
             name: file.name || "file",
             status: "error",
             error: error?.message || "That file could not be read as text.",
-          };
+            retryFile: file
+          });
         }
-      })
-    );
+        continue;
+      }
 
-    if (skipped > 0) {
-      items.push({
-        id: generateAttachmentId(),
-        name: "Some files skipped",
-        status: "error",
-        error:
-          "Some files were unsupported or exceeded the attachment limits. " +
-          `Use up to ${IMAGE_LIMITS.count} images and ${TEXT_LIMITS.count} text files per message.`,
+      skipped.push(skipRecord(file, unsupportedAttachmentReason(file)));
+    }
+
+    if (declared.length > input.length) {
+      skipped.push({
+        name: `${(declared.length - input.length).toLocaleString()} more files`,
+        path: "",
+        reason: "Only the first 400 files in one selection are examined."
       });
     }
-    return items;
+
+    return {
+      items,
+      summary: {
+        selected: declared.length,
+        attached: items.filter(item => item.status !== "error").length,
+        failed,
+        skipped
+      }
+    };
+  }
+
+  async function pickFolderAttachments({ existing } = {}) {
+    if (nativeShell !== NATIVE_SHELLS.windows) {
+      throw new Error("Folder attachments are available in the Windows app.");
+    }
+    const current = (Array.isArray(existing) ? existing : []).filter(
+      (item) => item && item.status !== "error" && item.kind !== "image"
+    ).length;
+    if (current >= ATTACHMENT_LIMITS.folderFile) {
+      throw new Error(`Attach up to ${ATTACHMENT_LIMITS.folderFile} folders and files per message.`);
+    }
+    const report = await pickComposerFolder();
+    if (!report) return null;
+    const folder = folderAttachmentFromReport(report);
+    if (!folder) throw new Error("That folder could not be read.");
+    // The folder card owns its exclusions: it lists every entry with a reason
+    // and offers opt-ins, so the global summary does not count folders as skips.
+    return {
+      items: [folder],
+      summary: {
+        selected: folder.fileCount,
+        attached: 1,
+        failed: 0,
+        skipped: []
+      }
+    };
+  }
+
+  function releaseFolderAttachment(folder) {
+    if (folder?.kind !== "folder" || !folder.token) return;
+    releaseComposerFolder(folder.token);
+  }
+
+  // Folder contents stay on disk until send. Reading happens here, in bounded
+  // batches, so a folder with tens of thousands of files costs one scan and a
+  // few dozen reads rather than one File object per entry.
+  async function prepareComposerAttachments(items, options = {}) {
+    const list = Array.isArray(items) ? items : [];
+    const folders = list.filter(item => item?.kind === "folder");
+    if (folders.length === 0) return { items: list, summary: null };
+    const others = list.filter(item => item?.kind !== "folder");
+    let imageCount = others.filter(item => item?.dataUrl).length;
+    let imageBytes = others
+      .filter(item => item?.dataUrl)
+      .reduce((total, item) => total + (Number(item.size) || 0), 0);
+    const expanded = [];
+    const foldersSummary = [];
+
+    for (const folder of folders) {
+      const result = await prepareFolderAttachment(folder, {
+        readFiles: readComposerFiles,
+        signal: options.signal,
+        onProgress: progress => options.onProgress?.({ ...progress, folder: folder.name }),
+        imageBudget: {
+          count: Math.max(0, IMAGE_LIMITS.count - imageCount),
+          bytes: Math.max(0, IMAGE_LIMITS.totalBytes - imageBytes)
+        }
+      });
+      expanded.push(...result.items);
+      foldersSummary.push(result.summary);
+      imageCount += result.summary.includedImages;
+      imageBytes += result.items
+        .filter(item => item.dataUrl)
+        .reduce((total, item) => total + (Number(item.size) || 0), 0);
+    }
+
+    const skipped = foldersSummary.flatMap(summary =>
+      summary.skipped.map(entry => ({
+        ...entry,
+        name: entry.path,
+        path: `${summary.folder}/${entry.path}`
+      }))
+    );
+
+    return {
+      items: [...others, ...expanded],
+      summary: {
+        selected: others.length + foldersSummary.reduce((total, summary) => total + summary.selected, 0),
+        attached: others.filter(item => item.status !== "error").length + expanded.length,
+        failed: others.filter(item => item.status === "error").length,
+        skipped,
+        folders: foldersSummary
+      }
+    };
+  }
+
+  async function retryComposerAttachment(item) {
+    if (!item?.retryFile) return null;
+    const result = await pickAttachments([item.retryFile]);
+    const replacement = result.items.find(next => next.status !== "error") || result.items[0] || null;
+    return { item: replacement, summary: result.summary };
   }
 
   async function handleGenerateImage(text) {
@@ -1861,13 +1982,25 @@ export default function ChatPage() {
     const textFiles = readyTextAttachments(items);
     const charCount = text.length + textAttachmentChars(textFiles);
     if (charCount > MAX_USER_MESSAGE_CHARS) {
-      setComposerWarning(
-        "That message and its attached text are too long. Keep the total under 32,000 characters."
-      );
+      setComposerWarning(USER_MESSAGE_LIMIT_WARNING);
       return false;
     }
     if (items.some((item) => item && typeof item === "object" && item.status === "error")) {
       setComposerWarning("Remove the failed attachments (marked in red) before sending.");
+      return false;
+    }
+    const images = items.filter(
+      (item) => item && typeof item === "object" && typeof item.dataUrl === "string"
+    );
+    if (images.length > IMAGE_LIMITS.count) {
+      setComposerWarning(`You can attach up to ${IMAGE_LIMITS.count} images per message.`);
+      return false;
+    }
+    const totalImageBytes = images.reduce((sum, item) => sum + (Number(item.size) || 0), 0);
+    if (totalImageBytes > IMAGE_LIMITS.totalBytes) {
+      setComposerWarning(
+        `Images are limited to ${formatBytes(IMAGE_LIMITS.totalBytes)} per message. Remove one before sending.`
+      );
       return false;
     }
     return true;
@@ -1894,9 +2027,7 @@ export default function ChatPage() {
     ) return;
 
     if (requestText.length > MAX_USER_MESSAGE_CHARS) {
-      setComposerWarning(
-        "That message and its attached text are too long. Keep the total under 32,000 characters."
-      );
+      setComposerWarning(USER_MESSAGE_LIMIT_WARNING);
       return;
     }
 
@@ -1919,13 +2050,8 @@ export default function ChatPage() {
     }
 
     if (imagePayload.length > 0 && selectedRow?.vision === false) {
-      const visionModels = catalog
-        .filter((row) => row.vision === true)
-        .map((row) => row.name);
       setNotice(
-        visionModels.length > 0
-          ? `The selected model (${modelKey}) does not accept image inputs. Try a vision-capable model instead: ${visionModels.join(", ")}.`
-          : `The selected model (${modelKey}) does not accept image inputs. Connect a vision-capable provider in API settings.`
+        `The selected model (${modelKey}) does not accept images. Choose a vision-capable model in API settings.`
       );
       return;
     }
@@ -2315,8 +2441,6 @@ export default function ChatPage() {
     const lastUser = messages[lastUserIdx];
     const history = messages.slice(0, lastUserIdx + 1);
     const attachments = [...(lastUser.images || []), ...(lastUser.textFiles || [])];
-    const allowed = await authorizeNativeAttachments(attachments);
-    if (!allowed) return;
     // Live attachments still carry their data URLs, so a retry resends the
     // image; attachments restored from history (metadata only) fall back to
     // a text-only retry rather than failing.
@@ -2498,13 +2622,18 @@ export default function ChatPage() {
               onStop={handleStop}
               onGenerateImage={handleGenerateImage}
               onAttach={pickAttachments}
+              onPickFolder={
+                nativeShell === NATIVE_SHELLS.windows ? pickFolderAttachments : undefined
+              }
+              onReleaseFolder={releaseFolderAttachment}
+              onPrepareAttachments={prepareComposerAttachments}
+              onRetryAttachment={retryComposerAttachment}
               onDictate={handleDictate}
               attachmentMode={nativeShell ? "native" : "images"}
               attachmentAccept={
-                nativeShell ? TEXT_ATTACHMENT_ACCEPT_ATTR : ACCEPTED_IMAGE_ACCEPT_ATTR
+                nativeShell ? NATIVE_ATTACHMENT_ACCEPT_ATTR : ACCEPTED_IMAGE_ACCEPT_ATTR
               }
               showCamera={nativeShell === NATIVE_SHELLS.android}
-              showFolder={nativeShell === NATIVE_SHELLS.windows}
               permissionControl={
                 nativeShell === NATIVE_SHELLS.windows ? (
                   <NativeChatControls
@@ -2540,20 +2669,10 @@ export default function ChatPage() {
           </div>
         </footer>
       </main>
-      {permissionRequest ? (
-        <NativePermissionDialog
-          title="Send attached file contents?"
-          description={`${permissionModeInfo(permissionMode).label}: ${permissionRequest.description}`}
-          details={attachmentPermissionDetails(permissionRequest.items)}
-          confirmLabel="Allow and send"
-          onCancel={() => settlePermissionRequest(false)}
-          onConfirm={() => settlePermissionRequest(true)}
-        />
-      ) : null}
       {fullAccessPending ? (
         <NativePermissionDialog
           title="Enable full access?"
-          description="The assistant may read, create, edit, rename, move, copy and delete files, launch installed apps, open files and links, and run PowerShell or cmd commands with real output — without a card for each ordinary action. Protected and sensitive Windows locations still ask, force-terminating an app always asks, and every action is audited. This does not grant administrator rights or bypass Windows access controls."
+          description="The assistant may read, create, edit, rename, move, copy and delete files, launch apps, open files and links, and run PowerShell or cmd commands without a card for each ordinary action. Protected and sensitive Windows locations, force-terminating an app, and administrator rights still ask or stay blocked, and every action is audited."
           confirmLabel="Enable full access"
           tone="danger"
           onCancel={() => setFullAccessPending(false)}

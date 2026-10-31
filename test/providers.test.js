@@ -96,6 +96,32 @@ test("Qoder Cloud Agents is supported through its documented session protocol", 
   assert.ok(filterProviders({ search: "cloud agents", category: "aggregator" }).some(item => item.id === "qoder"));
 });
 
+test("Kilo Gateway is a supported OpenAI-compatible aggregator at its documented endpoint", () => {
+  const entry = providerById("kilo-gateway");
+  assert.ok(entry, "kilo-gateway entry missing");
+  assert.equal(entry.name, "Kilo Gateway");
+  assert.equal(entry.category, "aggregator");
+  assert.equal(entry.status, "supported");
+  assert.equal(entry.compatibility, "openai");
+  assert.equal(entry.baseUrl, "https://ai-gateway.kilo.ai/api/v1");
+  assert.equal(entry.docsUrl, "https://kilo.ai/docs/gateway");
+  assert.equal(entry.keysUrl, "https://app.kilo.ai/");
+  assert.ok(!entry.baseUrl.includes("/chat/completions"), "the base URL never carries the operation path");
+  assert.deepEqual(entry.suggestedModels, [
+    { id: "anthropic/claude-sonnet-4.5", name: "Claude Sonnet 4.5" }
+  ]);
+  assert.ok(matchesProvider(entry, "kilo"));
+  assert.ok(matchesProvider(entry, "kilo.ai"));
+  assert.ok(filterProviders({ search: "gateway", category: "aggregator" }).some(item => item.id === "kilo-gateway"));
+});
+
+test("every provider note stays within two sentences", () => {
+  for (const entry of PROVIDERS) {
+    const sentences = (entry.note.match(/[.!?](?=\s|$)/g) || []).length;
+    assert.ok(sentences <= 2, `${entry.id} note has ${sentences} sentence ends`);
+  }
+});
+
 test("external links are https, and base URLs are https or local http", () => {
   for (const entry of PROVIDERS) {
     for (const field of URL_FIELDS) {
@@ -140,16 +166,17 @@ test("AgentRouter targets the documented agent host, not the CLI-gated one", () 
   assert.match(entry.cost, /no free tier is documented/i);
 });
 
-test("AgentRouter suggests the configured model IDs with their display names", () => {
-  const entry = providerById("agentrouter");
-  assert.deepEqual(entry.suggestedModels, [
+test("provider model suggestions stay scoped to the provider that owns them", () => {
+  assert.deepEqual(providerById("agentrouter").suggestedModels, [
     { id: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
     { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
     { id: "glm-5.3", name: "GLM-5.3" }
   ]);
-  // Suggestions stay scoped to the provider that owns them.
-  const others = PROVIDERS.filter(provider => provider.id !== "agentrouter" && provider.suggestedModels);
-  assert.deepEqual(others.map(provider => provider.id), []);
+  assert.deepEqual(providerById("kilo-gateway").suggestedModels, [
+    { id: "anthropic/claude-sonnet-4.5", name: "Claude Sonnet 4.5" }
+  ]);
+  const withSuggestions = PROVIDERS.filter(provider => provider.suggestedModels).map(provider => provider.id).sort();
+  assert.deepEqual(withSuggestions, ["agentrouter", "kilo-gateway"]);
 });
 
 test("Google Gemini uses its documented OpenAI-compatible endpoint and discloses free-tier limits", () => {

@@ -2,17 +2,19 @@ import { Fragment, isValidElement, useCallback, useEffect, useLayoutEffect, useM
 import { animate, useMotionValue, useMotionValueEvent, useReducedMotion } from 'motion/react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
+  AlertCircleIcon,
   ArrowDown01Icon,
   Attachment01Icon,
   Camera01Icon,
   Cancel01Icon,
   Delete02Icon,
-  Edit01Icon,
   File02Icon,
+  Folder02Icon,
   FolderAddIcon,
   HelpCircleIcon,
   Key01Icon,
   Mic01Icon,
+  RefreshIcon,
   SparklesIcon,
   StarIcon,
   Tick02Icon
@@ -120,6 +122,239 @@ function SendGlyph({ busy, morphDuration, squash, tilt }) {
   );
 }
 
+const ATTACHMENT_STATUS_LABEL = {
+  scanning: 'Scanning…',
+  preparing: 'Preparing…',
+  reading: 'Reading…',
+  ready: 'Ready',
+  error: 'Failed',
+  cancelled: 'Cancelled'
+};
+
+function mergeSelectionSummary(previous, next) {
+  if (!next) return previous;
+  if (!previous) return next;
+  return {
+    selected: (Number(previous.selected) || 0) + (Number(next.selected) || 0),
+    attached: (Number(previous.attached) || 0) + (Number(next.attached) || 0),
+    failed: (Number(previous.failed) || 0) + (Number(next.failed) || 0),
+    skipped: [...(previous.skipped || []), ...(next.skipped || [])]
+  };
+}
+
+function AttachmentStatus({ item }) {
+  const label = ATTACHMENT_STATUS_LABEL[item?.status];
+  if (!label) return null;
+  return (
+    <span className="prompt-bar__attach-status" data-status={item.status}>
+      {label}
+    </span>
+  );
+}
+
+function AttachmentIcon({ item, size = 16 }) {
+  return (
+    <span className="prompt-bar__attach-icon" aria-hidden="true">
+      <HugeiconsIcon
+        icon={item?.kind === 'folder' ? Folder02Icon : File02Icon}
+        size={size}
+        strokeWidth={1.8}
+      />
+    </span>
+  );
+}
+
+function FolderCard({ item, disabled, onRemove, onRetry }) {
+  const plan = item.readPlan;
+  const entries = Array.isArray(item.entries) ? item.entries : [];
+  const imageTotal = entries.filter(entry => entry?.kind === 'image').length;
+  const imageMeta = plan
+    ? imageTotal > plan.images.length
+      ? `${plan.images.length} of ${imageTotal} images on send`
+      : `${plan.images.length} image${plan.images.length === 1 ? '' : 's'} on send`
+    : '';
+  const meta = [
+    `${(Number(item.fileCount) || 0).toLocaleString()} files`,
+    chipSize(item.totalBytes),
+    plan ? `${plan.text.length} text · ${imageMeta}` : ''
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const progress = item.progress;
+  const progressText =
+    progress && progress.total
+      ? `${Math.min(progress.processed || 0, progress.total).toLocaleString()} of ${progress.total.toLocaleString()} files`
+      : '';
+  return (
+    <div
+      className="prompt-bar__attach-card prompt-bar__attach-card--folder"
+      data-status={item.status || 'ready'}
+      data-scanned={item.truncated ? '' : undefined}
+    >
+      <AttachmentIcon item={item} size={18} />
+      <div className="prompt-bar__attach-body">
+        <div className="prompt-bar__attach-head">
+          <span className="prompt-bar__attach-name" title={item.path || item.name}>
+            {item.name}
+          </span>
+          <AttachmentStatus item={item} />
+        </div>
+        <span className="prompt-bar__attach-meta">{meta}</span>
+        {progressText ? (
+          <span className="prompt-bar__attach-progress">{progressText} read</span>
+        ) : null}
+        {item.status === 'cancelled' ? (
+          <span className="prompt-bar__attach-note">Reading cancelled — send again to retry.</span>
+        ) : null}
+        {item.status === 'error' && item.error ? (
+          <span className="prompt-bar__attach-note" data-error="">
+            {item.error}
+          </span>
+        ) : null}
+        <span
+          className="prompt-bar__attach-note"
+          title="Includes .env, key files, .git, node_modules, and build output"
+        >
+          Includes hidden files
+        </span>
+      </div>
+      <div className="prompt-bar__attach-actions">
+        {item.status === 'error' || item.status === 'cancelled' ? (
+          <button
+            type="button"
+            className="prompt-bar__attach-action"
+            aria-label={`Retry ${item.name}`}
+            title="Retry"
+            disabled={disabled}
+            onClick={() => onRetry?.()}
+          >
+            <HugeiconsIcon icon={RefreshIcon} size={12} strokeWidth={2.2} />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="prompt-bar__attach-action"
+          aria-label={`Remove ${item.name}`}
+          title="Remove"
+          disabled={disabled}
+          onClick={() => onRemove?.()}
+        >
+          <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={2.5} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FileCard({ item, disabled, onRemove, onRetry, onOpen, retrying, previewOpen = false }) {
+  const failed = item.status === 'error';
+  const pasted = !failed && isPastedTextAttachment(item);
+  const kindLabel = pasted
+    ? PASTE_TYPE_LABEL
+    : item.kind === 'text'
+      ? 'Text file'
+      : item.kind === 'image'
+        ? 'Image'
+        : 'File';
+  const meta = [
+    kindLabel,
+    item.size ? (pasted ? formatPromptSize(item.size) : chipSize(item.size)) : '',
+    item.converted ? 'converted' : ''
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const body = (
+    <>
+      <AttachmentIcon item={item} />
+      <span className="prompt-bar__attach-body">
+        <span className="prompt-bar__attach-head">
+          <span className="prompt-bar__attach-name" title={item.path || item.name}>
+            {item.name}
+          </span>
+          <AttachmentStatus item={item} />
+        </span>
+        <span className="prompt-bar__attach-meta">{meta}</span>
+        {failed && item.error ? (
+          <span className="prompt-bar__attach-note" data-error="">
+            {item.error}
+          </span>
+        ) : null}
+      </span>
+    </>
+  );
+  return (
+    <div className="prompt-bar__attach-card" data-status={item.status || 'ready'} data-error={failed ? '' : undefined}>
+      {onOpen ? (
+        <button
+          type="button"
+          className="prompt-bar__attach-main"
+          aria-label={`Preview ${item.name}`}
+          aria-expanded={previewOpen}
+          onClick={onOpen}
+        >
+          {body}
+        </button>
+      ) : (
+        <span className="prompt-bar__attach-main">{body}</span>
+      )}
+      <div className="prompt-bar__attach-actions">
+        {failed && item.retryFile ? (
+          <button
+            type="button"
+            className="prompt-bar__attach-action"
+            aria-label={`Retry ${item.name}`}
+            title="Retry"
+            disabled={disabled || retrying}
+            onClick={() => onRetry?.()}
+          >
+            <HugeiconsIcon icon={RefreshIcon} size={12} strokeWidth={2.2} />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="prompt-bar__attach-action"
+          aria-label={`Remove ${item.name}`}
+          title="Remove"
+          disabled={disabled}
+          onClick={() => onRemove?.()}
+        >
+          <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={2.5} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ImageTile({ item, disabled, onRemove }) {
+  const failed = item.status === 'error';
+  const thumb = item.thumbUrl || item.dataUrl;
+  const label = `${item.name || 'Image'}${item.size ? ` · ${chipSize(item.size)}` : ''}`;
+  return (
+    <div
+      className="prompt-bar__attach-tile"
+      data-error={failed ? '' : undefined}
+      data-status={item.status || 'ready'}
+      title={failed ? `${item.name || 'Image'}: ${item.error || 'Failed'}` : label}
+    >
+      {thumb ? <img src={thumb} alt="" loading="lazy" /> : <HugeiconsIcon icon={File02Icon} size={18} strokeWidth={1.8} />}
+      {failed ? <span className="prompt-bar__attach-tile-flag">!</span> : null}
+      {item.status === 'cancelled' ? (
+        <span className="prompt-bar__attach-tile-flag">–</span>
+      ) : null}
+      <button
+        type="button"
+        className="prompt-bar__attach-remove"
+        aria-label={`Remove ${item.name || 'image'}`}
+        disabled={disabled}
+        onClick={() => onRemove?.()}
+      >
+        <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2.8} />
+      </button>
+      <span className="prompt-bar__attach-tile-name">{item.name}</span>
+    </div>
+  );
+}
+
 export default function PromptBar({
   placeholder = 'Ask anything',
   sources = [],
@@ -140,6 +375,10 @@ export default function PromptBar({
   onStop,
   onGenerateImage,
   onAttach,
+  onPickFolder,
+  onReleaseFolder,
+  onPrepareAttachments,
+  onRetryAttachment,
   onDictate,
   permissionControl = null,
   attachmentMode = 'images',
@@ -151,7 +390,6 @@ export default function PromptBar({
   attachmentAccept = 'image/png,image/jpeg,image/webp,image/gif',
   pasteMinBytes = PASTE_MIN_BYTES,
   showCamera = false,
-  showFolder = false,
   background = '#111c2e',
   color = '#e9eef7',
   menuBackground = '#16233a',
@@ -171,8 +409,8 @@ export default function PromptBar({
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
-  const folderInputRef = useRef(null);
   const sendingCheck = useRef(false);
+  const prepAbortRef = useRef(null);
   const glowRef = useRef(null);
   const sparkRef = useRef(null);
   const typing = useRef({ energy: 0, strokes: 0 });
@@ -190,6 +428,10 @@ export default function PromptBar({
     onStop,
     onGenerateImage,
     onAttach,
+    onPickFolder,
+    onReleaseFolder,
+    onPrepareAttachments,
+    onRetryAttachment,
     onDictate,
     onEffortChange,
     onModelChange,
@@ -200,6 +442,8 @@ export default function PromptBar({
 
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState([]);
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
   const [pasteView, setPasteView] = useState(null);
   const [modelKey, setModelKey] = useState(defaultModel);
   const [plusOpen, setPlusOpen] = useState(false);
@@ -219,6 +463,13 @@ export default function PromptBar({
   const [pressed, setPressed] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [modelMenuMaxHeight, setModelMenuMaxHeight] = useState(360);
+  const [attaching, setAttaching] = useState(0);
+  const [scanning, setScanning] = useState(false);
+  const [preparing, setPreparing] = useState(null);
+  const [attachError, setAttachError] = useState('');
+  const [summary, setSummary] = useState(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [retryingId, setRetryingId] = useState('');
 
   const model = models.find(m => m.key === modelKey) ?? models[0];
   useEffect(() => {
@@ -227,11 +478,6 @@ export default function PromptBar({
     if (typeof draftValue === 'string') setDraft(draftValue);
     requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
   }, [draftSignal, draftValue]);
-  useEffect(() => {
-    if (!showFolder) return;
-    folderInputRef.current?.setAttribute('webkitdirectory', '');
-    folderInputRef.current?.setAttribute('directory', '');
-  }, [showFolder]);
   const lastDefault = useRef(null);
   useEffect(() => {
     if (defaultModel === lastDefault.current) return;
@@ -283,13 +529,16 @@ export default function PromptBar({
   const cursor = Math.min(active, Math.max(0, list.length - 1));
   const canSend = draft.trim().length > 0 || attachments.length > 0;
   const canGenerate = draft.trim().length > 0 && !busy && !generating;
-  const armed = busy || canSend;
+  const armed = busy || Boolean(preparing) || canSend;
+  const folderFileCount = attachments.filter(
+    item => item && item.status !== 'error' && item.kind !== 'image'
+  ).length;
   const level = efforts[effortIndex] ?? '';
   const maxed = efforts.length > 1 && effortIndex === efforts.length - 1;
 
   const focusInput = () => inputRef.current?.focus({ preventScroll: true });
 
-  const collectFiles = useCallback(fileList => {
+  const collectFiles = useCallback((fileList, options = {}) => {
     const native = latest.current.attachmentMode === 'native';
     const files = [...(fileList || [])].filter(
       file =>
@@ -297,10 +546,24 @@ export default function PromptBar({
         (native || (typeof file.type === 'string' && file.type.startsWith('image/')))
     );
     if (files.length === 0) return;
-    Promise.resolve(latest.current.onAttach?.(files)).then(items => {
-      if (!items) return;
-      setAttachments(current => [...current, ...(Array.isArray(items) ? items : [items])]);
-    }).catch(() => {});
+    setAttaching(count => count + 1);
+    setAttachError('');
+    Promise.resolve(latest.current.onAttach?.(files, { ...options, existing: attachmentsRef.current }))
+      .then(result => {
+        if (!result) return;
+        const items = Array.isArray(result) ? result : result.items;
+        const nextSummary = Array.isArray(result) ? null : result.summary;
+        if (!items?.length && !nextSummary?.skipped?.length) return;
+        setAttachments(current => [...current, ...(items || [])]);
+        if (nextSummary) {
+          setSummary(current => mergeSelectionSummary(current, nextSummary));
+          setSummaryOpen(false);
+        }
+      })
+      .catch(error => {
+        setAttachError(error?.message || 'Those files could not be attached.');
+      })
+      .finally(() => setAttaching(count => Math.max(0, count - 1)));
   }, []);
 
   useEffect(() => {
@@ -309,10 +572,75 @@ export default function PromptBar({
     if (externalFiles?.length) collectFiles(externalFiles);
   }, [externalFilesSignal, externalFiles, collectFiles]);
 
+  const pickFolder = async () => {
+    if (!latest.current.onPickFolder || scanning || preparing) return;
+    setScanning(true);
+    setAttachError('');
+    try {
+      const result = await latest.current.onPickFolder({ existing: attachmentsRef.current });
+      if (!result) return;
+      const items = Array.isArray(result) ? result : result.items;
+      const nextSummary = Array.isArray(result) ? null : result.summary;
+      setAttachments(current => [...current, ...(items || [])]);
+      if (nextSummary) {
+        setSummary(current => mergeSelectionSummary(current, nextSummary));
+        setSummaryOpen(false);
+      }
+    } catch (error) {
+      setAttachError(error?.message || 'That folder could not be attached.');
+    } finally {
+      setScanning(false);
+    }
+  };
+
   const removeAttachment = index => {
+    if (preparing) return;
     const target = attachments[index];
+    if (target?.kind === 'folder') latest.current.onReleaseFolder?.(target);
     setAttachments(current => current.filter((_, j) => j !== index));
     if (target && pasteView?.id === target.id) setPasteView(null);
+  };
+
+  const retryAttachment = async index => {
+    const target = attachments[index];
+    if (!target || preparing) return;
+    if (target.kind === 'folder') {
+      setAttachments(current =>
+        current.map((item, i) =>
+          i === index ? { ...item, status: 'ready', error: '', progress: null } : item
+        )
+      );
+      setAttachError('');
+      return;
+    }
+    if (!latest.current.onRetryAttachment || !target.retryFile) return;
+    setRetryingId(target.id || String(index));
+    setAttachError('');
+    try {
+      const result = await latest.current.onRetryAttachment(target);
+      if (!result?.item) return;
+      setAttachments(current =>
+        current.map(item => (item === target ? result.item : item))
+      );
+      if (result.summary?.skipped?.length) {
+        setSummary(current => {
+          const previous = current || { selected: 0, attached: 0, failed: 0, skipped: [] };
+          return {
+            ...previous,
+            skipped: [...(previous.skipped || []), ...result.summary.skipped],
+            attached: (previous.attached || 0) + (result.summary.attached || 0)
+          };
+        });
+      }
+    } catch (error) {
+      setAttachError(error?.message || 'That file could not be retried.');
+    } finally {
+      setRetryingId('');
+    }
+  };
+
+  const openPaste = item => {
+    setPasteView({ id: item.id, mode: 'view', text: item.text });
   };
 
   const savePastedText = () => {
@@ -557,21 +885,113 @@ export default function PromptBar({
     focusInput();
   };
 
+  const cancelPreparation = () => {
+    prepAbortRef.current?.abort();
+  };
+
   const send = async () => {
-    if (!canSend || busy || sendingCheck.current) return;
+    if (busy || sendingCheck.current) return;
+    if (preparing) {
+      cancelPreparation();
+      return;
+    }
+    if (!canSend) return;
     sendingCheck.current = true;
     try {
-      const allowed = await latest.current.beforeSend?.(draft.trim(), attachments);
-      if (allowed === false) return;
-      latest.current.onSend?.(draft.trim(), { attachments, model, effort: level });
+      let outgoing = attachments;
+      const folders = attachments.filter(item => item?.kind === 'folder');
+      if (folders.length > 0) {
+        const folderIds = folders.map(item => item.id);
+        const controller = new AbortController();
+        prepAbortRef.current = controller;
+        setPreparing({ processed: 0, total: folders.length });
+        setAttachError('');
+        setAttachments(current =>
+          current.map(item =>
+            folderIds.includes(item.id)
+              ? { ...item, status: 'preparing', error: '', progress: null }
+              : item
+          )
+        );
+        try {
+          const result = await latest.current.onPrepareAttachments?.(attachments, {
+            signal: controller.signal,
+            onProgress: progress => {
+              setPreparing({ processed: progress.processed || 0, total: progress.total || 0 });
+              setAttachments(current =>
+                current.map(item =>
+                  item.kind === 'folder' &&
+                  (!progress.folder || item.name === progress.folder) &&
+                  (item.status === 'preparing' || item.status === 'reading')
+                    ? {
+                        ...item,
+                        status: 'reading',
+                        progress: { processed: progress.processed || 0, total: progress.total || 0 }
+                      }
+                    : item
+                )
+              );
+            }
+          });
+          if (!result?.items) throw new Error('The folder contents could not be read.');
+          outgoing = result.items;
+          if (result.summary) {
+            setSummary({ ...result.summary, failures: [] });
+            setSummaryOpen(false);
+          }
+        } catch (error) {
+          if (error?.name === 'AbortError' || controller.signal.aborted) {
+            setAttachments(current =>
+              current.map(item =>
+                folderIds.includes(item.id)
+                  ? { ...item, status: 'cancelled', progress: null, error: '' }
+                  : item
+              )
+            );
+            setAttachError('Folder reading was cancelled. Nothing was sent.');
+          } else {
+            const message = error?.message || 'The folder contents could not be read.';
+            setAttachments(current =>
+              current.map(item =>
+                folderIds.includes(item.id)
+                  ? { ...item, status: 'error', progress: null, error: message }
+                  : item
+              )
+            );
+            setAttachError(message);
+          }
+          return;
+        } finally {
+          if (prepAbortRef.current === controller) prepAbortRef.current = null;
+          setPreparing(null);
+        }
+      }
+      const allowed = await latest.current.beforeSend?.(draft.trim(), outgoing, {
+        model,
+        effort: level
+      });
+      if (allowed === false) {
+        // Preparation succeeded but the send was rejected, so the cards must
+        // drop their “reading” state or they look stuck forever.
+        setAttachments(current =>
+          current.map(item =>
+            folderIds.includes(item.id) ? { ...item, status: 'ready', progress: null } : item
+          )
+        );
+        return;
+      }
+      latest.current.onSend?.(draft.trim(), { attachments: outgoing, model, effort: level });
       setDraft('');
       setAttachments([]);
       setPasteView(null);
+      setSummary(null);
+      setSummaryOpen(false);
+      setAttachError('');
       setDismissed(false);
       closeMenus();
       focusInput();
     } catch {
-      /* keep the draft when permission or validation cannot be completed */
+      /* keep the draft when validation cannot be completed */
     } finally {
       sendingCheck.current = false;
     }
@@ -641,6 +1061,26 @@ export default function PromptBar({
     setPressed(true);
   };
   const up = () => setPressed(false);
+
+  const skippedRows = Array.isArray(summary?.skipped) ? summary.skipped : [];
+  const failureRows = attachments
+    .filter(item => item?.status === 'error')
+    .map(item => ({
+      name: item.name || 'File',
+      path: item.path || '',
+      reason: item.error || 'This file could not be read.'
+    }));
+  const detailRows = [...failureRows, ...skippedRows];
+  const visibleDetailRows = detailRows.slice(0, 40);
+  const hiddenDetailCount = detailRows.length - visibleDetailRows.length;
+  const attachedCount = attachments.filter(item => item && item.status !== 'error').length;
+  const failedCount = failureRows.length;
+  const summaryParts = [
+    attachedCount > 0 ? `${attachedCount.toLocaleString()} attached` : '',
+    failedCount > 0 ? `${failedCount.toLocaleString()} failed` : '',
+    skippedRows.length > 0 ? `${skippedRows.length.toLocaleString()} skipped` : ''
+  ].filter(Boolean);
+  const summaryText = summaryParts.join(' · ');
 
   return (
     <div
@@ -993,76 +1433,128 @@ export default function PromptBar({
             )}
           </div>
         ) : null}
+        {scanning || attaching > 0 || preparing ? (
+          <div className="prompt-bar__attach-busy" role="status">
+            <span className="prompt-bar__spinner" aria-hidden="true" />
+            <span>
+              {scanning
+                ? 'Scanning folder…'
+                : preparing
+                  ? 'Reading folder contents…'
+                  : `Reading ${attaching} selection${attaching === 1 ? '' : 's'}…`}
+            </span>
+            {preparing ? (
+              <button type="button" className="prompt-bar__attach-link" onClick={cancelPreparation}>
+                Cancel
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {attachError ? (
+          <div className="prompt-bar__attach-error-strip" role="alert">
+            <HugeiconsIcon icon={AlertCircleIcon} size={13} strokeWidth={2} />
+            <span>{attachError}</span>
+            <button
+              type="button"
+              className="prompt-bar__attach-action"
+              aria-label="Dismiss attachment error"
+              onClick={() => setAttachError('')}
+            >
+              <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2.5} />
+            </button>
+          </div>
+        ) : null}
         {attachments.length > 0 ? (
-          <div className="prompt-bar__chips">
+          <div className="prompt-bar__attachments" aria-label="Attachments">
             {attachments.map((item, i) => {
-              const isItem = item && typeof item === 'object';
-              const label = isItem ? item.name || 'image' : String(item);
-              const thumb = isItem ? item.dataUrl || item.previewUrl : null;
-              const failed = isItem && item.status === 'error';
-              const pasted = isItem && !failed && isPastedTextAttachment(item);
-              const size = isItem && item.size ? (pasted ? formatPromptSize(item.size) : chipSize(item.size)) : '';
-              if (pasted) {
+              if (!item || typeof item !== 'object') return null;
+              const disabled = Boolean(preparing);
+              const key = item.id ?? `${item.name || 'attachment'}-${i}`;
+              if (item.kind === 'folder') {
                 return (
-                  <span
-                    key={item.id ?? i}
-                    className="prompt-bar__chip prompt-bar__chip--paste"
-                    title={`${label} · ${PASTE_TYPE_LABEL} · ${size}`}
-                  >
-                    <button
-                      type="button"
-                      className="prompt-bar__chip-open"
-                      aria-expanded={pasteView?.id === item.id}
-                      aria-label={`Preview pasted prompt ${label}`}
-                      onClick={() => setPasteView({ id: item.id, mode: 'view', text: item.text })}
-                    >
-                      <HugeiconsIcon icon={File02Icon} size={14} strokeWidth={2} />
-                      <span className="prompt-bar__chip-copy">
-                        <span className="prompt-bar__chip-name">{label}</span>
-                        <span className="prompt-bar__chip-kind">
-                          {PASTE_TYPE_LABEL} · {size}
-                        </span>
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      className="prompt-bar__chip-x"
-                      aria-label={`Remove ${label}`}
-                      onClick={() => removeAttachment(i)}
-                    >
-                      <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2.5} />
-                    </button>
-                  </span>
+                  <FolderCard
+                    key={key}
+                    item={item}
+                    disabled={disabled}
+                    onRemove={() => removeAttachment(i)}
+                    onRetry={() => retryAttachment(i)}
+                  />
                 );
               }
+              if (typeof item.dataUrl === 'string') {
+                return (
+                  <ImageTile
+                    key={key}
+                    item={item}
+                    disabled={disabled}
+                    onRemove={() => removeAttachment(i)}
+                  />
+                );
+              }
+              const pasted = item.status !== 'error' && isPastedTextAttachment(item);
               return (
-                <span
-                  key={isItem ? item.id ?? i : `${item}-${i}`}
-                  className={`prompt-bar__chip${thumb ? ' prompt-bar__chip--image' : ''}`}
-                  data-error={failed ? '' : undefined}
-                  data-folder={isItem && item.source === 'folder' ? '' : undefined}
-                  title={failed ? item.error || label : [label, size].filter(Boolean).join(' · ')}
-                >
-                  {thumb ? (
-                    <span className="prompt-bar__chip-thumb" aria-hidden="true">
-                      <img src={thumb} alt="" />
-                    </span>
-                  ) : (
-                    <HugeiconsIcon icon={File02Icon} size={12} strokeWidth={2} />
-                  )}
-                  <span className="prompt-bar__chip-name">{label}</span>
-                  {size ? <span className="prompt-bar__chip-size">{size}</span> : null}
-                  <button
-                    type="button"
-                    className="prompt-bar__chip-x"
-                    aria-label={`Remove ${label}`}
-                    onClick={() => removeAttachment(i)}
-                  >
-                    <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2.5} />
-                  </button>
-                </span>
+                <FileCard
+                  key={key}
+                  item={item}
+                  disabled={disabled}
+                  retrying={retryingId === (item.id || String(i))}
+                  previewOpen={Boolean(pasted && pasteView?.id === item.id)}
+                  onOpen={pasted ? () => openPaste(item) : undefined}
+                  onRemove={() => removeAttachment(i)}
+                  onRetry={() => retryAttachment(i)}
+                />
               );
             })}
+          </div>
+        ) : null}
+        {summary && summaryText ? (
+          <div className="prompt-bar__attach-summary" role="status">
+            <HugeiconsIcon
+              icon={failedCount > 0 ? AlertCircleIcon : Tick02Icon}
+              size={12}
+              strokeWidth={2}
+            />
+            <span className="prompt-bar__attach-summary-text">{summaryText}</span>
+            {detailRows.length > 0 ? (
+              <button
+                type="button"
+                className="prompt-bar__attach-link"
+                aria-expanded={summaryOpen}
+                onClick={() => setSummaryOpen(value => !value)}
+              >
+                {summaryOpen ? 'Hide details' : 'Details'}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="prompt-bar__attach-action"
+              aria-label="Dismiss attachment summary"
+              onClick={() => {
+                setSummary(null);
+                setSummaryOpen(false);
+              }}
+            >
+              <HugeiconsIcon icon={Cancel01Icon} size={9} strokeWidth={2.5} />
+            </button>
+            {summaryOpen && detailRows.length > 0 ? (
+              <div className="prompt-bar__attach-details prompt-bar__attach-details--summary">
+                {visibleDetailRows.map((entry, i) => (
+                  <span className="prompt-bar__attach-list-row" key={`${entry.path || entry.name}-${i}`}>
+                    <span className="prompt-bar__attach-list-name">
+                      {entry.path || entry.name || 'File'}
+                    </span>
+                    <span className="prompt-bar__attach-list-reason">
+                      {entry.reason || 'Skipped.'}
+                    </span>
+                  </span>
+                ))}
+                {hiddenDetailCount > 0 ? (
+                  <span className="prompt-bar__attach-list-more">
+                    and {hiddenDetailCount.toLocaleString()} more entries
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -1196,17 +1688,22 @@ export default function PromptBar({
           >
             <HugeiconsIcon icon={Attachment01Icon} size={15} strokeWidth={2} />
           </button>
-          {showFolder ? (
+          {onPickFolder ? (
             <button
               type="button"
               className="prompt-bar__tool"
               aria-label="Add folder"
-              title="Add a folder"
+              title={
+                folderFileCount >= 25
+                  ? 'Up to 25 folders and files per message'
+                  : 'Add a folder — contents are read only when you send'
+              }
+              disabled={scanning || Boolean(preparing) || folderFileCount >= 25}
               onMouseDown={e => e.preventDefault()}
               onClick={() => {
                 focusInput();
                 closeMenus();
-                folderInputRef.current?.click();
+                pickFolder();
               }}
             >
               <HugeiconsIcon icon={FolderAddIcon} size={15} strokeWidth={2} />
@@ -1242,7 +1739,7 @@ export default function PromptBar({
             type="button"
             className="prompt-bar__send"
             disabled={!armed}
-            aria-label={busy ? 'Stop' : 'Send'}
+            aria-label={busy ? 'Stop' : preparing ? 'Cancel folder preparation' : 'Send'}
             data-armed={armed ? '' : undefined}
             data-pressed={pressed ? '' : undefined}
             onMouseDown={e => e.preventDefault()}
@@ -1252,10 +1749,16 @@ export default function PromptBar({
             onPointerLeave={up}
             onClick={() => {
               if (busy) latest.current.onStop?.();
+              else if (preparing) cancelPreparation();
               else send();
             }}
           >
-            <SendGlyph busy={busy} morphDuration={morphDuration} squash={squash} tilt={tilt} />
+            <SendGlyph
+              busy={busy || Boolean(preparing)}
+              morphDuration={morphDuration}
+              squash={squash}
+              tilt={tilt}
+            />
           </button>
         </div>
       </div>
@@ -1278,20 +1781,6 @@ export default function PromptBar({
           type="file"
           accept="image/*"
           capture="environment"
-          hidden
-          onChange={e => {
-            collectFiles(e.target.files);
-            e.target.value = '';
-          }}
-        />
-      ) : null}
-      {showFolder ? (
-        <input
-          ref={folderInputRef}
-          className="prompt-bar__file"
-          type="file"
-          accept={attachmentAccept}
-          multiple
           hidden
           onChange={e => {
             collectFiles(e.target.files);

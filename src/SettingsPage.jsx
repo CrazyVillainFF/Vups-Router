@@ -112,7 +112,7 @@ function protocolHelp(type) {
   if (type === "openai_responses") return "OpenAI Responses API. Use the base URL before /responses, e.g. https://api.openai.com/v1.";
   if (type === "azure_openai") return "Azure OpenAI v1 endpoint, e.g. https://{resource}.openai.azure.com/openai/v1. The key is sent in the api-key header and the model ID is your deployment name.";
   if (type === "watsonx") return "IBM watsonx: use your regional cluster URL plus ?project_id=YOUR_PROJECT_ID. The IBM Cloud API key is exchanged for an IAM token automatically.";
-  if (type === "qoder_cloud_agents") return "Qoder Cloud Agents. Choose your region — Global (api.qoder.com / openapi.qoder.sh) or China mainland (api.qoder.com.cn / api.qoder.com.cn) — then use either a Personal Access Token, or a service account key which the backend exchanges at the region's OpenAPI host for a short-lived access token (about an hour, renewed automatically). The connection check lists models and falls back to a read-only agents probe; it never creates a session. One chat conversation keeps one Qoder session, so Qoder holds the earlier turns itself; stopping a reply cancels that turn and a busy session is reported instead of queued.";
+  if (type === "qoder_cloud_agents") return "Qoder Cloud Agents: Global (https://api.qoder.com) and China mainland (https://api.qoder.com.cn) both accept Personal Access Tokens or a service account key exchanged for a short-lived access token. One chat conversation keeps one Qoder session, the connection check never creates one, and Stop cancels the current turn.";
   if (type === "local_gateway") return "Ollama, LM Studio, vLLM, or another local OpenAI-compatible gateway. The deployed backend cannot reach localhost.";
   if (type === "native") return "A provider-specific API that is not one of the implemented adapters. Saving and chat are disabled for this option.";
   return "OpenAI Chat Completions API. Use the base URL before /chat/completions, e.g. https://api.example.com/v1.";
@@ -496,7 +496,7 @@ export default function SettingsPage({ embedded = false }) {
       return;
     }
     const confirmed = window.confirm(
-      `Send a small test prompt to ${model}? This may consume provider tokens or credits. Connection checks never send inference.`
+      `Send a small test prompt to ${model}? It may consume provider tokens or credits, while connection checks never send inference.`
     );
     if (!confirmed) return;
     setBusy("test-model");
@@ -695,7 +695,7 @@ export default function SettingsPage({ embedded = false }) {
             <Typography component="h1">Provider settings</Typography>
             <p>
               Save as many providers as you like — each keeps its own key, base URL, and models.
-              Keys are encrypted on the server with AES-256-GCM, never stored in your browser, and never shown in full again.
+              Keys are encrypted with AES-256-GCM on the server, never stored in your browser, and never shown in full again.
             </p>
           </div>
 
@@ -1018,12 +1018,12 @@ export default function SettingsPage({ embedded = false }) {
                   placeholder="https://gateway.example.com/v1"
                   helperText={
                     form.providerType === "qoder_cloud_agents"
-                      ? "Regional business endpoint. Global: https://api.qoder.com/api/v1/cloud — China mainland: https://api.qoder.com.cn/api/v1/cloud. Duplicate /api/v1 or /cloud segments are normalized, never silently switched to another region."
+                      ? "Regional business endpoint: Global https://api.qoder.com/api/v1/cloud, China mainland https://api.qoder.com.cn/api/v1/cloud. VupsRouter normalizes duplicate path segments and never switches regions silently."
                       : form.providerType === "watsonx"
                         ? "Regional watsonx cluster URL plus ?project_id=YOUR_PROJECT_ID, e.g. https://us-south.ml.cloud.ibm.com?project_id=…"
                         : form.providerType === "azure_openai"
                           ? "Azure OpenAI v1 endpoint, e.g. https://{resource}.openai.azure.com/openai/v1. Enter it manually."
-                          : "OpenAI-compatible base URL. Extra /chat/completions suffixes are stripped automatically. Localhost only works when the backend runs on the same machine — the deployed backend rejects it with an explanation."
+                          : "OpenAI-compatible base URL; extra /chat/completions suffixes are stripped automatically. Localhost only works when the backend runs on the same machine — the deployed backend rejects it with an explanation."
                   }
                   inputProps={{ maxLength: 500 }}
                   required
@@ -1283,10 +1283,7 @@ export default function SettingsPage({ embedded = false }) {
               <h2>How to configure {registryEntry?.name || savedProvider?.provider}</h2>
               <ol className="settings-guide-steps">
                 <li>Create an API key on the provider's official page {registryEntry?.keysUrl ? "" : "(paste your key below)"} and keep it private — never share API keys.</li>
-                <li>Choose the API protocol and enter the provider's base URL (use <code>Load models</code> or manual entry to confirm the model ID).</li>
-                <li>Save the provider, then press <b>Check connection</b> — it only reads the model list and never sends inference. Use <b>Test model</b> separately; it sends a tiny prompt and may consume provider tokens.</li>
-                <li>Local gateways (Ollama, FlagshipRouter, vLLM, LM Studio) only work when the backend can reach them. A deployed backend cannot reach <code>localhost</code> — use a public HTTPS tunnel or run VupsRouter locally.</li>
-                <li>Switch chat between providers any time with <b>Use for chat</b> — every provider keeps its own key and models.</li>
+                <li>Enter the base URL and model ID, save, then use <b>Check connection</b> (lists models only) or <b>Test model</b> (sends a tiny prompt that may consume tokens).</li>
               </ol>
               {registryEntry && <GuideLinks entry={registryEntry} />}
               <Link to="/chat" className="settings-chat-link">Go to chat →</Link>
@@ -1297,9 +1294,7 @@ export default function SettingsPage({ embedded = false }) {
             <h2>Security</h2>
             <ul>
               <li>Keys are encrypted with AES-256-GCM using a server-side secret and are never returned to the browser — only a masked preview.</li>
-              <li>Localhost and private-network base URLs are rejected on production servers with an explanation, so a local gateway failure is never misreported as an invalid key.</li>
-              <li><b>Check connection</b> never runs inference. Only the explicit <b>Test model</b> action sends a small prompt, and it always asks for confirmation first.</li>
-              <li>Deleting a provider removes only that provider's configuration; all others stay untouched.</li>
+              <li><b>Check connection</b> never runs inference; only the confirmed <b>Test model</b> action sends a small prompt, and deleting one provider never touches the others.</li>
             </ul>
           </section>
         </div>

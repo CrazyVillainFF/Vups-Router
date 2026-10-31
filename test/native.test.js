@@ -14,9 +14,7 @@ import {
 import {
   DEFAULT_PERMISSION_MODE,
   WINDOWS_PERMISSION_STORAGE_KEY,
-  attachmentPermissionDetails,
   loadPermissionMode,
-  permissionDecision,
   savePermissionMode
 } from "../src/native/permissions.js";
 import {
@@ -35,18 +33,6 @@ function memoryStorage(initial = {}) {
   return {
     getItem: key => (data.has(key) ? data.get(key) : null),
     setItem: (key, value) => data.set(key, String(value))
-  };
-}
-
-function attachment(overrides = {}) {
-  return {
-    id: "att-1",
-    name: "notes.md",
-    size: 2048,
-    status: "ready",
-    kind: "text",
-    source: "picker",
-    ...overrides
   };
 }
 
@@ -156,82 +142,88 @@ test("Windows permission defaults to ask every time and persists", () => {
   assert.equal(savePermissionMode(storage, "invalid"), "ask");
 });
 
-test("permission modes are enforced from actual attachment provenance", () => {
-  assert.deepEqual(permissionDecision("ask", []), {
-    allowed: true,
-    requiresConfirmation: false,
-    items: []
-  });
-  assert.equal(permissionDecision("ask", [attachment()]).requiresConfirmation, true);
-  assert.equal(
-    permissionDecision("workspace", [attachment({ source: "folder" })]).requiresConfirmation,
-    false
+test("composer file picks never raise a second permission card", () => {
+  const chat = read("src/ChatPage.jsx");
+  const prompt = read("src/components/reactbits/PromptBar.jsx");
+  assert.doesNotMatch(chat, /authorizeNativeAttachments/);
+  assert.doesNotMatch(chat, /permissionDecision\(/);
+  assert.doesNotMatch(chat, /pendingPermissionResolve/);
+  const beforeSend = chat.slice(
+    chat.indexOf("async function beforeComposerSend"),
+    chat.indexOf("function preserveUnsyncedChat")
   );
-  assert.equal(
-    permissionDecision("workspace", [attachment({ source: "workspace" })]).requiresConfirmation,
-    false,
-    "files already read through the native workspace bridge are in scope"
-  );
-  assert.equal(
-    permissionDecision("workspace", [
-      attachment({ id: "att-1", source: "workspace" }),
-      attachment({ id: "att-2", source: "picker" })
-    ]).requiresConfirmation,
-    true,
-    "one out-of-scope attachment still requires confirmation"
-  );
-  assert.equal(
-    permissionDecision("ask", [attachment({ source: "workspace" })]).requiresConfirmation,
-    true,
-    "Ask mode confirms workspace files too"
-  );
-  assert.equal(
-    permissionDecision("workspace", [attachment({ source: "picker" })]).requiresConfirmation,
-    true
-  );
-  assert.equal(permissionDecision("full", [attachment()]).requiresConfirmation, false);
-  assert.equal(permissionDecision("full", [attachment({ status: "error" })]).items.length, 0);
+  assert.match(beforeSend, /if \(!canSubmitComposer\(text, attachments\)\) return false;/);
+  // A model that cannot read images blocks before the composer clears the draft.
+  assert.match(beforeSend, /does not accept images\. Choose a vision-capable model/);
+  // Folder picks use a dedicated composer command instead of the approval broker.
+  assert.match(chat, /pickComposerFolder\(\)/);
+  assert.match(prompt, /onPickFolder/);
+  assert.doesNotMatch(prompt, /webkitdirectory/);
+  // The assistant's own local operations still pass through the approval broker.
+  assert.match(chat, /onDesktopToolApproval/);
 });
 
-test("permission dialog details never expose file contents", () => {
-  const details = attachmentPermissionDetails([
-    attachment({ text: "secret contents" }),
-    attachment({ id: "att-2", name: "photo.png", source: "folder", size: 1024 }),
-    attachment({ id: "att-3", name: "app.jsx", source: "workspace", path: "src/app.jsx" })
-  ]);
-  assert.equal(details.length, 3);
-  assert.equal(details[0].name, "notes.md");
-  assert.equal(details[0].source, "File pick");
-  assert.equal(details[1].source, "Folder pick");
-  assert.equal(details[2].source, "Workspace file");
-  assert.doesNotMatch(JSON.stringify(details), /secret contents/);
+test("new picks count what is already attached before applying limits", () => {
+  const chat = read("src/ChatPage.jsx");
+  const prompt = read("src/components/reactbits/PromptBar.jsx");
+  assert.match(chat, /async function pickAttachments\(files, \{ source, existing \} = \{\}\)/);
+  assert.match(chat, /const prior = attachmentTotals\(existing\);/);
+  assert.match(chat, /let imageCount = prior\.images;/);
+  assert.match(chat, /let textCount = prior\.texts;/);
+  assert.match(prompt, /existing: attachmentsRef\.current/);
+  assert.match(prompt, /mergeSelectionSummary\(current, nextSummary\)/);
+  // Live card counts keep the strip honest after removal or retry.
+  assert.match(prompt, /const attachedCount = attachments\.filter\(item => item && item\.status !== 'error'\)\.length;/);
+  assert.match(prompt, /const failedCount = failureRows\.length;/);
 });
 
-test("workspace attachments keep their native provenance and relative path", () => {
-  const dialog = read("src/desktop/WorkspaceFilesDialog.jsx");
+test("re-picking an attached file is reported, not duplicated", () => {
+  const chat = read("src/ChatPage.jsx");
+  assert.match(chat, /const originKey = fileIdentity\(file\);/);
+  assert.match(chat, /skipped\.push\(skipRecord\(file, "Already attached to this message\."\)\);/);
+  assert.match(chat, /if \(originKey\) seen\.add\(originKey\);/);
+  assert.match(chat, /\.filter\(item => item && item\.status !== "error"\)/);
+});
+
+test("folder cards stay compact and keep opt-ins inline", () => {
+  const prompt = read("src/components/reactbits/PromptBar.jsx");
+  assert.match(prompt, /const imageTotal = entries\.filter\(entry => entry\?\.kind === 'image'\)\.length;/);
+  assert.match(prompt, /`\$\{plan\.images\.length\} of \$\{imageTotal\} images on send`/);
+  // The card no longer expands a contents tree; skipped files stay in the
+  // composer's Details summary instead of a list under the card.
+  assert.doesNotMatch(prompt, /'Hide contents'|>Contents</);
+  assert.match(prompt, /Includes hidden files/);
+});
+
+test("several folders are allowed with a 25 folder/file cap", () => {
+  const prompt = read("src/components/reactbits/PromptBar.jsx");
+  const chat = read("src/ChatPage.jsx");
+  assert.doesNotMatch(prompt, /Remove the current folder before adding another one/);
+  assert.match(prompt, /folderFileCount >= 25/);
+  assert.match(prompt, /onPickFolder\(\{ existing: attachmentsRef\.current \}\)/);
+  assert.match(chat, /current >= ATTACHMENT_LIMITS\.folderFile/);
+  assert.match(chat, /skipped: \[\]/, "folder picks do not report folder-level skips as file skips");
+});
+
+test("picking a folder includes secret and generated files without toggles", () => {
+  const prompt = read("src/components/reactbits/PromptBar.jsx");
+  assert.doesNotMatch(prompt, /Include secret files/);
+  assert.doesNotMatch(prompt, /Include generated folders/);
+  assert.doesNotMatch(prompt, /onScanOptionsChange/);
+  assert.doesNotMatch(prompt, /const rescanFolder = async/);
+  const rust = read("src-tauri/src/composer_files.rs");
+  assert.match(rust, /impl Default for ScanOptions[\s\S]*include_generated: true,[\s\S]*include_secrets: true,/);
+  assert.doesNotMatch(rust, /composer_rescan_folder/);
+});
+
+test("workspace attachments keep their native provenance and relative path", () => {  const dialog = read("src/desktop/WorkspaceFilesDialog.jsx");
   assert.match(dialog, /workspaceTextFile\(result\.content, path\)/);
   assert.doesNotMatch(dialog, /new File\(\[result\.content\], path/);
 
   const chat = read("src/ChatPage.jsx");
   assert.match(
     chat,
-    /const source = file\.attachmentSource \|\| \(file\.webkitRelativePath \? "folder" : "picker"\);/
-  );
-});
-
-test("a dropped permission request still settles so the composer cannot hang", () => {
-  const chat = read("src/ChatPage.jsx");
-  const body = chat.slice(
-    chat.indexOf("function authorizeNativeAttachments"),
-    chat.indexOf("async function beforeComposerSend")
-  );
-  assert.ok(body.length > 0, "authorizeNativeAttachments must exist");
-  assert.match(body, /pendingPermissionResolve\.current\?\.\(false\);/, "a superseded request must settle");
-  assert.match(body, /resolve: allowed => pendingPermissionResolve\.current\?\.\(allowed\)/);
-  assert.match(
-    chat,
-    /useEffect\(\(\) => \(\) => pendingPermissionResolve\.current\?\.\(false\), \[\]\);/,
-    "unmount must settle a pending request"
+    /const fileSource = source \|\| file\.attachmentSource \|\| \(file\.webkitRelativePath \? "folder" : "picker"\);/
   );
 });
 
@@ -240,12 +232,14 @@ test("native UI wires direct chat, camera, folder access, and unavailable tools 
   const prompt = read("src/components/reactbits/PromptBar.jsx");
   const controls = read("src/native/NativeChatControls.jsx");
   assert.match(chat, /showCamera=\{nativeShell === NATIVE_SHELLS\.android\}/);
-  assert.match(chat, /showFolder=\{nativeShell === NATIVE_SHELLS\.windows\}/);
+  assert.match(chat, /onPickFolder=/);
   assert.match(chat, /NativePermissionDialog/);
   assert.match(prompt, /cameraInputRef/);
-  assert.match(prompt, /folderInputRef/);
+  assert.match(prompt, /onPickFolder/);
+  assert.doesNotMatch(prompt, /folderInputRef|webkitdirectory/);
   assert.match(prompt, /capture="environment"/);
-  assert.match(controls, /Shell, file-write, and administrator actions are not available/);
+  // The access menu stays a plain selector; long explanations are not shown.
+  assert.doesNotMatch(controls, /vr-permission__option-copy|These modes control/);
   assert.match(chat, /permissionControl=\{/);
   assert.match(chat, /<NativeChatControls/);
   assert.match(prompt, /permissionControl/);
@@ -269,7 +263,12 @@ test("the capability governing the loopback origin grants every bridge command",
   const identifiers = capability.permissions.map(entry =>
     typeof entry === "string" ? entry : entry.identifier
   );
-  for (const required of ["core:default", "allow-workspace-commands", "allow-desktop-tools"]) {
+  for (const required of [
+    "core:default",
+    "allow-workspace-commands",
+    "allow-desktop-tools",
+    "allow-composer-files"
+  ]) {
     assert.ok(identifiers.includes(required), `${required} missing from the loopback capability`);
   }
 

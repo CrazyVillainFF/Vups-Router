@@ -25,11 +25,6 @@ import {
   readyTextAttachments,
   textAttachmentChars
 } from "../src/chat/attachments.js";
-import {
-  attachmentPermissionDetails,
-  permissionDecision
-} from "../src/native/permissions.js";
-
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = file => readFileSync(path.join(root, file), "utf8");
 const composer = read("src/components/reactbits/PromptBar.jsx");
@@ -208,7 +203,7 @@ test("9. provider and model switches never touch the attached prompt", () => {
   // travels into contentWithTextAttachments with its full text.
   assert.match(
     composer,
-    /latest\.current\.onSend\?\.\(draft\.trim\(\), \{ attachments, model, effort: level \}\)/
+    /latest\.current\.onSend\?\.\(draft\.trim\(\), \{ attachments: outgoing, model, effort: level \}\)/
   );
   assert.equal(textAttachmentChars([item]), text.length);
   assert.equal(contentWithTextAttachments("", [item]), text);
@@ -223,8 +218,11 @@ test("9. provider and model switches never touch the attached prompt", () => {
     );
   }
   assert.equal(composer.match(/setAttachments\(\[\]\)/g).length, 1, "only send() empties the array");
-  const sendBody = composer.slice(composer.indexOf("const send = async () =>"));
-  assert.match(sendBody.slice(0, 900), /setAttachments\(\[\]\)[\s\S]*setPasteView\(null\)/);
+  const sendBody = composer.slice(
+    composer.indexOf("const send = async () =>"),
+    composer.indexOf("const toggleListen")
+  );
+  assert.match(sendBody, /setAttachments\(\[\]\)[\s\S]*setPasteView\(null\)/);
 });
 
 test("10. the card survives draft restore and retry re-injection", () => {
@@ -247,17 +245,16 @@ test("11. existing messages and file attachments are unaffected", () => {
   assert.equal(formatTextAttachments([]), "");
 });
 
-test("12. a pasted prompt is not a local file read on Windows", () => {
+test("12. a pasted prompt never becomes a local file read", () => {
   const item = pastedTextAttachment(longPrompt());
-  for (const mode of ["ask", "workspace", "full"]) {
-    const decision = permissionDecision(mode, [item]);
-    assert.equal(decision.allowed, true, mode);
-    assert.equal(decision.requiresConfirmation, false, mode);
-  }
-  assert.deepEqual(attachmentPermissionDetails([item]), []);
-  // A real pick still asks in "ask" mode, and both together asks only for the file.
-  assert.equal(permissionDecision("ask", [item, pickFileItem()]).requiresConfirmation, true);
-  assert.equal(attachmentPermissionDetails([item, pickFileItem()]).length, 1);
+  assert.equal(item.source, "paste");
+  assert.equal(item.token, undefined, "pasted text carries no native folder token");
+  // The composer has no attachment permission gate at all; the model's own
+  // native operations still use the desktop tool approval broker.
+  const chat = read("src/ChatPage.jsx");
+  assert.doesNotMatch(chat, /permissionDecision\(/);
+  assert.match(chat, /onDesktopToolApproval/);
+  assert.match(composer, /pastedTextAttachment\(text\)/);
 });
 
 test("13. preview is capped for rendering while the stored text stays whole", () => {
@@ -274,13 +271,13 @@ test("13. preview is capped for rendering while the stored text stays whole", ()
 });
 
 test("14. the composer renders the card with icon, title, label, size, and actions", () => {
-  assert.match(composer, /prompt-bar__chip--paste/);
-  assert.match(composer, /prompt-bar__chip-open/);
+  assert.match(composer, /prompt-bar__attach-card/);
+  assert.match(composer, /prompt-bar__attach-main/);
   assert.match(composer, /File02Icon/);
-  assert.match(composer, /Edit01Icon/);
-  assert.match(composer, /\{PASTE_TYPE_LABEL\} · \{formatPromptSize\(utf8ByteLength\(pasteView\.text\)\)\}/);
-  assert.match(composer, /aria-expanded=\{pasteView\?\.id === item\.id\}/);
-  assert.match(composer, /aria-label=\{`Remove \$\{label\}`\}/);
+  assert.match(composer, /\{PASTE_TYPE_LABEL\}/);
+  assert.match(composer, /formatPromptSize\(item\.size\)/);
+  assert.match(composer, /aria-expanded=\{previewOpen\}/);
+  assert.match(composer, /aria-label=\{`Remove \$\{item\.name\}`\}/);
   assert.match(composer, /Close preview; the pasted prompt stays attached/);
   // Removing a card clears its open popover instead of orphaning it.
   assert.match(composer, /if \(target && pasteView\?\.id === target\.id\) setPasteView\(null\);/);
@@ -288,9 +285,8 @@ test("14. the composer renders the card with icon, title, label, size, and actio
   assert.match(composer, /if \(event\.key !== 'Escape'\) return;/);
   // The card itself renders only title + label + size; the body appears in the
   // popover, capped for viewing and full only in the explicit editor.
-  assert.ok(composer.includes("prompt-bar__chip--paste"), "the card needs its own class");
-  assert.ok(composer.includes("prompt-bar__chip-name"), "card needs the derived title");
-  assert.ok(composer.includes("prompt-bar__chip-kind"), "card needs the Pasted Text label and size");
+  assert.ok(composer.includes("prompt-bar__attach-name"), "card needs the derived title");
+  assert.ok(composer.includes("prompt-bar__attach-meta"), "card needs the Pasted Text label and size");
   assert.ok(!composer.includes("{item.text}"), "the card must not render the whole prompt");
   assert.match(composer, /\{pastePreview\.text\}/);
   assert.match(composer, /value=\{pasteView\.text\}/);
@@ -313,8 +309,8 @@ test("15. an oversized paste hits the real message limit instead of truncating",
   assert.match(chatPage, /charCount > MAX_USER_MESSAGE_CHARS/);
   assert.match(chatPage, /too long\. Keep the total under/);
   assert.match(chatPage, /requestText\.length > MAX_USER_MESSAGE_CHARS/);
-  const huge = longPrompt(40 * 1024);
-  assert.ok(huge.length > 32000, "fixture must exceed the shipped message limit");
+  const huge = longPrompt(2_400_000);
+  assert.ok(huge.length > 2_000_000, "fixture must exceed the shipped message limit");
   assert.equal(textAttachmentChars([pastedTextAttachment(huge)]), huge.length);
   // Nothing in the paste path shortens the stored text.
   assert.equal(pastedTextAttachment(huge).text.length, huge.length);

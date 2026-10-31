@@ -11,6 +11,7 @@
     "core:default",
     "allow-workspace-commands",
     "allow-desktop-tools",
+    "allow-composer-files",
     {
       "identifier": "opener:allow-open-url",
       "allow": [

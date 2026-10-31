@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Minimal permissions for the VupsRouter desktop window.",
   "windows": ["main"],
-  "permissions": ["core:default", "allow-workspace-commands", "allow-desktop-tools"]
+  "permissions": ["core:default", "allow-workspace-commands", "allow-desktop-tools", "allow-composer-files"]
 }

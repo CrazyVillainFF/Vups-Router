@@ -131,10 +131,9 @@ function FolderAccessSection() {
     <section className="vr-settings-group">
       <h2>Local file access</h2>
       <p className="vr-page-note">
-        Files and apps you approved with &quot;Allow Always (Only for This File)&quot;. Each entry covers one exact
-        file or executable, never its folder. Revoking one makes the next access ask again inside the chat.
-        These entries store a path and a permission type only &mdash; no keys, no file contents, and no
-        permission to modify or delete anything.
+        Files and apps you approved with &quot;Allow Always (Only for This File)&quot; &mdash; one exact file or
+        executable, never its folder. Entries store only a path and permission type &mdash; no keys, no file contents,
+        and no permission to modify or delete &mdash; and revoking one makes the next access ask again.
       </p>
       {status === "web" ? (
         <p className="vr-setting-hint">
@@ -501,7 +500,7 @@ export function HelpPage() {
         </article>
         <article className="vr-card">
           <h2>Permission modes</h2>
-          <p>Ask me every time prompts before each local operation, except the exact files and apps you saved with &quot;Allow Always (Only for This File)&quot;; those are listed above and can be revoked. Agent allows reads inside the selected workspace and asks outside it, even for files allowed in an earlier mode. Full access allows broad filesystem tools but still asks every time for protected system locations and never bypasses Windows permissions. Switching modes applies immediately in the native layer and cancels any card still waiting; switching to a stricter mode also clears the saved file permissions for good.</p>
+          <p>Ask me every time prompts before each local operation, Agent allows reads inside the selected workspace and asks outside it, and Full access allows broad filesystem tools but still asks for protected system locations and never bypasses Windows permissions. Switching modes cancels any waiting card, and switching to a stricter mode clears saved file permissions for good.</p>
         </article>
         <article className="vr-card">
           <h2>Search and organize</h2>
@@ -513,7 +512,7 @@ export function HelpPage() {
         </article>
         <article className="vr-card">
           <h2>Privacy and safety</h2>
-          <p>Workspace paths stay on this PC. Secrets, environment files, private keys, dependencies, and build output are excluded from workspace scans. API keys are encrypted on the server and never shown again in full.</p>
+          <p>Workspace paths stay on this PC, and secrets, environment files, private keys, dependencies, and build output are excluded from scans. API keys are encrypted on the server and never shown again in full.</p>
         </article>
       </section>
 

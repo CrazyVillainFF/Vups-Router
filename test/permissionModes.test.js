@@ -6,7 +6,6 @@ import {
   DEFAULT_PERMISSION_MODE,
   WINDOWS_PERMISSION_MODES,
   loadPermissionMode,
-  permissionDecision,
   permissionModeInfo,
   savePermissionMode
 } from "../src/native/permissions.js";
@@ -23,10 +22,6 @@ function memoryStorage() {
     getItem: key => (map.has(key) ? map.get(key) : null),
     setItem: (key, value) => map.set(key, String(value))
   };
-}
-
-function file(source) {
-  return { id: `att-${source}`, name: "notes.txt", size: 12, source, status: "ready" };
 }
 
 test("the three modes keep their ids and labels", () => {
@@ -55,22 +50,18 @@ test("the selected mode is persisted and an unknown value falls back to ask", ()
   assert.equal(loadPermissionMode(storage), "ask");
 });
 
-test("ask mode asks before every local attachment that is not pasted text", () => {
-  for (const source of ["picker", "folder", "workspace"]) {
-    const decision = permissionDecision("ask", [file(source)]);
-    assert.equal(decision.allowed, false);
-    assert.equal(decision.requiresConfirmation, true);
-  }
-  assert.equal(permissionDecision("ask", [file("paste")]).allowed, true);
-  assert.equal(permissionDecision("ask", []).allowed, true);
-});
-
-test("workspace mode sends workspace and folder picks, full access sends anything", () => {
-  assert.equal(permissionDecision("workspace", [file("workspace")]).allowed, true);
-  assert.equal(permissionDecision("workspace", [file("folder")]).allowed, true);
-  assert.equal(permissionDecision("workspace", [file("picker")]).allowed, false);
-  assert.equal(permissionDecision("full", [file("picker")]).allowed, true);
-  assert.equal(permissionDecision("not-a-mode", [file("picker")]).allowed, false);
+test("user-picked composer attachments are not a permission decision", () => {
+  // The picker already names each file; routing it through the agent gate was
+  // the duplicate card users reported. Only validation runs before send.
+  assert.doesNotMatch(chatPageSource, /permissionDecision\(/);
+  assert.doesNotMatch(chatPageSource, /requiresConfirmation/);
+  const beforeSend = chatPageSource.slice(
+    chatPageSource.indexOf("async function beforeComposerSend"),
+    chatPageSource.indexOf("function preserveUnsyncedChat")
+  );
+  assert.match(beforeSend, /if \(!canSubmitComposer\(text, attachments\)\) return false;/);
+  // The assistant's own tool calls still go through the native approval broker.
+  assert.match(chatPageSource, /onDesktopToolApproval/);
 });
 
 test("the selector only moves after the native layer adopts the mode", () => {

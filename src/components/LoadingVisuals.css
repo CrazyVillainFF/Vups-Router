@@ -1,0 +1,39 @@
+.vr-loader {
+  --vr-loader-color: var(--accent, #6c9bff);
+}
+
+/* The embedded light panels still use the bright accent for text; the loader
+   switches to the stronger shade so it keeps contrast on a pale surface. */
+[data-theme="light"] .vr-loader {
+  --vr-loader-color: var(--accent-strong, #3f6fe8);
+}
+
+.vr-loader--quantum {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 45px;
+  color: var(--vr-loader-color);
+}
+
+.vr-loader--bouncy {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--vr-loader-color);
+}
+
+/* The global reduced-motion rule shortens every animation to 0.01ms, which
+   would freeze these loaders on an end frame (Quantum's dots stacked in the
+   middle). Hold them on a real frame instead so the indicator stays legible
+   while nothing actually moves. */
+@media (prefers-reduced-motion: reduce) {
+  .vr-loader :is(div),
+  .vr-loader :is(div)::before {
+    animation-duration: var(--uib-speed, 1.75s) !important;
+    animation-iteration-count: infinite !important;
+    animation-play-state: paused !important;
+  }
+}

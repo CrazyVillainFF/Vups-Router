@@ -9,6 +9,7 @@ import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
 
 import PageMeta from "../components/PageMeta.jsx";
+import { QuantumLoader } from "../components/LoadingVisuals.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { apiClient, getApiErrorMessage } from "../services/api.js";
 
@@ -55,7 +56,7 @@ export default function DesktopAuthPage() {
   if (status === "loading") {
     return (
       <Box sx={{ minHeight: "70svh", display: "grid", placeItems: "center" }}>
-        <CircularProgress size={28} aria-label="Checking your session" />
+        <QuantumLoader label="Checking your session" />
       </Box>
     );
   }

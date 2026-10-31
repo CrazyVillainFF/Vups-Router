@@ -39,6 +39,25 @@ export const PROVIDERS = [
     recommendation: "Access supported models from multiple providers through one API."
   },
   {
+    id: "kilo-gateway",
+    name: "Kilo Gateway",
+    aliases: ["kilo", "kilo gateway", "kilo.ai"],
+    category: "aggregator",
+    deployment: "hosted",
+    compatibility: "openai",
+    status: "supported",
+    baseUrl: "https://ai-gateway.kilo.ai/api/v1",
+    website: "https://kilo.ai/gateway",
+    keysUrl: "https://app.kilo.ai/",
+    docsUrl: "https://kilo.ai/docs/gateway",
+    pricingUrl: "https://kilo.ai/gateway",
+    note: "Unified OpenAI-compatible gateway for models from multiple providers. Use a Kilo Gateway API key and any model ID the gateway accepts, such as anthropic/claude-sonnet-4.5.",
+    suggestedModels: [
+      { id: "anthropic/claude-sonnet-4.5", name: "Claude Sonnet 4.5" }
+    ],
+    cost: "Usage-based; check the official gateway pricing."
+  },
+  {
     id: "litellm",
     name: "LiteLLM",
     category: "aggregator",
@@ -50,7 +69,7 @@ export const PROVIDERS = [
     keysUrl: "https://docs.litellm.ai/docs/proxy/virtual_keys",
     docsUrl: "https://docs.litellm.ai/",
     pricingUrl: "https://www.litellm.ai/",
-    note: "Self-hosted proxy that exposes 100+ providers behind one OpenAI-compatible endpoint. Use the base URL of your own LiteLLM proxy (usually ending in /v1).",
+    note: "Self-hosted proxy exposing 100+ providers behind one OpenAI-compatible endpoint. Enter your own proxy base URL, usually ending in /v1.",
     cost: "Open source; you pay the upstream providers."
   },
   {
@@ -66,7 +85,7 @@ export const PROVIDERS = [
     keysUrl: "",
     docsUrl: "",
     pricingUrl: "",
-    note: "Self-hosted OpenAI-compatible router. Enter your own OmniRoute base URL (ending in /v1) and its API key — the key is encrypted per user, and this personal entry never uses the server's shared OmniRoute gateway credentials. The deployed backend must be able to reach the URL; localhost only works on the same machine or through a tunnel.",
+    note: "Self-hosted OpenAI-compatible router: enter your own base URL (ending in /v1) and API key, which is encrypted per user. The backend must be able to reach it — localhost only works on the same machine or through a tunnel.",
     cost: "Open source; you pay the upstream providers configured in OmniRoute."
   },
   {
@@ -126,7 +145,7 @@ export const PROVIDERS = [
     keysUrl: "https://ps.air-outer.com/console/token",
     docsUrl: "https://co.agentrouter.org/portal/guide",
     pricingUrl: "https://ps.air-outer.com/pricing",
-    note: "Use the documented agent host: OpenAI-compatible at https://co.agentrouter.org/v1, Anthropic-compatible at https://co.agentrouter.org (no /v1). The agentrouter.org host only accepts AgentRouter's own coding CLIs and rejects this app, so it is not used as a base URL here. The catalog follows your key's resource pool — discover it or add model IDs manually.",
+    note: "Use the documented agent host (OpenAI-compatible at https://co.agentrouter.org/v1). The agentrouter.org host only accepts AgentRouter's own coding CLIs, so discover your key's catalog or add model IDs manually.",
     suggestedModels: [
       { id: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
       { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
@@ -147,7 +166,7 @@ export const PROVIDERS = [
     keysUrl: "https://opencode.ai/console",
     docsUrl: "https://opencode.ai/docs/zen/",
     pricingUrl: "https://opencode.ai/docs/zen/#pricing",
-    note: "OpenCode's pay-as-you-go gateway, also called OpenCode Console. Create a paid key in the Console, then use Load models or paste any model ID. VupsRouter routes each model to its documented OpenAI Chat Completions, OpenAI Responses, or Anthropic Messages endpoint automatically. OpenCode restricts models whose IDs end in -free to its official client; VupsRouter shows them as unavailable and will not bypass that restriction. Gemini and Jev models use native APIs that are not supported yet.",
+    note: "OpenCode's pay-as-you-go gateway (Console); each model routes to its OpenAI Chat Completions, OpenAI Responses, or Anthropic Messages endpoint. Models ending in -free only work in the official OpenCode client, and Gemini and Jev native APIs are not supported.",
     cost: "Pay-as-you-go; add credits in the OpenCode Console. Free-tier Zen models only work inside the official OpenCode client."
   },
   // Qoder's public API is a session/event agent protocol, not chat
@@ -167,7 +186,7 @@ export const PROVIDERS = [
     keysLabel: "Create a token",
     docsUrl: "https://docs.qoder.com/cloud-agents/api/conventions/overview",
     pricingUrl: "",
-    note: "Official Cloud Agents API. Choose the Global (api.qoder.com / openapi.qoder.sh) or China mainland (api.qoder.com.cn / openapi.qoder.com.cn) region. Authenticate with a Personal Access Token from your Qoder console (Settings → Personal Access Tokens), or a service account key — the backend exchanges the latter for a short-lived token and never sends it to the business API. VupsRouter creates the session's environment and agent and streams the reply back.",
+    note: "Official Cloud Agents API with Global and China mainland regions (https://api.qoder.com and https://api.qoder.com.cn). Use a Personal Access Token from the Qoder console, or a service account key exchanged at https://openapi.qoder.sh; VupsRouter streams the reply back.",
     cost: "Billed in credits on your Qoder account; no VupsRouter fee.",
     recommended: true,
     recommendation: "A recommended option for users who want to configure the Qoder API."
@@ -231,7 +250,7 @@ export const PROVIDERS = [
     keysUrl: "https://aistudio.google.com/apikey",
     docsUrl: "https://ai.google.dev/gemini-api/docs",
     pricingUrl: "https://ai.google.dev/gemini-api/docs/pricing",
-    note: "Google's OpenAI-compatible endpoint with model discovery. Free-tier prompts may be used to improve Google products, so avoid sensitive data; the free tier is for professional use, 18+, and is not offered in the EEA, Switzerland, or the UK. Enable the Gemini API in AI Studio first.",
+    note: "Google's OpenAI-compatible endpoint with model discovery. Free-tier prompts may be used to improve Google products, so avoid sensitive data; it is for professional use, 18+, and not offered in the EEA, Switzerland, or the UK.",
     cost: "Free tier for eligible models with per-project RPM/TPM/RPD limits; paid tier available. Check AI Studio for current limits."
   },
   {
@@ -426,7 +445,7 @@ export const PROVIDERS = [
     keysUrl: "https://console.aws.amazon.com/iam/",
     docsUrl: "https://docs.aws.amazon.com/bedrock/latest/userguide/inference-chat-completions.html",
     pricingUrl: "https://aws.amazon.com/bedrock/pricing/",
-    note: "OpenAI-compatible Chat Completions at https://bedrock-runtime.{region}.amazonaws.com/openai/v1. Use an Amazon Bedrock API key (Bearer) and a model ID such as openai.gpt-oss-20b-1:0. There is no /models route, so Check connection reports reachable and Test model verifies the key.",
+    note: "OpenAI-compatible Chat Completions at https://bedrock-runtime.{region}.amazonaws.com/openai/v1 with a Bedrock API key and a model ID such as openai.gpt-oss-20b-1:0. There is no /models route, so use Test model to verify the key.",
     cost: "Paid — check official pricing."
   },
   {
@@ -487,7 +506,7 @@ export const PROVIDERS = [
     website: "https://github.com/theRizwan/FlagshipRouter",
     docsUrl: "https://github.com/theRizwan/FlagshipRouter",
     pricingUrl: "https://github.com/theRizwan/FlagshipRouter",
-    note: "Community local gateway (OpenAI-compatible). IMPORTANT: a localhost URL only works from the machine running the gateway. The deployed VupsRouter backend cannot reach your computer — expose the gateway via a public HTTPS tunnel (ngrok, Cloudflare Tunnel) and paste that URL instead, or run VupsRouter locally. VupsRouter rejects localhost/private URLs on production with this explanation instead of blaming your API key.",
+    note: "Community local gateway (OpenAI-compatible). A localhost URL only works from the machine running the gateway, so expose it through a public HTTPS tunnel or run VupsRouter locally.",
     cost: "Open source; upstream providers set their own costs."
   },
   {

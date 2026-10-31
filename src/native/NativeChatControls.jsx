@@ -92,7 +92,7 @@ export default function NativeChatControls({ mode, disabled = false, applying = 
         aria-busy={applying || undefined}
         aria-haspopup="listbox"
         aria-expanded={open}
-        title={bridgeDown ? bridgeError : selected.description}
+        title={bridgeDown ? bridgeError : undefined}
         disabled={disabled}
         onKeyDown={onTriggerKeyDown}
         onClick={() => {
@@ -143,7 +143,6 @@ export default function NativeChatControls({ mode, disabled = false, applying = 
                 <strong>{item.label}</strong>
                 {item.id === selected.id ? <Check size={13} weight="bold" aria-hidden="true" /> : null}
               </span>
-              <span className="vr-permission__option-copy">{item.description}</span>
               {item.id === "full" ? (
                 <span className="vr-permission__option-warning">
                   <Warning size={12} weight="fill" aria-hidden="true" />
@@ -168,9 +167,6 @@ export default function NativeChatControls({ mode, disabled = false, applying = 
               {bridgeError} The app is not running local filesystem tools, whatever this selector says.
             </p>
           ) : null}
-          <p className="vr-permission__note">
-            These modes control read-only Windows filesystem tools and attached file contents. Shell, file-write, and administrator actions are not available.
-          </p>
         </div>
       ) : null}
     </div>

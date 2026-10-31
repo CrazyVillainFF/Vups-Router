@@ -172,8 +172,8 @@ export default function WorkspaceFilesDialog({ open, onClose, onAttach }) {
         )}
 
         <p className="vr-file-note">
-          Files are read only when you attach them. Secrets, keys, environment files, dependencies, and build output
-          are excluded. Each file must be under {TEXT_LIMITS.chars.toLocaleString()} characters; up to {TEXT_LIMITS.count} files can be attached.
+          Files are read only when you attach them, and secrets, keys, environment files, dependencies, and build
+          output are excluded. Each file must be under {TEXT_LIMITS.chars.toLocaleString()} characters; up to {TEXT_LIMITS.count} files can be attached.
           {truncated ? " The scan stopped at the workspace limit; narrow the folder or use search." : ""}
         </p>
 
