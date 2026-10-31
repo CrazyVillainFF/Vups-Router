@@ -4,4 +4,6 @@
     <string name="title_activity_main">VupsRouter</string>
     <string name="package_name">com.vupsrouter.app</string>
     <string name="custom_url_scheme">com.vupsrouter.app</string>
+    <string name="download_channel_name">Downloads</string>
+    <string name="download_channel_description">Progress for files you download from VupsRouter</string>
 </resources>

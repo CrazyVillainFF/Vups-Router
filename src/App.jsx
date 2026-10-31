@@ -25,6 +25,7 @@ import {
   waitForDesktopSignIn
 } from "./native/desktopSignIn.js";
 import LinkErrorToast from "./components/LinkErrorToast.jsx";
+import AndroidDownloadManager from "./components/AndroidDownloadManager.jsx";
 import DesktopAuthPage from "./pages/DesktopAuthPage.jsx";
 import ProtectedAppLayout from "./desktop/ProtectedAppLayout.jsx";
 import {
@@ -368,7 +369,7 @@ function ScrollToTop() {
 }
 
 export default function App() {
-  return <AuthProvider><LinkErrorToast /><ScrollToTop /><Routes>
+  return <AuthProvider><LinkErrorToast /><AndroidDownloadManager /><ScrollToTop /><Routes>
     <Route path="/" element={<LandingPage />} />
     <Route path="/features" element={<FeaturesPage />} />
     <Route path="/about" element={<AboutPage />} />

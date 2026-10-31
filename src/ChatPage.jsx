@@ -89,6 +89,7 @@ import { streamChatResponse } from "./services/chat.js";
 import { runDesktopToolChat } from "./services/desktopChat.js";
 import {
   cancelDesktopToolApprovals,
+  cancelDesktopToolOperation,
   onDesktopToolApproval,
   respondDesktopToolApproval,
   setDesktopToolPolicy
@@ -569,14 +570,21 @@ function Message({
   }, [message.content, markRecovery]);
 
   const handleDownloadAnswer = useCallback(() => {
+    const fail = () => markRecovery("download-failed");
     try {
-      downloadBlob(
+      const pending = downloadBlob(
         new Blob([message.content], { type: "text/plain;charset=utf-8" }),
         "vups-answer.txt"
       );
+      // Native Android hands the bytes to the download service and resolves
+      // once accepted; web saves synchronously right here.
+      if (pending?.then) {
+        pending.then(() => markRecovery("downloaded"), fail);
+        return;
+      }
       markRecovery("downloaded");
     } catch {
-      markRecovery("download-failed");
+      fail();
     }
   }, [message.content, markRecovery]);
 
@@ -1134,7 +1142,7 @@ export default function ChatPage() {
     refreshUsage
   } = useTasks();
   const { preferences } = usePreferences();
-  const { activeWorkspace, owner: workspaceOwner } = useWorkspaces();
+  const { activeWorkspace, workspaces, owner: workspaceOwner } = useWorkspaces();
   const activeConvId = searchParams.get("task") || "";
 
   const [messages, setMessages] = useState([]);
@@ -1181,6 +1189,7 @@ export default function ChatPage() {
   const [workspaceAttachment, setWorkspaceAttachment] = useState(null);
   const [draftInsertion, setDraftInsertion] = useState(null);
   const abortRef = useRef(null);
+  const imageAbortRef = useRef(null);
   const sendingRef = useRef(false);
   const initializedRef = useRef(false);
   const requestSeqRef = useRef(0);
@@ -1244,6 +1253,11 @@ export default function ChatPage() {
     const controller = abortRef.current;
     abortRef.current = null;
     controller?.abort();
+    const operationId = streamingIdRef.current;
+    if (operationId && nativeShell === NATIVE_SHELLS.windows) {
+      cancelDesktopToolOperation(operationId).catch(() => {});
+    }
+    streamingIdRef.current = null;
     sendingRef.current = false;
     setLoading(false);
     setStreamingId(null);
@@ -1477,6 +1491,15 @@ export default function ChatPage() {
   useEffect(() => {
     if (nativeShell !== NATIVE_SHELLS.windows) return undefined;
     return onDesktopToolApproval(prompt => {
+      // An approval belongs to the operation that raised it. A prompt from a
+      // stopped turn, a different chat, or a reloaded page has no waiting call
+      // this page can resume, so it is denied in the native layer immediately
+      // instead of leaving a live card that could authorize abandoned work.
+      const activeOperation = streamingIdRef.current;
+      if (!activeOperation || (prompt.operationId && prompt.operationId !== activeOperation)) {
+        respondDesktopToolApproval(prompt.requestId, "deny").catch(() => {});
+        return;
+      }
       if (seenApprovalKeys.current.has(prompt.approvalKey)) return;
       seenApprovalKeys.current.add(prompt.approvalKey);
       setApprovalError("");
@@ -1805,11 +1828,14 @@ export default function ChatPage() {
       setImageError("Sign in to generate images.");
       return;
     }
+    const controller = new AbortController();
+    imageAbortRef.current = controller;
     setImageGenerating(true);
     setImageError("");
     setGeneratedImage(null);
     try {
-      const result = await generateImage(prompt);
+      const result = await generateImage(prompt, controller.signal);
+      if (controller.signal.aborted) return;
       if (!result?.image || typeof result.image !== "string") {
         throw new Error("The backend returned no generated image.");
       }
@@ -1819,8 +1845,13 @@ export default function ChatPage() {
         prompt,
       });
     } catch (error) {
+      if (controller.signal.aborted) {
+        setImageError("Image generation was stopped.");
+        return;
+      }
       setImageError(getApiErrorMessage(error));
     } finally {
+      if (imageAbortRef.current === controller) imageAbortRef.current = null;
       setImageGenerating(false);
     }
   }
@@ -1969,7 +2000,11 @@ export default function ChatPage() {
         temperature: EFFORT_TEMPERATURE[chosenEffort] ?? 0.7,
         signal: controller.signal,
         assistantMessageId: assistantId,
+        operationId: assistantId,
         userText: requestText || text,
+        // Configured workspace folders are already user-picked, so a name
+        // lookup may include them without asking for the folder again.
+        searchRoots: workspaces.map((workspace) => workspace?.path).filter(Boolean),
         onMeta: ({ conversationId, messageId }) => {
           if (!isCurrentRequest(seq)) return;
           if (String(activeConvId || "").startsWith("local-")) {
@@ -2082,12 +2117,42 @@ export default function ChatPage() {
   }
 
   function handleStop() {
-    // Cancelling must reach the paused native call, not just the spinner.
-    if (nativeShell === NATIVE_SHELLS.windows) {
-      cancelDesktopToolApprovals().catch(() => {});
-      clearApprovals();
+    const targetId = streamingIdRef.current;
+    const hadTurn = Boolean(targetId || sendingRef.current);
+    const hadImage = Boolean(imageAbortRef.current);
+
+    // Invalidate synchronously, before any await: a chunk or tool callback
+    // already queued can then never pass the request guard and paint after
+    // Stop. This is also what prevents a retry or fallback from starting a
+    // second upstream request for a turn the user just cancelled.
+    requestSeqRef.current += 1;
+    const controller = abortRef.current;
+    abortRef.current = null;
+    controller?.abort();
+    const imageController = imageAbortRef.current;
+    imageAbortRef.current = null;
+    imageController?.abort();
+
+    if (nativeShell === NATIVE_SHELLS.windows && targetId) {
+      // Scoped to this turn: denies its pending approval and signals a running
+      // native tool to stop. Other conversations and tabs are untouched.
+      cancelDesktopToolOperation(targetId).catch(() => {});
     }
-    abortRef.current?.abort();
+    clearApprovals();
+    sendingRef.current = false;
+    streamingIdRef.current = null;
+    setLoading(false);
+    setStreamingId(null);
+    setImageGenerating(false);
+
+    if (targetId) {
+      setMessages((prev) => cancelTurn(prev, targetId));
+      setNotice("Stopped. This turn was cancelled and nothing further will run for it.");
+    } else if (hadImage) {
+      setImageError("Image generation was stopped.");
+    }
+    if (hadTurn) refreshConversations().catch(() => {});
+    if (hadTurn || hadImage) refreshUsage();
   }
 
   const CONTINUE_INSTRUCTION =
@@ -2426,7 +2491,7 @@ export default function ChatPage() {
               efforts={VUPS_EFFORTS}
               defaultEffort={currentEffort}
               onEffortChange={(effort) => setCurrentEffort(effort)}
-              busy={loading}
+              busy={loading || imageGenerating}
               generating={imageGenerating}
               onSend={(text, meta) => handleSend(text, null, meta)}
               beforeSend={beforeComposerSend}
@@ -2488,7 +2553,7 @@ export default function ChatPage() {
       {fullAccessPending ? (
         <NativePermissionDialog
           title="Enable full access?"
-          description="The assistant may use read-only Windows filesystem tools across accessible folders. Protected system locations still require native approval. This does not grant shell, file-write, administrator rights, or a Windows permission bypass."
+          description="The assistant may read, create, edit, rename, move, copy and delete files, launch installed apps, open files and links, and run PowerShell or cmd commands with real output — without a card for each ordinary action. Protected and sensitive Windows locations still ask, force-terminating an app always asks, and every action is audited. This does not grant administrator rights or bypass Windows access controls."
           confirmLabel="Enable full access"
           tone="danger"
           onCancel={() => setFullAccessPending(false)}

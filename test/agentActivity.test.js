@@ -101,7 +101,11 @@ test("progress text is cleaned without inventing filenames", () => {
   assert.equal(progressFilePath("Generating src/app.js..."), "src/app.js");
   assert.equal(progressLabel("generating_file", "Generating app.js\ufffd??"), "Writing app.js");
   assert.equal(progressLabel("generating_code", "Generating your code…"), "Generating code");
-  assert.equal(progressLabel("waiting"), "Connecting to model");
+  assert.equal(progressLabel("waiting"), "Waiting for model");
+  assert.equal(progressLabel("responding"), "Generating response");
+  assert.equal(progressLabel("plugin_tools"), "Running tools");
+  assert.equal(progressLabel("approval"), "Waiting for approval");
+  assert.equal(progressLabel("reconnecting"), "Reconnecting");
 });
 
 test("elapsed labels use real timestamps", () => {

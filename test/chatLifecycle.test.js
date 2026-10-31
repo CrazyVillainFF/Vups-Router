@@ -56,7 +56,7 @@ test("connection refusal reports a timeout-free connection message and never lea
     throw new TypeError("fetch failed");
   };
   await assert.rejects(
-    streamChatResponse({ messages: [{ role: "user", content: "hi" }], timeouts: { connect: 500 } }),
+    streamChatResponse({ messages: [{ role: "user", content: "hi" }] }),
     error => {
       assert.ok(error instanceof ChatNetworkError);
       assert.equal(error.code, "connection_unavailable");
@@ -70,24 +70,102 @@ test("connection refusal reports a timeout-free connection message and never lea
   );
 });
 
-test("a stalled connection is aborted by the connect deadline", async () => {
-  globalThis.fetch = (_url, options) => abortablePending(options.signal);
-  const started = Date.now();
+test("a provider that takes longer than the old 30s window is still waited for, with one request", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const encoder = new TextEncoder();
+  let calls = 0;
+  globalThis.fetch = (_url, options) => {
+    calls += 1;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        resolve(
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(encoder.encode(': keepalive\n\ndata: {"type":"delta","content":"slow answer"}\n\n'));
+                controller.enqueue(encoder.encode('data: {"type":"done"}\n\n'));
+                controller.close();
+              }
+            }),
+            { status: 200, headers: { "Content-Type": "text/event-stream" } }
+          )
+        );
+      }, 31000);
+      options.signal?.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        },
+        { once: true }
+      );
+    });
+  };
+
+  const pending = streamChatResponse({
+    messages: [{ role: "user", content: "hi" }],
+    timeouts: { idle: 120000, overall: 0 }
+  });
+  t.mock.timers.tick(31000);
+  const result = await pending;
+
+  assert.equal(result.content, "slow answer");
+  assert.equal(calls, 1, "waiting must not duplicate the request");
+  t.mock.timers.reset();
+});
+
+test("SSE keepalives keep an otherwise silent model alive past the idle window", async () => {
+  const encoder = new TextEncoder();
+  globalThis.fetch = async (_url, options) =>
+    new Response(
+      new ReadableStream({
+        async start(controller) {
+          for (let beat = 0; beat < 6; beat += 1) {
+            await new Promise(resolve => setTimeout(resolve, 20));
+            if (options.signal.aborted) {
+              const error = new Error("aborted");
+              error.name = "AbortError";
+              controller.error(error);
+              return;
+            }
+            controller.enqueue(encoder.encode(": keepalive\n\n"));
+          }
+          controller.enqueue(encoder.encode('data: {"type":"delta","content":"alive"}\n\n'));
+          controller.enqueue(encoder.encode('data: {"type":"done"}\n\n'));
+          controller.close();
+        }
+      }),
+      { status: 200, headers: { "Content-Type": "text/event-stream" } }
+    );
+
+  const result = await streamChatResponse({
+    messages: [{ role: "user", content: "hi" }],
+    timeouts: { idle: 60, overall: 0 }
+  });
+  assert.equal(result.content, "alive");
+});
+
+test("Stop while the provider is still queued cancels immediately", async () => {
+  let calls = 0;
+  globalThis.fetch = (_url, options) => {
+    calls += 1;
+    return abortablePending(options.signal);
+  };
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 10);
   await assert.rejects(
     streamChatResponse({
       messages: [{ role: "user", content: "hi" }],
-      timeouts: { connect: 30, overall: 2000 }
+      signal: controller.signal
     }),
     error => {
-      assert.ok(error instanceof ChatNetworkError);
-      assert.notEqual(error.name, "AbortError");
-      assert.equal(error.code, "timeout");
-      assert.equal(error.deadline, "connect");
-      assert.equal(error.message, CHAT_MESSAGES.timeout);
+      assert.equal(error.name, "AbortError");
       return true;
     }
   );
-  assert.ok(Date.now() - started < 1500, "the connect deadline should settle the request");
+  assert.equal(calls, 1);
 });
 
 test("an idle stream preserves partial output and asks the user to continue", async () => {
@@ -166,7 +244,7 @@ test("HTTP failures keep their status but present a concise message without inte
 test("required user-facing copy is exact", () => {
   const cases = [
     ["connection_unavailable", "Can't connect to Vups Router. Try again shortly."],
-    ["timeout", "This is taking too long. Try again."],
+    ["timeout", "The server stopped sending data before the answer finished. Continue or retry."],
     ["stream_interrupted", "The response stopped early. Continue or retry."],
     ["provider_unavailable", "This model is unavailable. Try another model."],
     ["empty_stream", "No answer received. Please try again."]

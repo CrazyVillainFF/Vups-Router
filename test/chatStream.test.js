@@ -239,13 +239,12 @@ test("streamChatResponse emits structured activity for real stream phases", asyn
     onActivity: event => activity.push(event)
   });
   assert.deepEqual(activity.map(event => event.phase), [
-    "request",
     "waiting",
     "generating_code",
     "generating_file",
     "responding"
   ]);
-  assert.equal(activity[3].message, "Generating index.html…");
+  assert.equal(activity[2].message, "Generating index.html…");
   assert.ok(steps.includes("Receiving response"));
 });
 

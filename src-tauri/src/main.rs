@@ -1,10 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod desktop_exec;
 mod desktop_server;
 mod desktop_tools;
 mod workspace;
 
-use tauri::{WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 fn main() {
     tauri::Builder::default()
@@ -39,8 +40,18 @@ fn main() {
             desktop_tools::desktop_tool_grants_list,
             desktop_tools::desktop_tool_grant_revoke,
             desktop_tools::desktop_tool_grants_clear,
-            desktop_tools::desktop_tool_approvals_cancel
+            desktop_tools::desktop_tool_approvals_cancel,
+            desktop_tools::desktop_tool_cancel_operation
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running VupsRouter");
+        .build(tauri::generate_context!())
+        .expect("error while building VupsRouter")
+        .run(|app_handle, event| {
+            // A dev server or long command must not outlive the window that
+            // owns it.
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(state) = app_handle.try_state::<desktop_tools::DesktopToolState>() {
+                    state.shutdown();
+                }
+            }
+        });
 }

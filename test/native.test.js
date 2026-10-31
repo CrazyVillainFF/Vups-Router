@@ -287,3 +287,47 @@ test("the capability governing the loopback origin grants every bridge command",
   );
 });
 
+// Registering a command is not enough: the loopback window only receives the
+// commands listed in its capability permission set. This caught the Stop
+// command being registered but rejected at runtime as "Command not found".
+test("every desktop tool command the window uses is allowed by its capability", () => {
+  const allowed = new Set(
+    [...read("src-tauri/permissions/desktop-tools.toml").matchAll(/"([a-z_]+)"/g)].map(
+      match => match[1]
+    )
+  );
+  const main = read("src-tauri/src/main.rs");
+  const handlerStart = main.indexOf(".invoke_handler(");
+  assert.ok(handlerStart >= 0, "the Tauri invoke handler is declared");
+  const handlerEnd = main.indexOf("])", handlerStart);
+  assert.ok(handlerEnd > handlerStart, "the invoke handler list is complete");
+  const registered = [
+    ...main
+      .slice(handlerStart, handlerEnd)
+      .matchAll(/desktop_tools::([a-z_]+)/g)
+  ].map(match => match[1]);
+
+  assert.ok(
+    registered.includes("desktop_tool_cancel_operation"),
+    "Stop calls this command, so it must be registered"
+  );
+  for (const command of registered) {
+    assert.ok(
+      allowed.has(command),
+      `${command} is registered but not allowed by allow-desktop-tools`
+    );
+  }
+
+  const client = read("src/native/desktopTools.js");
+  const invoked = [
+    ...client.matchAll(/invoke\("(desktop_tool_[a-z_]+)"/g)
+  ].map(match => match[1]);
+  assert.ok(invoked.includes("desktop_tool_cancel_operation"));
+  for (const command of invoked) {
+    assert.ok(
+      allowed.has(command),
+      `${command} is called by the client but not allowed by allow-desktop-tools`
+    );
+  }
+});
+

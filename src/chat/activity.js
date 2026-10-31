@@ -8,12 +8,15 @@ export const ACTIVITY_STATUS = Object.freeze({
 });
 
 const PHASE_LABELS = {
-  request: "Model request queued",
-  waiting: "Connecting to model",
+  request: "Waiting for model",
+  waiting: "Waiting for model",
   responding: "Generating response",
   reasoning: "Thinking",
   generating_code: "Generating code",
-  preparing_files: "Preparing files"
+  preparing_files: "Preparing files",
+  plugin_tools: "Running tools",
+  approval: "Waiting for approval",
+  reconnecting: "Reconnecting"
 };
 
 const ACTIVE_TURN_STATUSES = new Set(["pending", "streaming"]);

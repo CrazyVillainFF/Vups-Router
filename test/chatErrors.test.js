@@ -78,6 +78,25 @@ test("authentication, context, model, network, and empty failures get distinct t
   assert.equal(classifyChatError(error({ code: "empty_stream" })), "empty");
 });
 
+test("a provider that rejects this client shows the server's exact fix, not a generic denial", () => {
+  // Reproduced live: the gpt-6-astra configuration pointed at agentrouter.org,
+  // whose CLI fingerprint gate answers 401 unauthorized_client_error before it
+  // looks at the key. The backend states the fix; the generic card discarded it.
+  const upstream = error({
+    status: 401,
+    code: "unauthorized_client",
+    message:
+      "AgentRouter rejected this client (HTTP 401) before checking the API key: agentrouter.org only accepts requests from its own coding CLIs. Reconfigure the provider with the documented API host — https://co.agentrouter.org/v1 for OpenAI-compatible models, or https://co.agentrouter.org for Anthropic models — then test again."
+  });
+  assert.equal(classifyChatError(upstream), "access_denied");
+  const presentation = presentChatError(upstream, { modelLabel: "gpt-6-astra" });
+  assert.equal(presentation.title, "Provider rejected this app");
+  assert.match(presentation.message, /https:\/\/co\.agentrouter\.org\/v1/);
+  assert.doesNotMatch(presentation.message, /The provider denied this request\. Check its permissions/);
+  assert.equal(presentation.retry, false);
+  assert.equal(presentation.apiKey, false);
+});
+
 test("provider service outages are not mislabeled as a missing model", () => {
   assert.equal(
     classifyChatError(error({ code: "shared_unavailable", message: "The shared AI model is temporarily unavailable." })),

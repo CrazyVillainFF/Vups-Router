@@ -219,7 +219,7 @@ test("streamChatResponse posts to the backend proxy and forwards SSE deltas", as
     assert.equal(result.content, "Hello!");
     assert.equal(result.conversationId, "conv-1");
     assert.deepEqual(chunks, ["Hel", "lo!"]);
-    assert.deepEqual(steps, ["Sending request", "Waiting for model", "Receiving response", "Response complete"]);
+    assert.deepEqual(steps, ["Waiting for model", "Receiving response", "Response complete"]);
   } finally {
     globalThis.fetch = originalFetch;
     apiClient.defaults.baseURL = originalBaseURL;

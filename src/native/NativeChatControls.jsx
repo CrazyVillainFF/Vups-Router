@@ -101,6 +101,8 @@ export default function NativeChatControls({ mode, disabled = false, applying = 
       >
         {bridgeDown ? (
           <Warning size={14} weight="fill" aria-hidden="true" />
+        ) : selected.id === "full" ? (
+          <Warning size={14} weight="fill" aria-hidden="true" />
         ) : (
           <ShieldCheck size={14} aria-hidden="true" />
         )}
@@ -150,6 +152,16 @@ export default function NativeChatControls({ mode, disabled = false, applying = 
               ) : null}
             </button>
           ))}
+          {selected.id === "full" ? (
+            <button
+              type="button"
+              className="vr-permission__quick"
+              onClick={() => choose("ask")}
+            >
+              <ShieldCheck size={13} aria-hidden="true" />
+              Return to Ask me every time
+            </button>
+          ) : null}
           {bridgeDown ? (
             <p className="vr-permission__note" data-bridge="down">
               <Warning size={12} weight="fill" aria-hidden="true" />

@@ -39,9 +39,9 @@ test("the three modes keep their ids and labels", () => {
     ]
   );
   assert.equal(DEFAULT_PERMISSION_MODE, "ask");
-  assert.match(permissionModeInfo("workspace").description, /outside it asks first/i);
+  assert.match(permissionModeInfo("workspace").description, /outside it is blocked/i);
   assert.match(permissionModeInfo("full").description, /protected system locations always ask/i);
-  assert.match(permissionModeInfo("ask").description, /Always allow/i);
+  assert.match(permissionModeInfo("ask").description, /Allow once.*one call/i);
 });
 
 test("the selected mode is persisted and an unknown value falls back to ask", () => {
@@ -91,6 +91,14 @@ test("the selector only moves after the native layer adopts the mode", () => {
   assert.match(controlsSource, /Applying…/);
 });
 
+test("full access stays visibly marked and offers a one-click return to ask", () => {
+  assert.match(controlsSource, /data-risk=\{selected\.id\}/);
+  assert.match(controlsSource, /selected\.id === "full"/);
+  assert.match(controlsSource, /Return to Ask me every time/);
+  assert.match(controlsSource, /choose\("ask"\)/);
+  assert.match(controlsSource, /WINDOWS_PERMISSION_MODES\.map\(\(item, index\)/);
+});
+
 test("a mode or workspace switch cancels the cards raised under the old policy", () => {
   const effect = chatPageSource.slice(
     chatPageSource.indexOf("const signature = `${workspaceOwner}|${permissionMode}|"),
@@ -113,15 +121,24 @@ test("the native layer, not the selector, decides every read", () => {
   assert.match(rustSource, /fn execute_guarded\(/);
   assert.match(rustSource, /code: "policy_changed"|"policy_changed"/);
   assert.match(rustSource, /still_current/);
-  // A change resets one-time approvals and cancels pending cards.
-  assert.match(rustSource, /scopes\.session\.reset\(\)/);
+  // A one-time approval is answered but never stored; only an explicit
+  // "Allow Always (Only for This File)" reaches the exact-resource store.
+  assert.match(rustSource, /ApprovalDecision::Denied \| ApprovalDecision::Once => Ok\(\(\)\)/);
+  assert.match(rustSource, /ApprovalDecision::AlwaysResource/);
+  assert.match(rustSource, /fn action_persistable\(action: &str\) -> bool/);
+  assert.doesNotMatch(rustSource, /scopes\.session\.reset\(\)/);
   assert.match(rustSource, /state\.broker\.cancel_all\(\)/);
-  // A narrower mode also drops the standing "Always allow" folders.
+  // Stop denies only the cards raised by the operation that was stopped.
+  assert.match(rustSource, /fn cancel_operation\(&self, operation_id: &str\)/);
+  assert.match(rustSource, /operation_id: String/);
+  // A narrower mode also drops the saved exact-file grants.
   assert.match(rustSource, /transition\.revoke_grants/);
   assert.match(rustSource, /scopes\.grants\.clear\(&grant_owner\)/);
   assert.match(rustSource, /next\.mode\.breadth\(\) < existing\.mode\.breadth\(\)/);
-  // Workspace mode ignores grants outside its root and never falls back to all.
+  // Workspace mode blocks outside paths outright; no card can widen it.
   assert.match(rustSource, /policy\.mode == ToolMode::Workspace/);
+  assert.match(rustSource, /outside_workspace/);
+  assert.match(rustSource, /workspace_required/);
   assert.match(rustSource, /requires_fresh_approval/);
   // No policy stored means no tool access at all.
   assert.match(rustSource, /Choose a filesystem permission mode before using local tools/);

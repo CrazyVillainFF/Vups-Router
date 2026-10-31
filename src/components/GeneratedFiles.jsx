@@ -40,10 +40,14 @@ export default function GeneratedFiles({ artifact, className = "" }) {
   const handleFile = useCallback((file) => {
     if (file?.complete === false) return;
     setNotice(null);
+    const fail = () => setNotice(`Could not download ${baseName(file.path)}. Try again.`);
     try {
-      downloadGeneratedFile(file, urlsRef.current);
+      // Native Android downloads resolve after the service has accepted the
+      // bytes; the web path stays synchronous and always succeeds here.
+      const pending = downloadGeneratedFile(file, urlsRef.current);
+      if (pending?.then) pending.catch(fail);
     } catch {
-      setNotice(`Could not download ${baseName(file.path)}. Try again.`);
+      fail();
     }
   }, []);
 
@@ -53,7 +57,7 @@ export default function GeneratedFiles({ artifact, className = "" }) {
     setNotice(null);
     try {
       const blob = await buildProjectZip(files);
-      downloadBlob(blob, projectZipName(), urlsRef.current);
+      await downloadBlob(blob, projectZipName(), urlsRef.current);
     } catch {
       setNotice("Could not prepare the ZIP. Try downloading the files individually.");
     } finally {

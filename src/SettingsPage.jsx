@@ -1174,6 +1174,25 @@ export default function SettingsPage({ embedded = false }) {
                   </p>
                 </LwAlert>
               )}
+              {Array.isArray(registryEntry?.suggestedModels) && registryEntry.suggestedModels.length > 0 && (
+                <div className="settings-models">
+                  <span className="settings-models-label">SUGGESTED MODEL IDS — NOT VERIFIED ON YOUR KEY YET</span>
+                  <div className="settings-models-list">
+                    {registryEntry.suggestedModels.map(model => (
+                      <button
+                        key={model.id}
+                        type="button"
+                        className={`settings-model-chip${selectedModels.includes(model.id) ? " is-active" : ""}`}
+                        aria-pressed={selectedModels.includes(model.id)}
+                        title={`${model.id} — click to add or remove, then use Test model`}
+                        onClick={() => toggleModel(model.id)}
+                      >
+                        {model.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {models.length > 0 && (
                 <div className="settings-models">
                   <span className="settings-models-label">DISCOVERED THIS SESSION — CLICK TO ADD OR REMOVE</span>

@@ -14,6 +14,7 @@ import { apiClient } from "../src/services/api.js";
 const cardSource = readFileSync(new URL("../src/native/InChatPermissionCard.jsx", import.meta.url), "utf8");
 const chatPageSource = readFileSync(new URL("../src/ChatPage.jsx", import.meta.url), "utf8");
 const bridgeSource = readFileSync(new URL("../src/native/desktopTools.js", import.meta.url), "utf8");
+const rustSource = readFileSync(new URL("../src-tauri/src/desktop_tools.rs", import.meta.url), "utf8");
 
 const recentResult = {
   path: "C:\\Users\\Vishnu\\Downloads",
@@ -44,12 +45,168 @@ test("the native prompt is normalized before it can reach the UI", () => {
   assert.equal(prompt.approvalKey, "u1|read|c:\\users\\vishnu\\downloads");
   assert.equal(prompt.scopeName, "Downloads");
   assert.equal(prompt.access, "read");
+  assert.equal(prompt.canPersist, false, "the client never invents persistence the native layer did not allow");
 
   // A prompt with no identity or no scope can never be answered, so it must not
   // open a card the user cannot act on.
   assert.equal(normalizeDesktopToolPrompt({ payload: { scopePath: "C:\\tmp" } }), null);
   assert.equal(normalizeDesktopToolPrompt({ payload: { requestId: "req-2" } }), null);
   assert.equal(normalizeDesktopToolPrompt({}), null);
+});
+
+test("write, launch and command prompts keep their exact target and never become standing grants", () => {
+  const command = normalizeDesktopToolPrompt({
+    payload: {
+      requestId: "req-command",
+      tool: "run_command",
+      action: "command",
+      scopePath: "C:\\project\\Vups Router",
+      scopeName: "Vups Router",
+      summary: "Run the client test suite",
+      access: "execute",
+      readOnly: false,
+      modifiesData: true,
+      command: "npm test",
+      details: ["Shell: powershell", "Working folder: C:\\project\\Vups Router"],
+      expiresAt: Date.now() + 60_000
+    }
+  });
+  assert.equal(command.access, "execute");
+  assert.equal(command.command, "npm test");
+  assert.equal(command.readOnly, false);
+  assert.equal(command.modifiesData, true);
+  assert.equal(command.canPersist, false, "a command is never a standing permission");
+  assert.deepEqual(command.details, ["Shell: powershell", "Working folder: C:\\project\\Vups Router"]);
+
+  const write = normalizeDesktopToolPrompt({
+    payload: {
+      requestId: "req-write",
+      tool: "write_file",
+      action: "write",
+      scopePath: "C:\\project\\Vups Router\\agent-test.txt",
+      scopeName: "agent-test.txt",
+      summary: "Write agent-test.txt",
+      access: "write",
+      readOnly: false,
+      modifiesData: true
+    }
+  });
+  assert.equal(write.canPersist, false, "a write is never converted into a standing permission");
+
+  const terminate = normalizeDesktopToolPrompt({
+    payload: {
+      requestId: "req-terminate",
+      tool: "close_app",
+      action: "terminate",
+      scopePath: "Process 4242",
+      scopeName: "Process 4242",
+      summary: "Force-terminate the VupsRouter-launched app",
+      access: "launch",
+      readOnly: false,
+      destructive: true
+    }
+  });
+  assert.equal(terminate.access, "launch", "force-terminate is app control, not a file read");
+  assert.equal(terminate.destructive, true);
+  assert.equal(terminate.canPersist, false);
+});
+
+test("only the native canPersist flag enables Allow Always, and it names one file", () => {
+  const file = normalizeDesktopToolPrompt({
+    payload: {
+      requestId: "req-file",
+      tool: "read_file",
+      action: "contents",
+      scopePath: "C:\\Users\\Vishnu\\Downloads\\notes.txt",
+      scopeName: "notes.txt",
+      summary: "Read notes.txt",
+      access: "contents",
+      readOnly: true,
+      canPersist: true
+    }
+  });
+  assert.equal(file.canPersist, true);
+  assert.equal(file.access, "contents");
+  assert.equal(file.scopePath, "C:\\Users\\Vishnu\\Downloads\\notes.txt");
+
+  const launch = normalizeDesktopToolPrompt({
+    payload: {
+      requestId: "req-launch",
+      tool: "launch_app",
+      action: "launch",
+      scopePath: "C:\\Program Files\\Blender\\blender.exe",
+      scopeName: "Blender",
+      summary: "Launch Blender",
+      access: "launch",
+      canPersist: true
+    }
+  });
+  assert.equal(launch.canPersist, true);
+
+  // A malformed payload cannot smuggle a truthy non-boolean into the card.
+  const forged = normalizeDesktopToolPrompt({
+    payload: { requestId: "req-forged", scopePath: "C:\\tmp\\a.txt", canPersist: "yes" }
+  });
+  assert.equal(forged.canPersist, false);
+});
+
+test("new capability results are summarized from native data and never invented", () => {
+  const summary = localFilesystemSummary([
+    {
+      tool: "write_file",
+      label: "Writing a local file",
+      ok: true,
+      data: { path: "C:\\tmp\\agent-test.txt", bytesWritten: 11, size: 11 }
+    },
+    {
+      tool: "run_command",
+      label: "Running a command",
+      ok: true,
+      data: { status: "exited", exitCode: 0, durationMs: 42, stdout: "5.1.22621.1\r\n", stderr: "" }
+    },
+    {
+      tool: "launch_app",
+      label: "Launching an app",
+      ok: true,
+      data: { name: "Blender", pid: 4242, running: true }
+    },
+    {
+      tool: "start_command",
+      label: "Starting a background command",
+      ok: true,
+      data: { processId: "proc-7", pid: 4243, running: true }
+    },
+    {
+      tool: "command_output",
+      label: "Reading command output",
+      ok: true,
+      data: { status: "running", running: true, stdout: "ready\n", stderr: "" }
+    },
+    {
+      tool: "stop_command",
+      label: "Stopping a background command",
+      ok: true,
+      data: { processId: "proc-7", alreadyExited: false }
+    },
+    {
+      tool: "delete_path",
+      label: "Deleting a local item",
+      ok: true,
+      data: { path: "C:\\tmp\\agent-test.txt", entriesDeleted: 1 }
+    }
+  ]);
+
+  assert.match(summary, /11 bytes written/);
+  assert.match(summary, /C:\\tmp\\agent-test\.txt/);
+  assert.match(summary, /exit code 0/);
+  assert.match(summary, /5\.1\.22621\.1/, "the real stdout is shown");
+  assert.match(summary, /Blender launched \(PID 4242\), confirmed running/);
+  assert.match(summary, /cannot interact with the app's window/);
+  assert.match(summary, /processId `proc-7`, PID 4243\), running/);
+  assert.match(summary, /ready/, "background output is shown");
+  assert.match(summary, /stopped \(processId `proc-7`\)/);
+  assert.match(summary, /permanently deleted/);
+  assert.match(summary, /not moved to the Recycle Bin/);
 });
 
 test("only the three real decisions can leave the bridge", () => {
@@ -70,24 +227,37 @@ test("the approval bridge is a named event and never a browser dialog", () => {
   assert.doesNotMatch(cardSource, /alert\(|confirm\(|window\.confirm/);
 });
 
-test("the permission card is an in-chat region with the three scoped actions", () => {
+test("the approval card is short, in-chat, and offers exactly three actions", () => {
   assert.match(cardSource, /className="vr-permission-card"/);
-  assert.match(cardSource, /VupsRouter wants to access \$\{name\}/);
-  assert.match(cardSource, /\{request\.summary\}/);
-  assert.match(cardSource, /Access requested/);
-  assert.match(cardSource, /Allow once/);
-  assert.match(cardSource, /Always allow for this folder/);
-  assert.match(cardSource, /\{request\.scopePath\}/, "the exact path is shown");
+  assert.match(cardSource, /VupsRouter wants permission/);
+  assert.match(cardSource, /request\.canPersist === true/, "native eligibility decides the third action");
 
-  // The card names the operation and the state, so "waiting" is never read as
-  // "already allowed".
-  assert.match(cardSource, /List filenames and read file metadata/);
-  assert.match(cardSource, /Waiting for approval/);
-  assert.match(cardSource, /Applying your decision/);
+  // The required fields are present and the old explanations are gone.
+  assert.match(cardSource, /file: "File"/);
+  assert.match(cardSource, /label: "Location"|>\s*Location\s*</);
+  assert.match(cardSource, /<dt>Location<\/dt>/);
+  assert.match(cardSource, /\{target\.location\}/, "the exact path is shown");
+  assert.match(cardSource, /request\.scopePath/, "the location comes from the native scope");
+  assert.match(cardSource, /Allow Once/);
+  assert.match(cardSource, /Allow Always \(Only for This File\)/);
+  assert.match(cardSource, /Deny/);
+  assert.doesNotMatch(cardSource, /Access requested|Changes your data|scopeCopy|ACCESS_LINES|OPERATION_LINES/);
 
-  // A file-contents request must not offer a folder-wide grant.
-  assert.match(cardSource, /\{!isFile \? \(*/);
-  assert.match(cardSource, /it never allows modifying, deleting or running anything/);
+  // A warning appears only for a destructive or risky operation.
+  assert.match(cardSource, /request\.destructive/);
+  assert.match(cardSource, /This cannot be undone/);
+  assert.match(cardSource, /This runs a command on your PC/);
+  assert.match(cardSource, /This changes a file on your PC/);
+  assert.match(cardSource, /role="note"/);
+
+  // The button is visible for every request but only usable for one exact file
+  // or app; when disabled the card says why in one line.
+  assert.match(cardSource, /disabled=\{busy \|\| !canRemember\}/);
+  assert.match(cardSource, /Only a single file or app can be remembered/);
+
+  // Applying a decision is a transient state, not a result line.
+  assert.match(cardSource, /Applying…/);
+  assert.match(cardSource, /role="alert"/);
 
   // Mounted inside the conversation, above the composer, not as a modal window.
   assert.match(chatPageSource, /<InChatPermissionCard/);
@@ -111,14 +281,53 @@ test("one pending approval produces one card and dedup is not left to the UI alo
 
   // Enforcement lives in the native layer: identical concurrent requests join
   // one pending approval instead of opening a second.
-  const rust = readFileSync(
-    new URL("../src-tauri/src/desktop_tools.rs", import.meta.url),
-    "utf8"
-  );
-  assert.match(rust, /fn request\(&self, app: &AppHandle, owner: &str, prompt: &ApprovalPrompt\)/);
-  assert.match(rust, /await_decision\(&joined/);
-  assert.match(rust, /That permission request was already answered/);
-  assert.match(rust, /fn cancel_all/);
+  assert.match(rustSource, /fn request\(&self, app: &AppHandle, owner: &str, prompt: &ApprovalPrompt\)/);
+  assert.match(rustSource, /await_decision\(&joined,/);
+  assert.match(rustSource, /That permission request was already answered/);
+  assert.match(rustSource, /fn cancel_all/);
+});
+
+test("Allow Always is backed by an exact-resource grant in the native engine", () => {
+  // The saved grant names one resource, not a folder.
+  assert.match(rustSource, /struct ResourceGrant\b/);
+  assert.match(rustSource, /fn valid_resource_grant\(grant: &ResourceGrant\)/);
+  assert.match(rustSource, /grant\.kind == CONTENT_SCOPE \|\| grant\.kind == LAUNCH_SCOPE/);
+  assert.match(rustSource, /fn covers\(&self, owner: &str, kind: &str, target: &Path\) -> bool/);
+  assert.match(rustSource, /fn same_path\(left: &Path, right: &Path\) -> bool/);
+  assert.match(rustSource, /canonical_for_policy/);
+
+  // Eligibility is decided natively: only reading one existing file or
+  // launching one existing executable can be saved. Folders, metadata, writes,
+  // deletes, protected paths, network paths and symlinks cannot.
+  assert.match(rustSource, /fn action_persistable\(action: &str\) -> bool/);
+  assert.match(rustSource, /matches!\(action, "contents" \| "launch"\)/);
+  assert.match(rustSource, /fn exact_resource_can_persist\(path: &Path\) -> bool/);
+  assert.match(rustSource, /is_protected_system_path\(path\)/);
+  assert.match(rustSource, /file_type\(\)\.is_symlink\(\)/);
+  assert.match(rustSource, /is_network_path\(&path_text\(path\)\)/);
+
+  // Every answer is revalidated when it is applied, and a decision to save a
+  // resource is not silently turned into a broader one.
+  assert.match(rustSource, /can_persist: bool/);
+  assert.match(rustSource, /ApprovalDecision::AlwaysResource/);
+  assert.match(rustSource, /if fresh && granted == ApprovalDecision::AlwaysResource \{\s*ApprovalDecision::Once\s*\}/);
+
+  // The behaviours the UI depends on are pinned by native tests.
+  for (const name of [
+    "an_exact_file_grant_survives_and_is_revocable",
+    "an_exact_file_grant_cannot_reach_another_file_a_folder_or_the_parent",
+    "an_exact_file_grant_never_unlocks_its_folder_or_other_files",
+    "folder_listings_metadata_writes_and_commands_cannot_be_saved",
+    "legacy_folder_grants_are_dropped_instead_of_widened",
+    "a_reparse_point_cannot_back_a_saved_file_grant",
+    "full_access_still_asks_for_a_protected_system_file",
+    "an_unanswered_request_expires_as_a_denial",
+    "traversal_and_relative_paths_are_rejected",
+    "a_junction_cannot_carry_a_read_outside_the_workspace",
+    "a_symlink_cannot_carry_a_read_outside_the_workspace"
+  ]) {
+    assert.match(rustSource, new RegExp(`fn ${name}\\(`), name);
+  }
 });
 
 test("the five-latest-files request is matched to one local enumeration", () => {
@@ -255,12 +464,17 @@ test("a model failure after tool work carries the local results with it", () => 
   assert.match(desktopChat, /await cancelDesktopToolApprovals\(\)/);
 });
 
-test("saved folder grants are inspectable and revocable from settings", () => {
+test("saved exact-file grants are inspectable and revocable from settings", () => {
   const pages = readFileSync(new URL("../src/desktop/DesktopPages.jsx", import.meta.url), "utf8");
   assert.match(pages, /<FolderAccessSection \/>/, "the section is mounted in Settings");
   assert.match(pages, /await revokeDesktopToolGrant\(id\)/);
   assert.match(pages, /await clearDesktopToolGrants\(\)/);
-  assert.match(pages, /grant\.path/, "each row shows the folder it covers");
+  assert.match(pages, /grant\.path/, "each row shows the file it covers");
+  assert.match(pages, /grant\.kind === "contents"/);
+  assert.match(pages, /Can read this exact file/);
+  assert.match(pages, /Can launch this exact app/);
+  assert.match(pages, /never its folder/);
+  assert.match(pages, /Revoke all files/);
   assert.match(pages, /no keys/);
   assert.match(pages, /no file contents/);
   // The list is read from the native store, never from frontend memory.
@@ -268,8 +482,7 @@ test("saved folder grants are inspectable and revocable from settings", () => {
   assert.match(bridgeSource, /export (?:async )?function listDesktopToolGrants/);
   assert.match(bridgeSource, /invoke\("desktop_tool_grant_revoke"/);
 
-  const rust = readFileSync(new URL("../src-tauri/src/desktop_tools.rs", import.meta.url), "utf8");
-  assert.match(rust, /pub async fn desktop_tool_grant_revoke/, "revocation is a native command");
+  assert.match(rustSource, /pub async fn desktop_tool_grant_revoke/, "revocation is a native command");
   const capabilities = readFileSync(
     new URL("../src-tauri/capabilities/default.json", import.meta.url),
     "utf8"

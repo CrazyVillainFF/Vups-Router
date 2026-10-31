@@ -14,6 +14,7 @@ import {
   Key01Icon,
   Mic01Icon,
   SparklesIcon,
+  StarIcon,
   Tick02Icon
 } from '@hugeicons/core-free-icons';
 import {
@@ -27,6 +28,17 @@ import {
   utf8ByteLength,
   withPastedTextContent
 } from '../../chat/pastedText.js';
+import {
+  MODEL_FILTERS,
+  filterEmptyMessage,
+  filterModelRows,
+  loadSavedModelIds,
+  matchesModelQuery,
+  missingSavedModelCount,
+  savedModelId,
+  saveSavedModelIds,
+  toggleSavedModel
+} from '../../chat/savedModels.js';
 import './PromptBar.css';
 
 const ARROW_UP = [12, 4.5, 18.5, 11, 14.25, 11, 14.25, 19.5, 9.75, 19.5, 9.75, 11, 5.5, 11];
@@ -200,6 +212,9 @@ export default function PromptBar({
   const [dismissed, setDismissed] = useState(false);
   const [active, setActive] = useState(0);
   const [modelQuery, setModelQuery] = useState('');
+  const [modelFilter, setModelFilter] = useState('all');
+  const [savedIds, setSavedIds] = useState(() => loadSavedModelIds());
+  const savedSet = useMemo(() => new Set(savedIds), [savedIds]);
   const [listening, setListening] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -259,18 +274,12 @@ export default function PromptBar({
     if (open === 'at') return sources.filter(s => s.name.toLowerCase().includes(query));
     if (open === 'slash') return commands.filter(c => c.name.replace(/^\//, '').toLowerCase().startsWith(query));
     if (open === 'model') {
-      const needle = modelQuery.trim().toLowerCase();
-      if (!needle) return models;
-      return models.filter(row =>
-        [row.name, row.model, row.provider, row.tag, row.meta, ...(row.capabilityLabels || [])]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-          .includes(needle)
-      );
+      const filtered = filterModelRows(models, modelFilter, savedIds);
+      return filtered.filter(row => matchesModelQuery(row, modelQuery));
     }
     return [];
-  }, [open, query, sources, commands, models, modelQuery]);
+  }, [open, query, sources, commands, models, modelQuery, modelFilter, savedIds]);
+  const savedMissing = useMemo(() => missingSavedModelCount(models, savedIds), [models, savedIds]);
   const cursor = Math.min(active, Math.max(0, list.length - 1));
   const canSend = draft.trim().length > 0 || attachments.length > 0;
   const canGenerate = draft.trim().length > 0 && !busy && !generating;
@@ -519,6 +528,12 @@ export default function PromptBar({
   const stepAt = i => `calc(${EDGE}px + (100% - ${EDGE * 2}px) * ${i / Math.max(1, efforts.length - 1)})`;
   const fillAt = i => (i === efforts.length - 1 ? '100%' : `calc(${stepAt(i)} + 7px)`);
 
+  const toggleModelSaved = row => {
+    const next = toggleSavedModel(row, savedIds);
+    setSavedIds(next.ids);
+    saveSavedModelIds(next.ids);
+  };
+
   const pick = row => {
     if (!row || row.disabled) return;
     if (open === 'model') {
@@ -716,28 +731,51 @@ export default function PromptBar({
           ) : (
             <>
               {open === 'model' ? (
-                <div className="prompt-bar__model-search-wrap">
-                  <input
-                    className="prompt-bar__model-search"
-                    type="search"
-                    value={modelQuery}
-                    placeholder="Search models or capabilities"
-                    aria-label="Search models"
-                    autoComplete="off"
-                    spellCheck={false}
-                    onChange={event => {
-                      setModelQuery(event.target.value);
-                      setActive(0);
-                    }}
-                    onKeyDown={onKeyDown}
-                  />
-                </div>
+                <>
+                  <div className="prompt-bar__model-search-wrap">
+                    <input
+                      className="prompt-bar__model-search"
+                      type="search"
+                      value={modelQuery}
+                      placeholder="Search models or capabilities"
+                      aria-label="Search models"
+                      autoComplete="off"
+                      spellCheck={false}
+                      onChange={event => {
+                        setModelQuery(event.target.value);
+                        setActive(0);
+                      }}
+                      onKeyDown={onKeyDown}
+                    />
+                  </div>
+                  <div className="prompt-bar__model-filters" role="group" aria-label="Filter models">
+                    {MODEL_FILTERS.map(filter => (
+                      <button
+                        key={filter.id}
+                        type="button"
+                        className="prompt-bar__model-filter"
+                        aria-pressed={modelFilter === filter.id}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => {
+                          setModelFilter(filter.id);
+                          setActive(0);
+                        }}
+                      >
+                        {filter.label}
+                        {filter.id === 'saved' && savedIds.length > 0 ? (
+                          <span className="prompt-bar__model-filter-count">{savedIds.length}</span>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                </>
               ) : null}
               <div className="prompt-bar__list">
                 <span ref={glowRef} className="prompt-bar__glow" aria-hidden="true" />
                 {list.map((row, i) => {
                   const groupHeader =
                     open === 'model' && row.group && row.group !== list[i - 1]?.group ? row.group : null;
+                  const starred = savedSet.has(savedModelId(row));
                   return (
                     <Fragment key={row.key}>
                       {groupHeader ? (
@@ -782,6 +820,9 @@ export default function PromptBar({
                               </span>
                             ) : null}
                             {row.meta ? <span className="prompt-bar__model-meta">{row.meta}</span> : null}
+                            {row.model && row.model !== row.name ? (
+                              <span className="prompt-bar__model-id">{row.model}</span>
+                            ) : null}
                             {row.capabilityChips?.length > 0 ? (
                               <span className="prompt-bar__vups-chips">
                                 {row.capabilityChips.map(label => (
@@ -790,6 +831,31 @@ export default function PromptBar({
                               </span>
                             ) : null}
                           </span>
+                          {!row.disabled && row.model ? (
+                            <button
+                              type="button"
+                              className="prompt-bar__model-star"
+                              data-on={starred ? '' : undefined}
+                              aria-pressed={starred}
+                              aria-label={
+                                starred
+                                  ? `Remove ${row.name} from saved models`
+                                  : `Save ${row.name} to saved models`
+                              }
+                              title={starred ? 'Remove from saved models' : 'Save model'}
+                              onMouseDown={e => e.preventDefault()}
+                              onClick={e => {
+                                e.stopPropagation();
+                                toggleModelSaved(row);
+                              }}
+                            >
+                              <HugeiconsIcon
+                                icon={StarIcon}
+                                size={14}
+                                strokeWidth={starred ? 2.6 : 2}
+                              />
+                            </button>
+                          ) : null}
                           {row.saved && onDeleteModel ? (
                             <button
                               type="button"
@@ -836,7 +902,19 @@ export default function PromptBar({
                 })}
                 {list.length === 0 ? (
                   <div className="prompt-bar__empty">
-                    {open === 'model' ? `No models match "${modelQuery.trim()}"` : `No matches for "${query}"`}
+                    {open === 'model'
+                      ? filterEmptyMessage(modelFilter, {
+                          query: modelQuery,
+                          savedCount: savedIds.length
+                        })
+                      : `No matches for "${query}"`}
+                  </div>
+                ) : null}
+                {open === 'model' && modelFilter === 'saved' && list.length > 0 && savedMissing > 0 ? (
+                  <div className="prompt-bar__empty" role="status">
+                    {savedMissing === 1
+                      ? '1 saved model is not in the current catalogue.'
+                      : `${savedMissing} saved models are not in the current catalogue.`}
                   </div>
                 ) : null}
               </div>

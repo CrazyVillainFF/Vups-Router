@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 import { mimeForFile, safeFilePath } from "./codeFiles.js";
+import { saveBlobToAndroid } from "../native/androidDownloads.js";
 
 export const ZIP_ROOT = "vups-website";
 
@@ -34,6 +35,11 @@ export function downloadBlob(blob, filename, urls) {
   if (typeof document === "undefined" || typeof URL === "undefined") {
     throw new Error("Downloads are only available in the browser.");
   }
+  // The Android WebView cannot save blob URLs. When the native downloads
+  // bridge is present it takes the bytes directly and owns progress,
+  // notifications, and the Downloads folder, returning a promise.
+  const native = saveBlobToAndroid(blob, filename);
+  if (native) return native;
   const url = URL.createObjectURL(blob);
   urls?.add(url);
   const link = document.createElement("a");

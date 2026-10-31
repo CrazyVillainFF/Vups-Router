@@ -1,0 +1,262 @@
+.vr-downloads {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  z-index: 60;
+  width: min(360px, calc(100vw - 28px));
+  max-height: min(46vh, 420px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line, rgba(148, 163, 184, 0.18));
+  border-radius: 12px;
+  background: var(--panel, #0f172a);
+  box-shadow: 0 18px 44px rgba(2, 6, 23, 0.45);
+  color: #d8e1ef;
+  font: 12px "Outfit", sans-serif;
+  overflow: hidden;
+}
+
+.vr-downloads__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 4px 8px 4px 4px;
+  border-bottom: 1px solid var(--line, rgba(148, 163, 184, 0.18));
+}
+
+.vr-downloads__toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 6px 6px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.vr-downloads__toggle:hover {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.vr-downloads__title {
+  font-weight: 600;
+  color: #e8eef8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vr-downloads__chevron {
+  margin-left: auto;
+  flex: none;
+  color: var(--muted-soft, #8393aa);
+  transition: transform 0.15s ease;
+}
+
+.vr-downloads__chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.vr-downloads__clear {
+  flex: none;
+  padding: 5px 8px;
+  border: 1px solid var(--line, rgba(148, 163, 184, 0.18));
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted, #9aa8bd);
+  font: 11px "Outfit", sans-serif;
+  cursor: pointer;
+}
+
+.vr-downloads__clear:hover {
+  color: #d8e1ef;
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.vr-downloads__permission {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line, rgba(148, 163, 184, 0.18));
+  background: rgba(108, 155, 255, 0.08);
+  color: #b9c8dd;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.vr-downloads__permission > svg {
+  flex: none;
+  color: #8fb2ee;
+}
+
+.vr-downloads__permission > span {
+  flex: 1;
+}
+
+.vr-downloads__permission button {
+  flex: none;
+  padding: 4px 9px;
+  border: 1px solid rgba(108, 155, 255, 0.4);
+  border-radius: 7px;
+  background: rgba(108, 155, 255, 0.16);
+  color: #dbe7ff;
+  font: 11px "Outfit", sans-serif;
+  cursor: pointer;
+}
+
+.vr-downloads__notice {
+  margin: 0;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line, rgba(148, 163, 184, 0.18));
+  color: #f3c7a6;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.vr-downloads__list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+}
+
+.vr-downloads__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 6px 7px 8px;
+  border-radius: 8px;
+}
+
+.vr-downloads__row + .vr-downloads__row {
+  border-top: 1px solid rgba(148, 163, 184, 0.09);
+}
+
+.vr-downloads__icon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--muted-soft, #8393aa);
+}
+
+.vr-downloads__row[data-status="completed"] .vr-downloads__icon {
+  color: #6fce9a;
+}
+
+.vr-downloads__row[data-status="failed"] .vr-downloads__icon {
+  color: #f08a8a;
+}
+
+.vr-downloads__row[data-status="running"] .vr-downloads__icon,
+.vr-downloads__row[data-status="queued"] .vr-downloads__icon {
+  color: #8fb2ee;
+}
+
+.vr-downloads__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vr-downloads__name {
+  color: #e8eef8;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vr-downloads__meta {
+  color: var(--muted, #9aa8bd);
+  font: 10px var(--mono, "SFMono-Regular", Consolas, monospace);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.vr-downloads__bar {
+  position: relative;
+  height: 4px;
+  margin-top: 3px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+  overflow: hidden;
+}
+
+.vr-downloads__bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #6c9bff;
+  transition: width 0.25s ease;
+}
+
+.vr-downloads__bar > span.is-indeterminate {
+  width: 34%;
+  animation: vr-downloads-indeterminate 1.2s ease-in-out infinite;
+}
+
+.vr-downloads__actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.vr-downloads__actions button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted, #9aa8bd);
+  cursor: pointer;
+}
+
+.vr-downloads__actions button:hover {
+  background: rgba(148, 163, 184, 0.12);
+  color: #e8eef8;
+}
+
+.vr-downloads__spin {
+  animation: vr-downloads-spin 0.9s linear infinite;
+}
+
+@keyframes vr-downloads-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes vr-downloads-indeterminate {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(320%); }
+}
+
+@media (max-width: 640px) {
+  .vr-downloads {
+    left: max(10px, env(safe-area-inset-left));
+    right: max(10px, env(safe-area-inset-right));
+    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 4px);
+    width: auto;
+    max-height: 40vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vr-downloads__spin,
+  .vr-downloads__bar > span.is-indeterminate {
+    animation: none;
+  }
+  .vr-downloads__chevron,
+  .vr-downloads__bar > span {
+    transition: none;
+  }
+}

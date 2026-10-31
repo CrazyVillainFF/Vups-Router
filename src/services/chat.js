@@ -78,15 +78,20 @@ export class ChatPersistenceError extends ChatNetworkError {
   }
 }
 
+// There is deliberately no "connect" or total-execution timer: a provider may
+// legitimately spend minutes queued, loading a local model, or reasoning before
+// its first byte. `idle` only measures real silence after the stream opened, and
+// the server sends SSE keepalives while it waits on the provider. `overall: 0`
+// disables a total wall-clock cutoff by default; callers that genuinely need one
+// can pass it explicitly.
 export const DEFAULT_CHAT_TIMEOUTS = Object.freeze({
-  connect: 30000,
   idle: 120000,
-  overall: 600000
+  overall: 0
 });
 
 export const CHAT_MESSAGES = Object.freeze({
   connection: "Can't connect to Vups Router. Try again shortly.",
-  timeout: "This is taking too long. Try again.",
+  timeout: "The connection stalled before the model answered. Try again.",
   interrupted: "The response stopped early. Continue or retry.",
   unavailable: "This model is unavailable. Try another model.",
   empty: "No answer received. Please try again."
@@ -96,7 +101,8 @@ function resolveTimeouts(overrides) {
   const result = { ...DEFAULT_CHAT_TIMEOUTS };
   for (const key of Object.keys(result)) {
     const value = Number(overrides?.[key]);
-    if (Number.isFinite(value) && value > 0) result[key] = value;
+    // Zero is meaningful: it disables that timer.
+    if (Number.isFinite(value) && value >= 0) result[key] = value;
   }
   return result;
 }
@@ -148,7 +154,7 @@ export function toRequestMessages(messages) {
  * @param {"general"|"motion"} [options.mode] Assistant behavior mode. Defaults to general.
  * @param {number} [options.temperature]
  * @param {AbortSignal} [options.signal]
- * @param {{connect?: number, idle?: number, overall?: number}} [options.timeouts] Test override for deadlines.
+ * @param {{idle?: number, overall?: number}} [options.timeouts] Test override for deadlines. `idle` is post-connection silence; `overall: 0` disables the optional total deadline.
  * @param {(payload: {conversationId: string}) => void} [options.onMeta] Called once with the conversation id.
  * @param {(chunk: string) => void} [options.onChunk] Called with each streamed text chunk.
  * @param {(step: string) => void} [options.onStep] Called with truthful progress steps.
@@ -210,16 +216,13 @@ export async function streamChatResponse({
     else signal.addEventListener("abort", onExternalAbort, { once: true });
   }
 
-  let connectTimer = null;
   let idleTimer = null;
   let overallTimer = null;
   let drainTimer = null;
   const clearTimers = () => {
-    if (connectTimer) clearTimeout(connectTimer);
     if (idleTimer) clearTimeout(idleTimer);
     if (overallTimer) clearTimeout(overallTimer);
     if (drainTimer) clearTimeout(drainTimer);
-    connectTimer = null;
     idleTimer = null;
     overallTimer = null;
     drainTimer = null;
@@ -230,16 +233,6 @@ export async function streamChatResponse({
     clearTimers();
     controller.abort();
   };
-  const armConnect = () => {
-    clearConnect();
-    connectTimer = setTimeout(() => trip("connect"), timeouts.connect);
-  };
-  const clearConnect = () => {
-    if (connectTimer) {
-      clearTimeout(connectTimer);
-      connectTimer = null;
-    }
-  };
   const clearIdle = () => {
     if (idleTimer) {
       clearTimeout(idleTimer);
@@ -248,7 +241,9 @@ export async function streamChatResponse({
   };
   const armIdle = () => {
     clearIdle();
-    idleTimer = setTimeout(() => trip("idle"), timeouts.idle);
+    if (timeouts.idle > 0) {
+      idleTimer = setTimeout(() => trip("idle"), timeouts.idle);
+    }
   };
 
   const timeoutError = (partialContent = "", extra = {}) => new ChatNetworkError(
@@ -281,10 +276,13 @@ export async function streamChatResponse({
 
   if (userCancelled) throw cancelledError();
 
-  onStep?.("Sending request");
-  onActivity?.({ phase: "request", message: "Sending request" });
-  armConnect();
-  overallTimer = setTimeout(() => trip("overall"), timeouts.overall);
+  // The provider may be queued, cold-starting, or loading a local model before
+  // it sends anything. That wait is visible and cancellable, never a failure.
+  onStep?.("Waiting for model");
+  onActivity?.({ phase: "waiting", message: "Waiting for model" });
+  if (timeouts.overall > 0) {
+    overallTimer = setTimeout(() => trip("overall"), timeouts.overall);
+  }
 
   try {
     let response;
@@ -303,8 +301,6 @@ export async function streamChatResponse({
       throw new ChatNetworkError(CHAT_MESSAGES.connection, null, {
         code: "connection_unavailable"
       });
-    } finally {
-      clearConnect();
     }
 
     if (deadline) throw readingTimeout("", null);
@@ -374,8 +370,6 @@ export async function streamChatResponse({
       throw new ChatNetworkError(CHAT_MESSAGES.empty, null, { code: "empty_stream" });
     }
 
-    onStep?.("Waiting for model");
-    onActivity?.({ phase: "waiting", message: "Waiting for model" });
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";

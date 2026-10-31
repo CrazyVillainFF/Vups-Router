@@ -121,12 +121,17 @@ export const PROVIDERS = [
     deployment: "hosted",
     compatibility: "openai",
     status: "supported",
-    baseUrl: "https://agentrouter.org/v1",
+    baseUrl: "https://co.agentrouter.org/v1",
     website: "https://agentrouter.org/",
     keysUrl: "https://ps.air-outer.com/console/token",
-    docsUrl: "https://www.agentrouter.org/docs/",
+    docsUrl: "https://co.agentrouter.org/portal/guide",
     pricingUrl: "https://ps.air-outer.com/pricing",
-    note: "OpenAI-compatible gateway at https://agentrouter.org/v1. Its GPT models use the OpenAI Responses API; VupsRouter routes gpt-* models there automatically and keeps other models on chat completions. The catalog changes — copy current model IDs from the official console if discovery does not return them.",
+    note: "Use the documented agent host: OpenAI-compatible at https://co.agentrouter.org/v1, Anthropic-compatible at https://co.agentrouter.org (no /v1). The agentrouter.org host only accepts AgentRouter's own coding CLIs and rejects this app, so it is not used as a base URL here. The catalog follows your key's resource pool — discover it or add model IDs manually.",
+    suggestedModels: [
+      { id: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
+      { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+      { id: "glm-5.3", name: "GLM-5.3" }
+    ],
     cost: "API key required. No free tier is documented — check the official console/pricing for current models and any credits."
   },
   {

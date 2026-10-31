@@ -34,7 +34,7 @@ test("desktop tool failures never fall through to the generic card", () => {
     const error = Object.assign(new Error("That API route does not exist."), { code, status: 404 });
     assert.equal(classifyChatError(error), "desktop_tools", code);
     const presented = presentChatError(error, { modelLabel: "Vups v3 Galax" });
-    assert.equal(presented.title, "Local file tools unavailable", code);
+    assert.equal(presented.title, "Local Windows tools unavailable", code);
     assert.doesNotMatch(presented.message, /something went wrong/i, code);
     assert.equal(presented.canSwitchModel, false, code);
   }
@@ -57,7 +57,7 @@ test("a server-side tool failure the client has never seen still explains itself
   );
   assert.equal(classifyChatError(error), "desktop_tools");
   const presented = presentChatError(error, { modelLabel: "Vups v3 Galax" });
-  assert.equal(presented.title, "Local file tools unavailable");
+  assert.equal(presented.title, "Local Windows tools unavailable");
   assert.doesNotMatch(presented.message, /something went wrong/i);
 });
 

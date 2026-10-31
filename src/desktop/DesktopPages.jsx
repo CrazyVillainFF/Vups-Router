@@ -11,6 +11,7 @@ import {
   WarningCircle
 } from "@phosphor-icons/react";
 import HoldToDeleteDialog from "../components/HoldToDeleteDialog.jsx";
+import ApplicationUpdates from "../components/ApplicationUpdates.jsx";
 import {
   clearDesktopToolGrants,
   listDesktopToolGrants,
@@ -91,7 +92,7 @@ function FolderAccessSection() {
       setGrants(await listDesktopToolGrants());
       setStatus("ready");
     } catch (cause) {
-      setError(cause?.message || "Could not read the saved folder permissions.");
+      setError(cause?.message || "Could not read the saved file permissions.");
       setStatus("error");
     }
   }, []);
@@ -107,7 +108,7 @@ function FolderAccessSection() {
       await revokeDesktopToolGrant(id);
       setGrants(prev => prev.filter(grant => grant.id !== id));
     } catch (cause) {
-      setError(cause?.message || "That folder permission could not be revoked.");
+      setError(cause?.message || "That file permission could not be revoked.");
     } finally {
       setBusyId("");
     }
@@ -120,7 +121,7 @@ function FolderAccessSection() {
       await clearDesktopToolGrants();
       setGrants([]);
     } catch (cause) {
-      setError(cause?.message || "The saved folder permissions could not be cleared.");
+      setError(cause?.message || "The saved file permissions could not be cleared.");
     } finally {
       setBusyId("");
     }
@@ -130,13 +131,14 @@ function FolderAccessSection() {
     <section className="vr-settings-group">
       <h2>Local file access</h2>
       <p className="vr-page-note">
-        Folders you approved with &quot;Always allow for this folder&quot;. Revoking one makes the next read
-        ask again inside the chat. These entries store a folder path and a read scope only &mdash; no keys,
-        no file contents, and no permission to modify or delete anything.
+        Files and apps you approved with &quot;Allow Always (Only for This File)&quot;. Each entry covers one exact
+        file or executable, never its folder. Revoking one makes the next access ask again inside the chat.
+        These entries store a path and a permission type only &mdash; no keys, no file contents, and no
+        permission to modify or delete anything.
       </p>
       {status === "web" ? (
         <p className="vr-setting-hint">
-          Folder permissions are managed by the Windows desktop app; the web app has no local file access.
+          File permissions are managed by the Windows desktop app; the web app has no local file access.
         </p>
       ) : null}
       {status === "error" ? (
@@ -148,7 +150,7 @@ function FolderAccessSection() {
       {status !== "web" ? (
         grants.length === 0 ? (
           <p className="vr-setting-hint">
-            {status === "loading" ? "Checking this device…" : "No folders are remembered — every read asks first."}
+            {status === "loading" ? "Checking this device…" : "No files or apps are remembered — every access asks first."}
           </p>
         ) : (
           <ul className="vr-grant-list">
@@ -158,7 +160,11 @@ function FolderAccessSection() {
                   <strong>{grant.name || grant.path}</strong>
                   <span title={grant.path}>{grant.path}</span>
                   <span>
-                    {grant.scope === "contents" ? "Reads one file" : "Lists files and reads their names, sizes and dates"}
+                    {grant.kind === "contents"
+                      ? "Can read this exact file"
+                      : grant.kind === "launch"
+                        ? "Can launch this exact app"
+                        : "Exact item"}
                     {grant.createdAt ? ` · since ${new Date(grant.createdAt).toLocaleDateString()}` : ""}
                   </span>
                 </span>
@@ -182,7 +188,7 @@ function FolderAccessSection() {
           disabled={busyId !== ""}
           onClick={clearAll}
         >
-          {busyId === "clear" ? "Clearing…" : "Revoke all folders"}
+          {busyId === "clear" ? "Clearing…" : "Revoke all files"}
         </button>
       ) : null}
     </section>
@@ -250,6 +256,8 @@ export function AppSettingsPage() {
       </section>
 
       <FolderAccessSection />
+
+      <ApplicationUpdates />
 
       <section className="vr-settings-group">
         <h2>Shortcuts</h2>
@@ -493,7 +501,7 @@ export function HelpPage() {
         </article>
         <article className="vr-card">
           <h2>Permission modes</h2>
-          <p>Ask me every time prompts before each local filesystem read, except folders you marked &quot;Always allow&quot; in the card; those are listed above and can be revoked. Agent allows reads inside the selected workspace and asks outside it, even for folders allowed in an earlier mode. Full access allows broad read-only filesystem tools but still asks every time for protected system locations and never bypasses Windows permissions. Switching modes applies immediately in the native layer and cancels any card still waiting; switching to a stricter mode also clears the folders you had allowed for good.</p>
+          <p>Ask me every time prompts before each local operation, except the exact files and apps you saved with &quot;Allow Always (Only for This File)&quot;; those are listed above and can be revoked. Agent allows reads inside the selected workspace and asks outside it, even for files allowed in an earlier mode. Full access allows broad filesystem tools but still asks every time for protected system locations and never bypasses Windows permissions. Switching modes applies immediately in the native layer and cancels any card still waiting; switching to a stricter mode also clears the saved file permissions for good.</p>
         </article>
         <article className="vr-card">
           <h2>Search and organize</h2>

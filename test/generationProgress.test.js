@@ -19,17 +19,17 @@ function rowsFor(phases) {
   );
 }
 
-test("the progress bar follows the real queued, connecting, and generating phases", () => {
+test("the progress bar follows the real waiting and generating phases", () => {
   const queued = rowsFor(["request"]);
   assert.equal(
     generationProgress({ events: queued, active: true, startedAt: 1000, now: 1500 }).label,
-    "Model request queued"
+    "Waiting for model"
   );
 
   const connecting = rowsFor(["request", "waiting"]);
   assert.equal(
     generationProgress({ events: connecting, active: true, startedAt: 1000, now: 2000 }).label,
-    "Connecting to model"
+    "Waiting for model"
   );
 
   const generating = rowsFor(["request", "waiting", "responding"]);
@@ -109,7 +109,7 @@ test("only the newest running operation is reported, so repeats cannot duplicate
   const repeated = applyActivityProgress(rows, { phase: "waiting" }, { runId: "run", at: 2500 });
   assert.equal(repeated, rows);
   const progress = generationProgress({ events: repeated, active: true, startedAt: 1000, now: 3000 });
-  assert.equal(progress.label, "Connecting to model");
+  assert.equal(progress.label, "Waiting for model");
   assert.equal(progress.steps, 2);
 });
 

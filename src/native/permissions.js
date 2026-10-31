@@ -10,7 +10,7 @@ export const WINDOWS_PERMISSION_MODES = Object.freeze([
     shortLabel: "Ask",
     risk: "Review",
     description:
-      "Each local read waits for an in-chat card. Folders you marked \"Always allow\" are the one standing exception and stay revocable in Settings. Switching here from a broader mode clears those folders first."
+      "Every protected local operation waits for an in-chat card that names the action, target and risk: file reads and writes, deletes, app launches, opening links, and commands. \"Allow Once\" covers that one call and is never converted automatically into a permanent permission; \"Allow Always (Only for This File)\" saves only the exact file or executable and stays revocable in Settings. Switching here from a broader mode clears those saved grants first."
   },
   {
     id: "workspace",
@@ -18,7 +18,7 @@ export const WINDOWS_PERMISSION_MODES = Object.freeze([
     shortLabel: "Workspace",
     risk: "Scoped",
     description:
-      "Reads inside the selected workspace run without a card. Anything outside it asks first, even a folder you allowed in an earlier mode. Switching here from Full access clears standing folder approvals."
+      "File work stays inside the authorized project folders, resolved against the real path, so the assistant can inspect code, create and edit files, and run builds without a card for each ordinary change. Deleting still asks, and app launches, opening files or links, and terminal commands ask once with the exact target. A path outside it is blocked with a clear reason and is never prompted into a wider grant. Switching here from Full access clears saved file permissions."
   },
   {
     id: "full",
@@ -26,7 +26,7 @@ export const WINDOWS_PERMISSION_MODES = Object.freeze([
     shortLabel: "Full",
     risk: "Broad",
     description:
-      "Broad read-only reads across accessible folders. Protected system locations always ask; there is no shell, write, delete, admin right, or Windows permission bypass."
+      "All supported local capabilities without a repeated approval: reads, file creation and edits, renames, moves, copies, deletes, app discovery and launch, opening files and links, and PowerShell or cmd commands with real output and exit codes. Protected system locations always ask, sensitive file names still ask, force-terminating an app always asks, and every action is audited. Full access is not administrator rights: UAC prompts and Windows access controls still apply. Switch back to Ask or Agent at any time."
   }
 ]);
 

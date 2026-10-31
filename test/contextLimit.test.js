@@ -241,7 +241,7 @@ test("ordinary network and server failures retain their existing behavior", () =
 
   const timeout = presentChatError({ code: "vups_timeout" });
   assert.equal(timeout.category, "timeout");
-  assert.equal(timeout.title, "Request timed out");
+  assert.equal(timeout.title, "Connection stalled");
 
   const outage = presentChatError({ code: "vups_upstream_unavailable" });
   assert.equal(outage.category, "server_error");

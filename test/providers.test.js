@@ -128,15 +128,28 @@ test("FlagshipRouter is present with its documented localhost default", () => {
   assert.match(entry.note, /tunnel|localhost/i);
 });
 
-test("AgentRouter uses its documented OpenAI-compatible base URL and makes no unverified free-tier claim", () => {
+test("AgentRouter targets the documented agent host, not the CLI-gated one", () => {
   const entry = providerById("agentrouter");
   assert.ok(entry, "agentrouter entry missing");
   assert.equal(entry.category, "aggregator");
   assert.equal(entry.status, "supported");
   assert.equal(entry.compatibility, "openai");
-  assert.equal(entry.baseUrl, "https://agentrouter.org/v1");
-  assert.match(entry.docsUrl, /^https:\/\/www\.agentrouter\.org\/docs\//);
+  assert.equal(entry.baseUrl, "https://co.agentrouter.org/v1");
+  assert.equal(entry.docsUrl, "https://co.agentrouter.org/portal/guide");
+  assert.notEqual(entry.baseUrl, "https://agentrouter.org/v1", "the CLI-gated host must not be a preset base URL");
   assert.match(entry.cost, /no free tier is documented/i);
+});
+
+test("AgentRouter suggests the configured model IDs with their display names", () => {
+  const entry = providerById("agentrouter");
+  assert.deepEqual(entry.suggestedModels, [
+    { id: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+    { id: "glm-5.3", name: "GLM-5.3" }
+  ]);
+  // Suggestions stay scoped to the provider that owns them.
+  const others = PROVIDERS.filter(provider => provider.id !== "agentrouter" && provider.suggestedModels);
+  assert.deepEqual(others.map(provider => provider.id), []);
 });
 
 test("Google Gemini uses its documented OpenAI-compatible endpoint and discloses free-tier limits", () => {

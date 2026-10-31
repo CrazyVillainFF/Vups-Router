@@ -320,9 +320,13 @@ export async function fetchPluginActivity(limit = 20) {
   return Array.isArray(data.activity) ? data.activity : [];
 }
 
-export async function generateImage(prompt) {
+export async function generateImage(prompt, signal) {
   ensureApiBaseURL();
-  const { data } = await apiClient.post("/images/generate", { prompt });
+  const { data } = await apiClient.post(
+    "/images/generate",
+    { prompt },
+    signal ? { signal } : undefined
+  );
   return data;
 }
 

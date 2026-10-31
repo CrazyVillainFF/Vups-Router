@@ -1,0 +1,238 @@
+.vr-updates .vr-setting-hint {
+  margin-top: 6px;
+}
+
+.vr-updates__released {
+  color: #71819a;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.vr-updates__status[data-tone="ok"] {
+  color: #8fd6a8;
+}
+
+.vr-updates__status[data-tone="ready"] {
+  color: #b6ccff;
+}
+
+.vr-updates__status[data-tone="pending"] {
+  color: #d9c48a;
+}
+
+.vr-updates__status[data-tone="error"] {
+  color: #e7a5a5;
+}
+
+.vr-updates__spin {
+  animation: vr-updates-spin 1s linear infinite;
+}
+
+.vr-updates__notes {
+  margin-top: 6px;
+  padding: 13px 15px;
+  border: 1px solid rgba(32, 42, 59, 0.8);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.vr-updates__notes strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #dce5f5;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.vr-updates__notes p {
+  margin: 0;
+  color: #93a2bb;
+  font-size: 11.5px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.vr-updates__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #8fb0ff;
+  font: 500 11px "Outfit", sans-serif;
+  cursor: pointer;
+}
+
+.vr-updates__link:hover {
+  color: #b6ccff;
+  text-decoration: underline;
+}
+
+.vr-updates__download,
+.vr-updates__ready {
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px solid rgba(32, 42, 59, 0.8);
+  border-radius: 10px;
+  background: rgba(108, 155, 255, 0.05);
+}
+
+.vr-updates__download-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #c7d3e6;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.vr-updates__download-head > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.vr-updates__download-head svg {
+  flex-shrink: 0;
+  color: #8fd6a8;
+}
+
+.vr-updates__bar {
+  position: relative;
+  height: 6px;
+  margin-top: 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.vr-updates__bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #6c9bff, #8fd6ff);
+  transition: width 0.2s ease;
+}
+
+.vr-updates__bar > span.is-indeterminate {
+  width: 38%;
+  animation: vr-updates-slide 1.3s ease-in-out infinite;
+}
+
+.vr-updates__ready {
+  border-color: rgba(143, 214, 168, 0.22);
+  background: rgba(143, 214, 168, 0.05);
+}
+
+.vr-updates__failure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 11px 14px;
+  border: 1px solid rgba(231, 165, 165, 0.25);
+  border-radius: 10px;
+  background: rgba(231, 165, 165, 0.05);
+  color: #e7a5a5;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.vr-updates__failure > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.vr-updates__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 10px 0 0;
+  color: #e7a5a5;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.vr-updates__error svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.vr-updates__success {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  color: #8fd6a8;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.vr-updates__action {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.vr-updates__action .vr-setting-hint {
+  flex: 1 1 240px;
+  margin: 0;
+}
+
+@media (max-width: 620px) {
+  .vr-updates .vr-setting-row {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .vr-updates .vr-setting-row > .vr-secondary-small {
+    width: 100%;
+  }
+
+  .vr-updates__download-head {
+    flex-wrap: wrap;
+  }
+
+  .vr-updates__action > .vr-primary-small,
+  .vr-updates__failure > .vr-secondary-small {
+    width: 100%;
+  }
+}
+
+@keyframes vr-updates-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes vr-updates-slide {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(280%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vr-updates__spin,
+  .vr-updates__bar > span.is-indeterminate {
+    animation: none;
+  }
+
+  .vr-updates__bar > span {
+    transition: none;
+  }
+}

@@ -319,6 +319,13 @@ export function presentChatError(error, { modelLabel = "", now = new Date() } = 
     if (code === "ai_disabled") {
       title = "Chat unavailable";
       message = "AI chat is disabled for your account. Contact your administrator.";
+    } else if (code === "unauthorized_client") {
+      // The backend knows why the request was refused and states the exact fix
+      // (for AgentRouter, the wrong API host); a generic card would hide it.
+      title = "Provider rejected this app";
+      message =
+        backendAdvice(error) ||
+        "The provider rejected this client before checking the API key. Reconfigure the provider's API host in Settings, then test again.";
     } else {
       title = "Access denied";
       message = "The provider denied this request. Check its permissions in Settings, or choose another model.";
@@ -393,15 +400,18 @@ export function presentChatError(error, { modelLabel = "", now = new Date() } = 
     retry = false;
     canSwitchModel = false;
   } else if (category === "desktop_tools") {
-    title = "Local file tools unavailable";
+    title = "Local Windows tools unavailable";
     message =
       code === "tool_round_limit"
-        ? "The assistant used too many local file steps for one request. Ask for fewer files, or send the request again without the workspace folder."
-        : "The local file tools could not run against the connected server, so nothing was read from your workspace. Send the message again, or remove the workspace folder to chat without tools.";
+        ? "The assistant used too many local tool steps for one request. Ask for fewer files or a narrower piece of work, or split the task into smaller steps."
+        : "The local Windows tools could not run against the connected server, so the requested local work did not happen. Send the message again, or chat without local tools.";
     canSwitchModel = false;
   } else if (category === "timeout") {
-    title = "Request timed out";
-    message = "This is taking too long. Try again.";
+    // Reached only when the connection itself stops producing data (or an
+    // explicitly configured total deadline expires). A model that is merely
+    // slow or queued keeps running and never shows this card.
+    title = "Connection stalled";
+    message = "The server stopped sending data before the answer finished. Continue or retry.";
   } else if (category === "oversize") {
     title = "Request too long";
     message = "Your request is too long. Shorten it and try again.";

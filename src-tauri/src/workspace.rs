@@ -236,7 +236,10 @@ pub(crate) fn skipped_directory(name: &str) -> bool {
     )
 }
 
-pub(crate) fn skipped_file(name: &str) -> bool {
+/// Credentials and private-key material. Kept separate from the broader
+/// `skipped_file` list: a PDF is not a secret, it is just not text, and the
+/// agent must report those two situations differently.
+pub(crate) fn sensitive_file(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     let exact = matches!(
         name.as_str(),
@@ -252,10 +255,6 @@ pub(crate) fn skipped_file(name: &str) -> bool {
             | "id_dsa"
             | "id_ecdsa"
             | "id_ed25519"
-            | "package-lock.json"
-            | "pnpm-lock.yaml"
-            | "yarn.lock"
-            | "cargo.lock"
     );
     if exact || name.starts_with(".env.") {
         return true;
@@ -263,14 +262,26 @@ pub(crate) fn skipped_file(name: &str) -> bool {
     if name.starts_with("secret") || name.starts_with("credential") {
         return true;
     }
+    [
+        ".pem", ".key", ".p12", ".pfx", ".keystore", ".jks", ".der",
+    ]
+    .iter()
+    .any(|extension| name.ends_with(extension))
+}
+
+pub(crate) fn skipped_file(name: &str) -> bool {
+    if sensitive_file(name) {
+        return true;
+    }
+    let name = name.to_ascii_lowercase();
+    let exact = matches!(
+        name.as_str(),
+        "package-lock.json" | "pnpm-lock.yaml" | "yarn.lock" | "cargo.lock"
+    );
+    if exact {
+        return true;
+    }
     if [
-        ".pem",
-        ".key",
-        ".p12",
-        ".pfx",
-        ".keystore",
-        ".jks",
-        ".der",
         ".crt",
         ".cer",
         ".map",
