@@ -1,13 +1,25 @@
 import React, { useMemo, useState } from "react";
-import { ArrowSquareOut, CircleNotch, Key, Plugs, ShieldCheck, Trash, WarningCircle } from "@phosphor-icons/react";
+import {
+  ArrowSquareOut,
+  CircleNotch,
+  GithubLogo,
+  Key,
+  Plugs,
+  ShieldCheck,
+  Trash,
+  WarningCircle
+} from "@phosphor-icons/react";
 import ExternalAnchor from "../components/ExternalLink.jsx";
 import {
+  accountLabel,
   capabilityGroups,
   connectionStatus,
   exampleDebugArgs,
   formatPluginDate,
   redactSecrets,
-  setupGuidance
+  setupGuidance,
+  signInOffer,
+  signInStatus
 } from "./pluginDetails.js";
 
 function Badge({ tone = "muted", children }) {
@@ -50,7 +62,7 @@ function ActionItem({ action, installed, turnOn, onRun }) {
   );
 }
 
-function StatusPanel({ plugin, status, testing, onTest }) {
+function StatusPanel({ plugin, status, testing, canTest, onTest }) {
   return (
     <section className="vr-plugin-status-panel" aria-label="Connection status">
       <div className="vr-plugin-status-row">
@@ -65,7 +77,7 @@ function StatusPanel({ plugin, status, testing, onTest }) {
         ) : (
           <span>No connection check has run yet.</span>
         )}
-        {plugin.installed ? (
+        {canTest ? (
           <button
             type="button"
             className="vr-secondary-small"
@@ -145,7 +157,79 @@ function SetupPanel({ guidance }) {
   );
 }
 
-function AdvancedPanel({ plugin, status, runDebug }) {
+function SignInPanel({ plugin, signIn, phase, message, onSignIn, onDisconnectSignIn }) {
+  const status = signInStatus(signIn);
+  const who = accountLabel(signIn.account);
+  const pending = phase === "opening" || phase === "waiting";
+  return (
+    <section className="vr-plugin-account-panel" aria-label="Provider sign-in">
+      <header>
+        <GithubLogo size={17} />
+        <div>
+          <h3>{`Sign in with ${plugin.name}`}</h3>
+          <p>
+            {signIn.installed
+              ? status?.sentence
+              : "Opens the provider's own authorization page in your browser. This app never sees your password, and the connection is saved only as encrypted text on the server."}
+          </p>
+        </div>
+        {status ? <Badge tone={status.tone}>{status.label}</Badge> : <Badge tone="muted">Not connected</Badge>}
+      </header>
+
+      {signIn.installed ? (
+        <dl className="vr-plugin-account-facts">
+          <div>
+            <dt>Account</dt>
+            <dd>{who || "Connected, account name unavailable"}</dd>
+          </div>
+          <div>
+            <dt>Access granted</dt>
+            <dd>{signIn.scopes || "As configured on the server"}</dd>
+          </div>
+          <div>
+            <dt>Last check</dt>
+            <dd>{formatPluginDate(signIn.lastCheckAt) || "Not run yet"}</dd>
+          </div>
+        </dl>
+      ) : signIn.offeredScopes ? (
+        <p className="vr-plugin-muted">
+          The authorization page will ask for: {signIn.offeredScopes.split(/[\s,+]+/).filter(Boolean).join(", ")}.
+        </p>
+      ) : null}
+
+      {pending ? (
+        <p className="vr-plugin-signin-progress">
+          <CircleNotch size={13} className="vr-spin" />
+          {phase === "opening" ? "Asking the server for a single-use sign-in link…" : `Waiting for you to approve the sign-in in the browser…`}
+        </p>
+      ) : null}
+      {phase === "expired" ? (
+        <p className="vr-plugin-signin-progress">
+          <WarningCircle size={13} />
+          The sign-in did not come back. Nothing was connected — start it again when you are ready.
+        </p>
+      ) : null}
+      {message ? <div className="vr-inline-error" role="alert">{message}</div> : null}
+
+      <div className="vr-plugin-detail-actions">
+        <button type="button" className="vr-primary-small" onClick={onSignIn} disabled={pending}>
+          {pending ? (
+            <><CircleNotch size={14} className="vr-spin" /> Waiting…</>
+          ) : (
+            <><GithubLogo size={14} /> {signIn.installed ? `Reconnect with ${plugin.name}` : `Connect with ${plugin.name}`}</>
+          )}
+        </button>
+        {signIn.installed ? (
+          <button type="button" className="vr-danger-small" onClick={onDisconnectSignIn}>
+            <Trash size={14} /> Disconnect sign-in
+          </button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function AdvancedPanel({ plugin, status, signIn, usable, runDebug }) {
   const tools = plugin.tools || [];
   const [toolName, setToolName] = useState(tools[0]?.name || "");
   const [argsText, setArgsText] = useState(() => (tools[0] ? JSON.stringify(exampleDebugArgs(tools[0]), null, 2) : "{}"));
@@ -209,9 +293,19 @@ function AdvancedPanel({ plugin, status, runDebug }) {
             <dd>
               {Object.keys(plugin.credentialsConfigured || {}).length
                 ? `${Object.keys(plugin.credentialsConfigured).length} saved (encrypted, never returned)`
-                : "None required"}
+                : signIn?.installed
+                  ? "Provider sign-in (encrypted, never returned)"
+                  : "None required"}
             </dd>
           </div>
+          {signIn ? (
+            <div>
+              <dt>Sign-in row</dt>
+              <dd>
+                <code>{signIn.pluginId}</code> · {signIn.installed ? signIn.connection : "not installed"}
+              </dd>
+            </div>
+          ) : null}
           <div>
             <dt>Last provider message</dt>
             <dd>{redactSecrets(plugin.lastTestMessage || plugin.lastError || "None")}</dd>
@@ -228,7 +322,7 @@ function AdvancedPanel({ plugin, status, runDebug }) {
           </div>
         </dl>
 
-        {plugin.installed && tools.length ? (
+        {usable && tools.length ? (
           <section className="vr-plugin-console" aria-label="Raw tool console">
             <div className="vr-plugin-section-head">
               <div>
@@ -271,23 +365,57 @@ function AdvancedPanel({ plugin, status, runDebug }) {
   );
 }
 
-export default function PluginDetailView({ plugin, testing, runDebug, onTest, onConnect, onDisconnect, onRunAction }) {
+export default function PluginDetailView({
+  plugin,
+  testing,
+  runDebug,
+  onTest,
+  onConnect,
+  onDisconnect,
+  onRunAction,
+  onSignIn,
+  onDisconnectSignIn,
+  signInPhase = "",
+  signInMessage = ""
+}) {
   const status = useMemo(() => connectionStatus(plugin), [plugin]);
   const guidance = useMemo(() => setupGuidance(plugin), [plugin]);
   const groups = useMemo(() => capabilityGroups(plugin), [plugin]);
-  const unavailable = plugin.availability === "in_development" || plugin.availability === "oauth_required";
-  const connectable =
-    plugin.installed || plugin.availability === "available" || plugin.availability === "requires_setup";
+  const signIn = useMemo(() => signInOffer(plugin), [plugin]);
+  const unavailable = plugin.availability === "in_development";
+  // Either credential makes an action runnable — the token row or the sign-in
+  // row — and the server accepts the call on whichever one is installed.
+  const usable = Boolean(plugin.installed || signIn?.installed);
+  // A row whose only credential is a provider sign-in has no form to open; the
+  // sign-in panel above is the whole connection path for it.
+  const hasCredentialForm = (plugin.auth?.fields || []).length > 0 || (plugin.auth?.type || "none") === "none";
   const turnsOn = (plugin.auth?.type || "none") === "none";
 
   return (
     <div className="vr-plugin-detail">
-      <StatusPanel plugin={plugin} status={status} testing={testing} onTest={onTest} />
+      <StatusPanel plugin={plugin} status={status} testing={testing} canTest={usable} onTest={onTest} />
 
-      {connectable ? (
+      {signIn ? (
+        <SignInPanel
+          plugin={plugin}
+          signIn={signIn}
+          phase={signInPhase}
+          message={signInMessage}
+          onSignIn={onSignIn}
+          onDisconnectSignIn={onDisconnectSignIn}
+        />
+      ) : null}
+
+      {hasCredentialForm && !unavailable ? (
         <div className="vr-plugin-detail-actions">
           <button type="button" className="vr-secondary-small" onClick={onConnect}>
-            {plugin.installed ? "Update credentials" : turnsOn ? "Turn on" : "Connect"}
+            {plugin.installed
+              ? "Update credentials"
+              : turnsOn
+                ? "Turn on"
+                : signIn
+                  ? "Connect with a personal access token"
+                  : "Connect"}
           </button>
           {plugin.installed ? (
             <button type="button" className="vr-danger-small" onClick={onDisconnect}>
@@ -329,7 +457,7 @@ export default function PluginDetailView({ plugin, testing, runDebug, onTest, on
             </h4>
             <ul>
               {groups.reads.map(action => (
-                <ActionItem key={action.name} action={action} installed={plugin.installed} turnOn={turnsOn} onRun={onRunAction} />
+                <ActionItem key={action.name} action={action} installed={usable} turnOn={turnsOn} onRun={onRunAction} />
               ))}
             </ul>
           </div>
@@ -343,7 +471,7 @@ export default function PluginDetailView({ plugin, testing, runDebug, onTest, on
             </h4>
             <ul>
               {groups.changes.map(action => (
-                <ActionItem key={action.name} action={action} installed={plugin.installed} turnOn={turnsOn} onRun={onRunAction} />
+                <ActionItem key={action.name} action={action} installed={usable} turnOn={turnsOn} onRun={onRunAction} />
               ))}
             </ul>
           </div>
@@ -361,7 +489,7 @@ export default function PluginDetailView({ plugin, testing, runDebug, onTest, on
         ) : null}
       </section>
 
-      <AdvancedPanel plugin={plugin} status={status} runDebug={runDebug} />
+      <AdvancedPanel plugin={plugin} status={status} signIn={signIn} usable={usable} runDebug={runDebug} />
     </div>
   );
 }

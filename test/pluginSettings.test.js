@@ -254,3 +254,182 @@ test("every default label differs from the technical tool name", () => {
   assert.ok(github.tools.every(tool => details.friendlyActionLabel(tool) !== tool.name));
   assert.ok(npm.tools.every(tool => details.friendlyActionLabel(tool) !== tool.name));
 });
+
+const offeredSignIn = {
+  pluginId: "github-oauth",
+  label: "Connect with GitHub",
+  configured: true,
+  installed: false,
+  connection: "disconnected",
+  account: null,
+  scopes: "",
+  offeredScopes: "repo read:user",
+  lastCheckAt: null,
+  lastCheckStatus: "",
+  lastError: ""
+};
+
+const patOnly = { ...github, installed: false };
+
+test("the GitHub card carries a sign-in option beside its token option", () => {
+  const offer = details.signInOffer({ ...patOnly, oauth: offeredSignIn });
+  assert.equal(offer.pluginId, "github-oauth");
+  assert.equal(offer.configured, true);
+  assert.equal(offer.installed, false);
+  assert.equal(offer.offeredScopes, "repo read:user");
+  assert.equal(details.signInTarget({ ...patOnly, oauth: offeredSignIn }), "github-oauth");
+
+  // A card with no companion row and no OAuth definition offers no sign-in.
+  assert.equal(details.signInOffer(patOnly), null);
+  assert.equal(details.signInTarget(patOnly), "");
+  assert.equal(details.signInOffer(npm), null);
+});
+
+test("a row that is itself an OAuth connection normalizes from its own fields", () => {
+  const bare = {
+    ...github,
+    id: "github-oauth",
+    availability: "oauth_required",
+    auth: { type: "oauth", label: "Connect with GitHub", fields: [] },
+    installed: true,
+    connection: "connected",
+    config: { account: { login: "octocat", name: "The Octocat" }, scopes: "repo read:user" }
+  };
+  const offer = details.signInOffer(bare);
+  assert.equal(offer.pluginId, "github-oauth");
+  assert.equal(offer.installed, true);
+  assert.equal(offer.scopes, "repo read:user");
+  assert.equal(details.accountLabel(offer.account), "The Octocat (@octocat)");
+  assert.equal(details.signInTarget(bare), "github-oauth");
+
+  // An unfinished adapter never presents a sign-in as available.
+  assert.equal(details.signInOffer({ ...bare, availability: "in_development" }), null);
+});
+
+test("account labels use the login, and a login equal to the name is not repeated", () => {
+  assert.equal(details.accountLabel({ login: "octocat", name: "The Octocat" }), "The Octocat (@octocat)");
+  assert.equal(details.accountLabel({ login: "octocat", name: "octocat" }), "@octocat");
+  assert.equal(details.accountLabel({ login: "octocat" }), "@octocat");
+  assert.equal(details.accountLabel({ name: "The Octocat" }), "");
+  assert.equal(details.accountLabel(null), "");
+});
+
+test("a live sign-in is a real connection even when the token row is empty", () => {
+  const signedIn = {
+    ...patOnly,
+    oauth: {
+      ...offeredSignIn,
+      installed: true,
+      connection: "connected",
+      account: { login: "octocat", name: "The Octocat" },
+      scopes: "repo read:user",
+      lastCheckAt: "2026-11-03T09:00:00.000Z",
+      lastCheckStatus: "connected"
+    }
+  };
+  const status = details.connectionStatus(signedIn);
+  assert.equal(status.key, "connected");
+  assert.equal(status.label, "Signed in");
+  assert.match(status.sentence, /GitHub sign-in is active for The Octocat \(@octocat\)\./);
+
+  // A sign-in the provider no longer accepts cannot read as an active one.
+  const broken = {
+    ...signedIn,
+    oauth: {
+      ...signedIn.oauth,
+      connection: "needs_reconnection",
+      lastCheckStatus: "failed",
+      lastError: "GitHub rejected the stored sign-in: ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+    }
+  };
+  const brokenStatus = details.connectionStatus(broken);
+  assert.equal(brokenStatus.label, "Sign-in needs attention");
+  assert.equal(brokenStatus.tone, "warn");
+  assert.ok(!brokenStatus.sentence.includes("ghp_abcdefghijklmnopqrstuvwxyz0123456789"));
+  assert.match(brokenStatus.sentence, /\[redacted\]/);
+  assert.doesNotMatch(brokenStatus.sentence, /is active/);
+
+  // With neither credential present, the card still says it is not connected.
+  assert.equal(details.connectionStatus(patOnly).label, "Not connected");
+  assert.equal(details.connectionStatus({ ...patOnly, availability: "oauth_required" }).label, "Not connected");
+});
+
+test("GitHub setup names both connection options instead of hiding OAuth", () => {
+  const guidance = details.setupGuidance({ ...patOnly, oauth: offeredSignIn });
+  assert.equal(guidance.headline, "Two ways to connect");
+  assert.match(guidance.sentence, /Signing in with GitHub/);
+  assert.match(guidance.sentence, /personal access token/);
+  assert.match(guidance.sentence, /either, or both/);
+  assert.ok(guidance.signIn);
+  assert.doesNotMatch(`${guidance.headline} ${guidance.sentence}`, /not available|not offered yet|no sign-in/i);
+
+  // The token wording is untouched for a card with no sign-in beside it.
+  assert.equal(details.setupGuidance(patOnly).headline, "A token is optional");
+});
+
+test("the scopes a sign-in will request come from server data, not invented text", () => {
+  // A token row keeps its own narrowest-scope advice beside the sign-in option.
+  const both = details.setupGuidance({ ...patOnly, oauth: offeredSignIn });
+  assert.match(both.minimumAccess, /Issues: read and write/);
+  assert.equal(both.signIn.offeredScopes, "repo read:user");
+
+  // An OAuth-only row states the scope string the server actually offers.
+  const bare = {
+    ...github,
+    id: "github-oauth",
+    auth: { type: "oauth", label: "Connect with GitHub", fields: [] },
+    availability: "oauth_required",
+    installed: false,
+    config: { scopes: "repo read:user" }
+  };
+  assert.equal(details.setupGuidance(bare).headline, "Sign in with the provider");
+  assert.match(details.setupGuidance(bare).minimumAccess, /^This sign-in asks for: repo read:user\.$/);
+
+  // With no scope string from the server it falls back to the general promise,
+  // never to a claim that sign-in is unavailable.
+  const scopeless = { ...bare, config: {}, oauth: undefined };
+  assert.match(details.setupGuidance(scopeless).minimumAccess, /never receives your password/);
+  assert.doesNotMatch(JSON.stringify(details.setupGuidance(scopeless)), /not available|not offered/i);
+});
+
+test("the landing query is read as fixed sentences and never echoed back", () => {
+  assert.equal(details.oauthOutcomeNotice(""), null);
+  assert.equal(details.oauthOutcomeNotice("?oauth=maybe"), null);
+  assert.equal(details.oauthOutcomeNotice("?code=ghp_abcdefgh12345678"), null);
+
+  const good = details.oauthOutcomeNotice("plugin=github&oauth=connected");
+  assert.equal(good.tone, "ok");
+  assert.equal(good.pluginId, "github");
+  assert.match(good.message, /GitHub sign-in is connected/);
+
+  for (const [reason, expected] of [
+    ["cancelled", /You cancelled the GitHub sign-in/],
+    ["invalid_state", /not started by this server/],
+    ["replayed_state", /already been used/],
+    ["exchange_failed", /did not accept the sign-in code/],
+    ["not_configured", /no GitHub OAuth app configured/],
+    ["unsupported_plugin", /does not use a GitHub sign-in/],
+    ["provider_error", /GitHub reported a problem/]
+  ]) {
+    const outcome = details.oauthOutcomeNotice(`plugin=github&oauth=error&reason=${reason}`);
+    assert.equal(outcome.tone, "error", reason);
+    assert.match(outcome.message, expected, reason);
+  }
+
+  // An unrecognized reason says nothing more than that it did not finish.
+  const unknown = details.oauthOutcomeNotice("plugin=github&oauth=error&reason=Something from GitHub");
+  assert.match(unknown.message, /did not finish, so nothing was connected/);
+  assert.ok(!unknown.message.includes("Something from GitHub"));
+});
+
+test("a failed sign-in start explains the real cause and keeps the token path", () => {
+  assert.match(details.oauthStartFailureText("oauth_not_configured", "x"), /personal access token still works/);
+  assert.match(details.oauthStartFailureText("adapter_not_available", "x"), /no working adapter/);
+  assert.equal(details.oauthStartFailureText("", ""), "GitHub sign-in could not start.");
+  assert.equal(
+    details.oauthStartFailureText("", "rejected ghp_abcdefghijklmnopqrstuvwxyz0123456789"),
+    "rejected [redacted]"
+  );
+  // The variable names are safe to print; nothing here can leak a value.
+  assert.doesNotMatch(details.oauthStartFailureText("oauth_not_configured", "x"), /CLIENT_SECRET|Bearer/);
+});

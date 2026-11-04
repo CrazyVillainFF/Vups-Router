@@ -3,23 +3,48 @@
 // declared permissions. Nothing in this file assumes that two plugins do the
 // same things.
 
-// The four GitHub actions the product names explicitly. Every other tool falls
+// The GitHub actions the product names explicitly. Every other tool falls
 // back to its own server-authored description.
 const TOOL_LABELS = Object.freeze({
   search_repositories: "Find repositories",
+  list_repositories: "List your repositories",
   repository: "View repository details",
+  list_files: "List folder contents",
+  read_file: "Read a file",
+  list_branches: "List branches",
+  list_commits: "Read commit history",
+  compare_refs: "Compare two branches",
+  search_code: "Search code",
   list_issues: "View issues",
-  create_issue: "Create an issue"
+  create_issue: "Create an issue",
+  list_pull_requests: "View pull requests",
+  read_pull_request: "Read a pull request with its diff",
+  create_branch: "Create a branch",
+  write_file: "Write a file to a branch",
+  delete_file: "Delete a file from a branch",
+  create_pull_request: "Open a pull request"
 });
 
 const FIELD_LABELS = Object.freeze({
   owner: "Repository owner",
   repo: "Repository name",
+  path: "Path inside the repository",
+  branch: "Branch",
+  from: "Starting branch, tag, or commit",
+  base: "Base branch",
+  head: "Branch with your changes",
+  message: "Commit message",
+  content: "File contents",
+  number: "Number",
+  draft: "Draft",
   title: "Issue title",
   body: "Issue description",
   query: "Search words",
-  state: "Which issues",
+  state: "Which items",
+  page: "Page",
+  perPage: "Items per page",
   limit: "How many results",
+  allowDefaultBranch: "Allow the default branch",
   name: "Name",
   namespace: "Namespace",
   tag: "Tag",
@@ -29,11 +54,136 @@ const FIELD_LABELS = Object.freeze({
 });
 
 const REQUIRED_TOKEN_FOR = Object.freeze({
-  create_issue: true
+  create_issue: true,
+  search_code: true
 });
 
 const GITHUB_TOKEN_GUIDANCE =
   "Use a fine-grained token limited to Issues: read and write on the repositories you choose, or a classic token with only the public_repo scope. This app never asks for your password and uses nothing beyond that.";
+
+const GITHUB_SIGNIN_GUIDANCE =
+  "GitHub sign-in asks only for the access the server is configured for — normally repo and read:user. That lets this app see your repositories and act as you on the changes you approve. It never receives your password, and revoking the sign-in from GitHub ends the connection here too.";
+
+// The server callback tells the app which connection finished and why it failed.
+// Nothing from the provider is echoed here: only these fixed sentences.
+const OAUTH_REASON_TEXT = Object.freeze({
+  cancelled: "You cancelled the GitHub sign-in, so no connection was made.",
+  invalid_state: "That sign-in was not started by this server, so nothing was connected.",
+  replayed_state: "That sign-in attempt had already been used, so nothing was connected twice.",
+  exchange_failed: "GitHub did not accept the sign-in code, so nothing was connected.",
+  not_configured:
+    "This server has no GitHub OAuth app configured yet, so sign-in cannot start. A personal access token still works.",
+  unsupported_plugin: "That connection does not use a GitHub sign-in.",
+  provider_error: "GitHub reported a problem with the sign-in, so nothing was connected.",
+  failed: "The GitHub sign-in did not finish, so nothing was connected."
+});
+
+export function accountLabel(account) {
+  const login = String(account?.login || "").trim();
+  if (!login) return "";
+  const name = String(account?.name || "").trim();
+  return name && name !== login ? `${name} (@${login})` : `@${login}`;
+}
+
+// The GitHub card covers two credentials at once: the token row it is built from
+// and the sign-in row hanging off it. Everything the UI says about sign-in comes
+// from this normalized view of what the server reported. A row that is itself an
+// OAuth connection normalizes from its own fields.
+export function signInOffer(plugin) {
+  if (!plugin) return null;
+  const offer = plugin.oauth;
+  if (offer?.pluginId) {
+    return {
+      pluginId: offer.pluginId,
+      label: offer.label || "Sign in with the provider",
+      configured: Boolean(offer.configured),
+      installed: Boolean(offer.installed),
+      connection: offer.connection || "disconnected",
+      account: offer.account || null,
+      scopes: offer.scopes || "",
+      // The scope string is public by design — it travels in the authorization
+      // URL — so the app can say what the sign-in asks for before it asks.
+      offeredScopes: offer.offeredScopes || "",
+      lastCheckAt: offer.lastCheckAt || null,
+      lastCheckStatus: offer.lastCheckStatus || "",
+      lastError: redactSecrets(offer.lastError || "")
+    };
+  }
+  if (plugin.auth?.type !== "oauth" || plugin.availability === "in_development") return null;
+  return {
+    pluginId: plugin.id,
+    label: plugin.auth.label || "Sign in with the provider",
+    configured: true,
+    installed: Boolean(plugin.installed),
+    connection: plugin.connection || "disconnected",
+    account: plugin.config?.account || null,
+    scopes: plugin.config?.scopes || "",
+    offeredScopes: "",
+    lastCheckAt: plugin.lastTestAt || null,
+    lastCheckStatus: plugin.lastTestStatus || "",
+    lastError: redactSecrets(plugin.lastError || plugin.lastTestMessage || "")
+  };
+}
+
+// Which id a sign-in button starts: this row's own id when it is itself the
+// OAuth connection, otherwise the companion that carries it.
+export function signInTarget(plugin) {
+  return signInOffer(plugin)?.pluginId || "";
+}
+
+export function signInStatus(offer) {
+  if (!offer?.installed) return null;
+  const who = accountLabel(offer.account) || "your GitHub account";
+  if (offer.connection === "connected") {
+    return { key: "connected", label: "Signed in", tone: "ok", sentence: `GitHub sign-in is active for ${who}.` };
+  }
+  if (offer.connection === "needs_reconnection" || offer.connection === "error") {
+    return {
+      key: "problem",
+      label: "Sign-in needs attention",
+      tone: "warn",
+      sentence: offer.lastError
+        ? `GitHub rejected the saved sign-in: ${offer.lastError}`
+        : `The sign-in for ${who} no longer works. Connect with GitHub again.`
+    };
+  }
+  if (offer.connection === "disabled") {
+    return { key: "disabled", label: "Sign-in turned off", tone: "muted", sentence: `The GitHub sign-in for ${who} is turned off.` };
+  }
+  return {
+    key: "disconnected",
+    label: "Sign-in not connected",
+    tone: "muted",
+    sentence: `The GitHub sign-in for ${who} is saved but not connected. Connect with GitHub again.`
+  };
+}
+
+const OAUTH_CONNECTED_TEXT = "GitHub sign-in is connected. Your repositories are available to the tools you approve.";
+
+// Only the browser hand-off knows which outcome the server reported.
+export function oauthOutcomeNotice(search) {
+  const params = new URLSearchParams(String(search || ""));
+  const outcome = params.get("oauth");
+  if (outcome !== "connected" && outcome !== "error") return null;
+  if (outcome === "connected") {
+    return { tone: "ok", pluginId: params.get("plugin") || "", message: OAUTH_CONNECTED_TEXT };
+  }
+  const reason = params.get("reason") || "";
+  return {
+    tone: "error",
+    pluginId: params.get("plugin") || "",
+    message: OAUTH_REASON_TEXT[reason] || OAUTH_REASON_TEXT.failed
+  };
+}
+
+// A start failure is either a missing server setting, an expired session, or a
+// real backend message. Naming the environment variables is safe; their values
+// are never known to this side.
+export function oauthStartFailureText(code, message) {
+  if (code === "oauth_not_configured") return OAUTH_REASON_TEXT.not_configured;
+  if (code === "adapter_not_available") return "This integration has no working adapter yet, so there is nothing to sign in to.";
+  return redactSecrets(message || "GitHub sign-in could not start.");
+}
 
 export function humanizeKey(key) {
   const spaced = String(key || "")
@@ -216,15 +366,21 @@ export function connectionStatus(plugin) {
         lastAttempt: null
       };
     }
-    if (plugin?.availability === "oauth_required") {
+    // A card can be connected through its sign-in row while its own token row is
+    // empty, which is a real connection and must not read as "Not connected".
+    const signIn = signInStatus(signInOffer(plugin));
+    if (!signIn && plugin?.availability === "oauth_required") {
       return {
         key: "disconnected",
         label: "Not connected",
         tone: "muted",
-        sentence: `${name} signs in with its own account service, which this build does not offer yet. Nothing has been shared with ${name}.`,
+        sentence: `${name} connects by signing in with the provider. Until you do, nothing has been shared with ${name}.`,
         lastSuccessAt: null,
         lastAttempt: null
       };
+    }
+    if (signIn) {
+      return { ...signIn, lastSuccessAt: null, lastAttempt: signInOffer(plugin).lastCheckAt };
     }
     const sentence =
       authType === "optional_api_key"
@@ -291,20 +447,33 @@ export function setupGuidance(plugin) {
   const authType = plugin?.auth?.type || "none";
   const readLabels = groups.reads.map(action => action.label);
   const changeLabels = groups.changes.map(action => action.label);
+  const signIn = signInOffer(plugin);
+  const oauthScopes = signIn?.offeredScopes || plugin?.config?.scopes || "";
 
-  if (plugin?.availability === "in_development" || plugin?.availability === "oauth_required") {
+  if (plugin?.availability === "in_development") {
     return {
       key: "unavailable",
       headline: "Nothing to connect yet",
-      sentence:
-        plugin?.availability === "oauth_required"
-          ? `${name} needs a sign-in app configured on the server. Until that exists, no connection is offered and no permissions are requested.`
-          : `${name} is listed for transparency. There is no working connection to set up in this version.`,
+      sentence: `${name} is listed for transparency. There is no working connection to set up in this version.`,
       requiresCredentials: false,
       worksWithout: [],
       needsTokenFor: [],
       minimumAccess: "",
       guidanceUrl: ""
+    };
+  }
+
+  if (authType === "oauth") {
+    return {
+      key: "oauth",
+      headline: "Sign in with the provider",
+      sentence: `${name} connects when you authorize on the provider's own site. This app never sees your password, and no permission is requested until you press Connect.`,
+      requiresCredentials: false,
+      worksWithout: [],
+      needsTokenFor: changeLabels,
+      minimumAccess: oauthScopes ? `This sign-in asks for: ${oauthScopes}.` : GITHUB_SIGNIN_GUIDANCE,
+      guidanceUrl: "",
+      signIn
     };
   }
 
@@ -324,16 +493,19 @@ export function setupGuidance(plugin) {
   if (authType === "optional_api_key") {
     return {
       key: "optional",
-      headline: "A token is optional",
-      sentence: readLabels.length
-        ? `${readLabels.length} read-only ${readLabels.length === 1 ? "action works" : "actions work"} without a token.${changeLabels.length ? ` ${changeLabels.join(" and ")} needs one so the change is made as you.` : ""}`
-        : `A token is optional for ${name}.`,
+      headline: signIn ? "Two ways to connect" : "A token is optional",
+      sentence: signIn
+        ? `Signing in with GitHub is the fuller option: it reads the repositories your account can see. A personal access token is the narrower option and keeps working on its own — you can use either, or both.`
+        : readLabels.length
+          ? `${readLabels.length} read-only ${readLabels.length === 1 ? "action works" : "actions work"} without a token.${changeLabels.length ? ` ${changeLabels.join(" and ")} needs one so the change is made as you.` : ""}`
+          : `A token is optional for ${name}.`,
       requiresCredentials: false,
       worksWithout: readLabels,
       needsTokenFor: changeLabels,
       minimumAccess: plugin?.id === "github" ? GITHUB_TOKEN_GUIDANCE : "",
       guidanceUrl: plugin?.id === "github" ? "https://github.com/settings/tokens" : "",
-      guidanceLabel: "Create a token"
+      guidanceLabel: "Create a token",
+      signIn
     };
   }
 
@@ -356,13 +528,14 @@ export function setupGuidance(plugin) {
 
   return {
     key: "oauth",
-    headline: "Sign-in is not available yet",
-    sentence: `${name} uses an account sign-in that this build does not offer. No permission is requested and no data is shared.`,
+    headline: "Sign in with the provider",
+    sentence: `${name} connects through its own account sign-in. No permission is requested until you press Connect.`,
     requiresCredentials: false,
     worksWithout: [],
-    needsTokenFor: [],
-    minimumAccess: "",
-    guidanceUrl: ""
+    needsTokenFor: changeLabels,
+    minimumAccess: oauthScopes ? `This sign-in asks for: ${oauthScopes}.` : "",
+    guidanceUrl: "",
+    signIn
   };
 }
 

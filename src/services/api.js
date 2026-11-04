@@ -293,6 +293,22 @@ export async function testPlugin(pluginId) {
   return data;
 }
 
+// The backend answers with the provider authorization URL only. The OAuth state
+// never reaches this side; the callback lands on the server, not here.
+export async function startPluginOAuth(pluginId) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.get(`/plugins/${encodeURIComponent(pluginId)}/oauth/start`);
+  return data;
+}
+
+// Native shells open the sign-in in the system browser and cannot see the
+// redirect, so they ask this whether the connection landed.
+export async function fetchPluginOAuthStatus(pluginId) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.get(`/plugins/${encodeURIComponent(pluginId)}/oauth/status`);
+  return data;
+}
+
 export async function uninstallPlugin(pluginId) {
   ensureApiBaseURL();
   const { data } = await apiClient.delete(`/plugins/${encodeURIComponent(pluginId)}`);
@@ -343,4 +359,13 @@ export function getApiErrorMessage(error) {
     return "Could not reach the VupsRouter backend. Check your connection and try again.";
   }
   return error instanceof Error ? error.message : "The request could not be completed.";
+}
+
+// Plugin screens branch on the machine-readable code, never on message wording,
+// so a reworded backend message cannot silently change what the app claims.
+export function getApiErrorCode(error) {
+  if (axios.isAxiosError(error)) {
+    return typeof error.response?.data?.code === "string" ? error.response.data.code : "";
+  }
+  return typeof error?.code === "string" ? error.code : "";
 }

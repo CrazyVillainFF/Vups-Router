@@ -186,7 +186,7 @@ const github = {
 };
 
 function renderDetail(plugin, overrides = {}) {
-  const calls = { test: 0, connect: 0, disconnect: 0, run: [] };
+  const calls = { test: 0, connect: 0, disconnect: 0, signIn: 0, disconnectSignIn: 0, run: [] };
   const container = render(
     React.createElement(DetailView, {
       plugin,
@@ -195,12 +195,152 @@ function renderDetail(plugin, overrides = {}) {
       onTest: () => { calls.test += 1; },
       onConnect: () => { calls.connect += 1; },
       onDisconnect: () => { calls.disconnect += 1; },
+      onSignIn: () => { calls.signIn += 1; },
+      onDisconnectSignIn: () => { calls.disconnectSignIn += 1; },
       onRunAction: name => calls.run.push(name),
       ...overrides
     })
   );
   return { container, calls };
 }
+
+// What the backend reports beside a token row: the companion sign-in connection.
+const offeredSignIn = {
+  pluginId: "github-oauth",
+  label: "Connect with GitHub",
+  configured: true,
+  installed: false,
+  connection: "disconnected",
+  account: null,
+  scopes: "",
+  offeredScopes: "repo read:user",
+  lastCheckAt: null,
+  lastCheckStatus: "",
+  lastError: ""
+};
+
+const unconnected = { ...github, installed: false, connection: "disconnected", credentialsConfigured: {} };
+const withSignIn = overrides => ({ ...unconnected, oauth: { ...offeredSignIn, ...overrides } });
+
+test("the GitHub screen offers sign-in and a token as two separate, live options", () => {
+  const { container, calls } = renderDetail(withSignIn({}));
+  const panel = container.querySelector(".vr-plugin-account-panel");
+  assert.ok(panel, "the sign-in option is on screen");
+  assert.match(panel.textContent, /Sign in with GitHub/);
+  assert.match(panel.querySelector(".vr-plugin-muted").textContent, /will ask for: repo, read:user/);
+
+  const signInButton = buttonByText(container, "Connect with GitHub");
+  const tokenButton = buttonByText(container, "Connect with a personal access token");
+  assert.ok(signInButton && tokenButton, "both options are rendered as buttons");
+  assert.equal(signInButton.disabled, false);
+  assert.equal(tokenButton.disabled, false);
+
+  React.act(() => { signInButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })); });
+  React.act(() => { tokenButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })); });
+  assert.equal(calls.signIn, 1);
+  assert.equal(calls.connect, 1);
+
+  assert.match(container.querySelector(".vr-plugin-setup h3").textContent, /Two ways to connect/);
+  const text = container.textContent;
+  for (const claim of ["not available", "Nothing to connect yet", "OAuth not configured", "no sign-in"]) {
+    assert.ok(!text.toLowerCase().includes(claim.toLowerCase()), `the screen never says "${claim}"`);
+  }
+});
+
+test("starting a sign-in shows waiting states and never a claimed success", () => {
+  const opening = renderDetail(withSignIn({}), { signInPhase: "opening" });
+  assert.match(opening.container.querySelector(".vr-plugin-signin-progress").textContent, /single-use sign-in link/);
+  assert.equal(buttonByText(opening.container, "Waiting…").disabled, true);
+  assert.equal(buttonByText(opening.container, "Connect with GitHub"), null);
+
+  const waiting = renderDetail(withSignIn({}), { signInPhase: "waiting" });
+  assert.match(waiting.container.querySelector(".vr-plugin-signin-progress").textContent, /Waiting for you to approve the sign-in/);
+  assert.equal(buttonByText(waiting.container, "Waiting…").disabled, true);
+  assert.doesNotMatch(waiting.container.textContent, /Signed in/);
+
+  const expired = renderDetail(withSignIn({}), { signInPhase: "expired" });
+  assert.match(expired.container.textContent, /The sign-in did not come back/);
+  assert.match(expired.container.textContent, /Nothing was connected/);
+  assert.equal(buttonByText(expired.container, "Connect with GitHub").disabled, false);
+
+  const reason = "This server has no GitHub OAuth app configured yet, so sign-in cannot start. A personal access token still works.";
+  const failed = renderDetail(withSignIn({}), { signInPhase: "error", signInMessage: reason });
+  const alert = failed.container.querySelector('[role="alert"]');
+  assert.equal(alert.textContent, reason, "the backend reason is shown verbatim, not softened into a success");
+  assert.equal(buttonByText(failed.container, "Connect with GitHub").disabled, false);
+  assert.ok(buttonByText(failed.container, "Connect with a personal access token"), "the other option stays usable");
+  assert.doesNotMatch(failed.container.textContent, /Signed in|sign-in is active/i);
+});
+
+test("a connected sign-in shows the real account and offers reconnect and disconnect", () => {
+  const { container, calls } = renderDetail(
+    withSignIn({
+      installed: true,
+      connection: "connected",
+      account: { login: "octocat", name: "The Octocat", id: 583231 },
+      scopes: "repo read:user",
+      lastCheckAt: "2026-11-03T09:00:00.000Z",
+      lastCheckStatus: "connected"
+    })
+  );
+  const panel = container.querySelector(".vr-plugin-account-panel");
+  assert.match(panel.textContent, /Signed in/);
+  assert.match(panel.textContent, /GitHub sign-in is active for The Octocat \(@octocat\)/);
+  const facts = [...panel.querySelectorAll(".vr-plugin-account-facts dd")].map(node => node.textContent);
+  assert.deepEqual(facts, ["The Octocat (@octocat)", "repo read:user", new Date("2026-11-03T09:00:00.000Z").toLocaleString()]);
+
+  assert.equal(buttonByText(container, "Reconnect with GitHub").disabled, false);
+  React.act(() => { buttonByText(container, "Disconnect sign-in").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })); });
+  assert.equal(calls.disconnectSignIn, 1);
+
+  // The account is shown as text only: no provider URL or image is loaded, and
+  // the actions are runnable from the sign-in alone.
+  assert.equal(panel.querySelectorAll("img").length, 0);
+  assert.equal(panel.querySelectorAll("a").length, 0);
+  assert.equal(container.querySelectorAll(".vr-plugin-action-body button").length, githubTools.length);
+  assert.ok(buttonByText(container, "Test connection"), "the connected sign-in can be re-checked");
+
+  const advanced = container.querySelector(".vr-plugin-advanced").textContent;
+  assert.match(advanced, /github-oauth/);
+  assert.match(advanced, /Provider sign-in \(encrypted, never returned\)/);
+  assert.doesNotMatch(advanced, /ghp_|Bearer [A-Za-z0-9]/);
+});
+
+test("a sign-in the provider no longer accepts is reported as needing attention", () => {
+  const { container } = renderDetail(
+    withSignIn({
+      installed: true,
+      connection: "needs_reconnection",
+      account: { login: "octocat", name: "The Octocat" },
+      scopes: "repo read:user",
+      lastCheckStatus: "failed",
+      lastError: "GitHub refused the stored sign-in (ghp_abcdefghijklmnopqrstuvwxyz0123456789)."
+    })
+  );
+  const panel = container.querySelector(".vr-plugin-account-panel");
+  assert.match(panel.textContent, /Sign-in needs attention/);
+  assert.doesNotMatch(panel.textContent, /sign-in is active/i);
+  assert.ok(!panel.textContent.includes("ghp_abcdefghijklmnopqrstuvwxyz0123456789"));
+  assert.match(panel.textContent, /\[redacted\]/);
+  assert.match(panel.textContent, /Reconnect with GitHub/);
+  assert.ok(
+    buttonByText(container, "Connect with a personal access token"),
+    "the token option stays available while the sign-in is broken"
+  );
+  assert.equal(buttonByText(container, "Update credentials"), null, "the token row itself was never installed");
+});
+
+test("an existing token connection keeps everything it had when sign-in appears", () => {
+  const { container, calls } = renderDetail({ ...github, oauth: { ...offeredSignIn } });
+  assert.match(container.querySelector(".vr-plugin-status-panel").textContent, /Connected/);
+  assert.ok(buttonByText(container, "Update credentials"));
+  assert.ok(buttonByText(container, "Disconnect"));
+  assert.ok(buttonByText(container, "Test connection"));
+  assert.match(container.querySelector(".vr-plugin-account-panel").textContent, /Not connected/);
+  React.act(() => { buttonByText(container, "Test connection").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })); });
+  assert.equal(calls.test, 1);
+  assert.equal(buttonByText(container, "Connect with a personal access token"), null);
+});
 
 test("the default detail screen never shows raw tool names; the advanced section does", () => {
   const { container } = renderDetail(github);

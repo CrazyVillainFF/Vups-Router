@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   BookOpen,
   Briefcase,
@@ -7,13 +8,16 @@ import {
   CircleNotch,
   Code,
   Database,
+  GithubLogo,
   Globe,
   Image,
+  Key,
   Lightning,
   MagnifyingGlass,
   PuzzlePiece,
   ShieldCheck,
   Sparkle,
+  WarningCircle,
   Wrench,
   X
 } from "@phosphor-icons/react";
@@ -23,16 +27,28 @@ import { QuantumLoader } from "../components/LoadingVisuals.jsx";
 import {
   executePluginTool,
   fetchPluginActivity,
+  fetchPluginOAuthStatus,
+  getApiErrorCode,
   getApiErrorMessage,
   installPlugin,
   listPlugins,
+  startPluginOAuth,
   testPlugin,
   uninstallPlugin,
   updatePlugin
 } from "../services/api.js";
 import PluginActionDialog from "./PluginActionDialog.jsx";
 import PluginDetailView from "./PluginDetailView.jsx";
-import { connectionStatus, redactSecrets, setupGuidance } from "./pluginDetails.js";
+import { openExternalUrl } from "../native/externalLinks.js";
+import {
+  accountLabel,
+  connectionStatus,
+  oauthOutcomeNotice,
+  oauthStartFailureText,
+  redactSecrets,
+  setupGuidance,
+  signInTarget
+} from "./pluginDetails.js";
 import "./plugins.css";
 
 const CATEGORY_LABELS = {
@@ -70,8 +86,10 @@ const STATUS_META = {
 
 // The card badge uses the same derivation as the detail screen, so a plugin
 // whose last real check failed never reads as "Connected" in the grid either.
+// A live provider sign-in on the companion row is a real connection too, even
+// while this row's own token field is empty.
 function statusMeta(plugin) {
-  if (plugin.installed) {
+  if (plugin.installed || plugin.oauth?.installed) {
     const status = connectionStatus(plugin);
     return { label: status.label, tone: status.tone };
   }
@@ -81,6 +99,21 @@ function statusMeta(plugin) {
 function canConnect(plugin) {
   return plugin.availability === "available" || plugin.availability === "requires_setup";
 }
+
+const TOKEN_BUTTON_LABELS = { github: "Connect with Personal Access Token" };
+
+function tokenButtonLabel(plugin) {
+  return TOKEN_BUTTON_LABELS[plugin.id] || "Connect with a token";
+}
+
+function signInButtonLabel(plugin) {
+  return `Connect with ${plugin.name}`;
+}
+
+// How long the app waits for the browser hand-off to land before it says the
+// sign-in did not come back. The server state itself expires in ten minutes.
+const SIGN_IN_POLL_MS = 2000;
+const SIGN_IN_WAIT_MS = 3 * 60 * 1000;
 
 function formatDate(value) {
   if (!value) return "Never";
@@ -160,6 +193,10 @@ export default function PluginsPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [actionTool, setActionTool] = useState(null);
   const [detailError, setDetailError] = useState("");
+  // phase: opening (asking the backend) → waiting (browser has the provider) →
+  // expired (no answer came back) or an inline error. Never a fake success.
+  const [signIn, setSignIn] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const detail = plugins.find(plugin => plugin.id === detailId) || null;
   const connectTarget = plugins.find(plugin => plugin.id === connectId) || null;
@@ -185,28 +222,106 @@ export default function PluginsPage() {
     load();
   }, []);
 
+  // A sign-in that the browser finished on the server's callback URL lands here
+  // with an outcome and a reason code, never with a code, token, or provider text.
+  useEffect(() => {
+    const outcome = oauthOutcomeNotice(searchParams.toString());
+    if (!outcome) return;
+    if (outcome.tone === "ok") setNotice(outcome.message);
+    else setError(outcome.message);
+    const next = new URLSearchParams(searchParams);
+    next.delete("plugin");
+    next.delete("oauth");
+    next.delete("reason");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  // Windows and Android open the provider in the system browser, so this window
+  // never sees the redirect. Polling the status endpoint is the only honest way
+  // to learn that the sign-in landed.
+  const waitingPluginId = signIn?.phase === "waiting" ? signIn.pluginId : "";
+  const waitingOfferId = signIn?.phase === "waiting" ? signIn.offerId : "";
+  useEffect(() => {
+    if (!waitingOfferId) return undefined;
+    let cancelled = false;
+    const deadline = Date.now() + SIGN_IN_WAIT_MS;
+    const timer = setInterval(async () => {
+      if (Date.now() > deadline) {
+        clearInterval(timer);
+        if (!cancelled) {
+          setSignIn(current => (current?.pluginId === waitingPluginId ? { ...current, phase: "expired" } : current));
+        }
+        return;
+      }
+      try {
+        const status = await fetchPluginOAuthStatus(waitingOfferId);
+        if (cancelled || status.connection !== "connected") return;
+        clearInterval(timer);
+        await load();
+        if (cancelled) return;
+        const who = accountLabel(status.account);
+        setSignIn(null);
+        setNotice(who ? `Signed in with GitHub as ${who}.` : "Signed in with GitHub.");
+        setDetailId(waitingPluginId);
+      } catch {
+        // One failed poll is not a failed sign-in; the next tick asks again.
+      }
+    }, SIGN_IN_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [waitingOfferId, waitingPluginId]);
+
+  async function startSignIn(plugin) {
+    const offerId = signInTarget(plugin);
+    if (!offerId || signIn) return;
+    setError("");
+    setSignIn({ pluginId: plugin.id, offerId, name: plugin.name, phase: "opening", message: "" });
+    try {
+      const { url } = await startPluginOAuth(offerId);
+      await openExternalUrl(url);
+      setSignIn(current => (current?.pluginId === plugin.id ? { ...current, phase: "waiting", message: "" } : current));
+    } catch (startFailure) {
+      setSignIn(current => (
+        current?.pluginId === plugin.id
+          ? { ...current, phase: "error", message: oauthStartFailureText(getApiErrorCode(startFailure), getApiErrorMessage(startFailure)) }
+          : current
+      ));
+    }
+  }
+
+  function dismissSignIn() {
+    setSignIn(null);
+  }
+
   function openDetail(id) {
     setDetailError("");
     setDetailId(id);
   }
 
+  // The sign-in companion is the same integration under a different credential,
+  // so it is offered from the primary card instead of as a duplicate entry.
+  const catalog = useMemo(() => plugins.filter(plugin => plugin.marketplaceEntry !== false), [plugins]);
+
   const categories = useMemo(
-    () => [...new Set(plugins.map(plugin => plugin.category))].sort((a, b) => (CATEGORY_LABELS[a] || a).localeCompare(CATEGORY_LABELS[b] || b)),
-    [plugins]
+    () => [...new Set(catalog.map(plugin => plugin.category))].sort((a, b) => (CATEGORY_LABELS[a] || a).localeCompare(CATEGORY_LABELS[b] || b)),
+    [catalog]
   );
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return plugins.filter(plugin => {
+    return catalog.filter(plugin => {
+      const connected = plugin.installed || Boolean(plugin.oauth?.installed);
       if (category !== "all" && plugin.category !== category) return false;
-      if (statusFilter === "installed" && !plugin.installed) return false;
-      if (statusFilter === "ready" && (plugin.installed || plugin.availability !== "available")) return false;
-      if (statusFilter === "setup" && (plugin.installed || plugin.availability !== "requires_setup")) return false;
+      if (statusFilter === "installed" && !connected) return false;
+      if (statusFilter === "ready" && (connected || plugin.availability !== "available")) return false;
+      if (statusFilter === "setup" && (connected || plugin.availability !== "requires_setup")) return false;
       if (statusFilter === "development" && plugin.availability !== "in_development") return false;
       if (!needle) return true;
       return `${plugin.name} ${plugin.description} ${plugin.category}`.toLowerCase().includes(needle);
     });
-  }, [plugins, query, category, statusFilter]);
+  }, [catalog, query, category, statusFilter]);
 
   function openConnect(plugin) {
     setConnectId(plugin.id);
@@ -250,12 +365,12 @@ export default function PluginsPage() {
     }
   }
 
-  async function handleTest(plugin) {
-    setActionBusy(plugin.id);
+  async function handleTest(plugin, id = plugin.id) {
+    setActionBusy(id);
     setError("");
     if (detailId === plugin.id) setDetailError("");
     try {
-      const result = await testPlugin(plugin.id);
+      const result = await testPlugin(id);
       setNotice(safeMessage(result.message, `${plugin.name} answered its connection check.`));
       await load();
     } catch (testError) {
@@ -283,11 +398,17 @@ export default function PluginsPage() {
 
   async function runPluginTool(tool, args, confirm) {
     if (!detail) throw new Error("Open the plugin before running an action.");
+    // The token row of a card can be empty while its sign-in row holds the live
+    // credential, so the call goes to whichever installation exists.
+    const connectionId = detail.installed ? detail.id : detail.oauth?.pluginId || detail.id;
     try {
-      const response = await executePluginTool(detail.id, tool.name, args, confirm);
+      const response = await executePluginTool(connectionId, tool.name, args, confirm);
       await load();
       return response;
     } catch (runError) {
+      // A provider rejection also changes the stored connection status, so the
+      // card and the open panel are refreshed before the error reaches the form.
+      await load().catch(() => {});
       throw new Error(safeMessage(getApiErrorMessage(runError), "That action did not run."));
     }
   }
@@ -313,6 +434,49 @@ export default function PluginsPage() {
 
         {error ? <div className="vr-inline-error" role="alert">{error}</div> : null}
         {notice ? <div className="vr-inline-success" role="status">{notice}</div> : null}
+
+        {signIn ? (
+          <div className="vr-plugin-signin" data-phase={signIn.phase} role="status" aria-live="polite">
+            {signIn.phase === "opening" || signIn.phase === "waiting" ? (
+              <CircleNotch size={16} className="vr-spin" />
+            ) : (
+              <WarningCircle size={16} />
+            )}
+            <div>
+              <strong>
+                {signIn.phase === "waiting"
+                  ? `Waiting for ${signIn.name}`
+                  : signIn.phase === "expired"
+                    ? "The sign-in did not come back"
+                    : signIn.phase === "error"
+                      ? `${signIn.name} sign-in could not start`
+                      : `Opening the ${signIn.name} sign-in…`}
+              </strong>
+              <span>
+                {signIn.message
+                  || (signIn.phase === "waiting"
+                    ? `Approve the request in the browser tab that just opened. This page updates on its own as soon as the server confirms the connection — you can keep working here.`
+                    : signIn.phase === "expired"
+                      ? "The approval tab may have been closed, or the attempt timed out. Nothing was connected, and no access was granted."
+                      : "Asking the server for a single-use sign-in link.")}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="vr-secondary-small"
+              onClick={() => {
+                if (signIn.phase === "error" || signIn.phase === "expired") {
+                  const plugin = plugins.find(item => item.id === signIn.pluginId);
+                  if (plugin) startSignIn(plugin);
+                  return;
+                }
+                dismissSignIn();
+              }}
+            >
+              {signIn.phase === "error" || signIn.phase === "expired" ? "Try again" : "Cancel"}
+            </button>
+          </div>
+        ) : null}
 
         <section className="vr-plugin-stats" aria-label="Plugin catalog summary">
           <article className="vr-plugin-stat">
@@ -389,7 +553,12 @@ export default function PluginsPage() {
             {filtered.map(plugin => {
               const status = statusMeta(plugin);
               const CategoryIcon = CATEGORY_ICONS[plugin.category] || PuzzlePiece;
-              const installed = plugin.installed;
+              const installed = plugin.installed || Boolean(plugin.oauth?.installed);
+              // A card connected only through its sign-in row still has to be
+              // tested and managed through that row's id, not the empty token row.
+              const connectionId = plugin.installed ? plugin.id : plugin.oauth?.pluginId || plugin.id;
+              const offerId = plugin.oauth?.installed ? "" : signInTarget(plugin);
+              const signInBusy = Boolean(signIn) && signIn.pluginId === plugin.id;
               return (
                 <article className="vr-card vr-plugin-card" key={plugin.id} data-installed={installed ? "" : undefined}>
                   <div className="vr-plugin-card-head">
@@ -411,20 +580,47 @@ export default function PluginsPage() {
                     </button>
                     {installed ? (
                       <>
-                        <button type="button" className="vr-secondary-small" onClick={() => handleTest(plugin)} disabled={actionBusy === plugin.id}>
-                          {actionBusy === plugin.id ? "Testing…" : "Test"}
+                        <button type="button" className="vr-secondary-small" onClick={() => handleTest(plugin, connectionId)} disabled={actionBusy === connectionId}>
+                          {actionBusy === connectionId ? "Testing…" : "Test"}
                         </button>
                         <button type="button" className="vr-primary-small" onClick={() => openDetail(plugin.id)}>
                           Manage
                         </button>
                       </>
+                    ) : offerId && canConnect(plugin) ? (
+                      <>
+                        <button
+                          type="button"
+                          className="vr-secondary-small"
+                          onClick={() => openConnect(plugin)}
+                          disabled={signInBusy}
+                        >
+                          <Key size={13} /> {tokenButtonLabel(plugin)}
+                        </button>
+                        <button
+                          type="button"
+                          className="vr-primary-small"
+                          onClick={() => startSignIn(plugin)}
+                          disabled={signInBusy}
+                        >
+                          {signInBusy
+                            ? <><CircleNotch size={14} className="vr-spin" /> Connecting…</>
+                            : <><GithubLogo size={14} /> {signInButtonLabel(plugin)}</>}
+                        </button>
+                      </>
+                    ) : offerId ? (
+                      <button type="button" className="vr-primary-small" onClick={() => startSignIn(plugin)} disabled={signInBusy}>
+                        {signInBusy
+                          ? <><CircleNotch size={14} className="vr-spin" /> Connecting…</>
+                          : <><GithubLogo size={14} /> {signInButtonLabel(plugin)}</>}
+                      </button>
                     ) : canConnect(plugin) ? (
                       <button type="button" className="vr-primary-small" onClick={() => openConnect(plugin)}>
                         {plugin.auth.type === "none" ? "Turn on" : "Connect"}
                       </button>
                     ) : (
                       <button type="button" className="vr-secondary-small" disabled>
-                        {plugin.availability === "in_development" ? "Adapter in development" : "OAuth not configured"}
+                        Adapter in development
                       </button>
                     )}
                   </div>
@@ -483,12 +679,19 @@ export default function PluginsPage() {
           <PluginDetailView
             key={detail.id}
             plugin={detail}
-            testing={actionBusy === detail.id}
+            testing={actionBusy === detail.id || actionBusy === detail.oauth?.pluginId}
             runDebug={runPluginTool}
-            onTest={() => handleTest(detail)}
+            onTest={() => handleTest(detail, detail.installed ? detail.id : detail.oauth?.pluginId || detail.id)}
             onConnect={() => openConnect(detail)}
             onDisconnect={() => setDeleteTarget(detail)}
             onRunAction={name => setActionTool({ pluginId: detail.id, name })}
+            onSignIn={() => startSignIn(detail)}
+            signInPhase={signIn?.pluginId === detail.id ? signIn.phase : ""}
+            signInMessage={signIn?.pluginId === detail.id ? signIn.message : ""}
+            onDisconnectSignIn={() => setDeleteTarget({
+              id: detail.oauth.pluginId,
+              name: `${detail.name} sign-in`
+            })}
           />
         </Modal>
       ) : null}
