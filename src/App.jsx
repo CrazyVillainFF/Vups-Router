@@ -36,6 +36,8 @@ import {
   HelpPage
 } from "./desktop/DesktopPages.jsx";
 import PluginsPage from "./plugins/PluginsPage.jsx";
+import ComboPage from "./combo/ComboPage.jsx";
+import ComboSettingsPage from "./combo/ComboSettingsPage.jsx";
 import {
   authFormError,
   buildAuthPayload,
@@ -56,9 +58,9 @@ function PasswordToggle({ visible, fieldLabel, onToggle }) {
       aria-pressed={visible}
       onClick={onToggle}
       sx={{
-        color: "#9aa8bd",
-        "&:hover": { color: "#6c9bff" },
-        "&.Mui-focusVisible": { outline: "2px solid #6c9bff", outlineOffset: "2px" }
+        color: "var(--muted)",
+        "&:hover": { color: "var(--accent-text)" },
+        "&.Mui-focusVisible": { outline: "2px solid var(--accent)", outlineOffset: "2px" }
       }}
     >
       {visible ? <VisibilityOffRoundedIcon /> : <VisibilityRoundedIcon />}
@@ -77,7 +79,7 @@ function AuthPage({ mode }) {
     (isTauriRuntime() ? NATIVE_SHELLS.windows : null);
   const browserAuth = usesBrowserAuthHandoff(nativeShell);
   const { signUp, signIn, status, refreshSession } = useAuth();
-  const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "", acceptTerms: false });
   const [visibility, setVisibility] = useState(initialPasswordVisibility);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -97,7 +99,7 @@ function AuthPage({ mode }) {
     setExternalError("");
     setExternalBusy("");
     setTouched({});
-    setForm({ name: "", email: "", password: "", confirmPassword: "" });
+    setForm({ name: "", email: "", password: "", confirmPassword: "", acceptTerms: false });
     setVisibility(initialPasswordVisibility());
   }, [mode]);
 
@@ -127,6 +129,11 @@ function AuthPage({ mode }) {
   const markTouched = (key) => () => setTouched((current) => ({ ...current, [key]: true }));
 
   const update = (key) => (event) => setForm(current => ({ ...current, [key]: event.target.value }));
+
+  const updateConsent = (event) => setForm(current => ({ ...current, acceptTerms: event.target.checked }));
+
+  // A link inside the consent label navigates; it must never flip the checkbox.
+  const keepConsent = (event) => event.stopPropagation();
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -272,7 +279,11 @@ function AuthPage({ mode }) {
           required
         />}
         {!isSignup && <div className="auth-forgot"><Link to="/forgot-password">Forgot password?</Link></div>}
-        <Button type="submit" variant="contained" fullWidth disabled={busy} endIcon={busy ? <CircularProgress size={17} color="inherit"/> : <ArrowOutwardRoundedIcon />}>{busy ? "Please wait..." : isSignup ? "Create account" : "Sign in"}</Button>
+        {isSignup && <div className="auth-consent">
+          <input id="accept-terms" type="checkbox" checked={form.acceptTerms === true} onChange={updateConsent} />
+          <label htmlFor="accept-terms">I agree to the <Link to="/terms" onClick={keepConsent}>Terms of Service</Link> and <Link to="/privacy-policy" onClick={keepConsent}>Privacy Policy</Link>.</label>
+        </div>}
+        <Button type="submit" variant="contained" fullWidth disabled={busy || (isSignup && form.acceptTerms !== true)} endIcon={busy ? <CircularProgress size={17} color="inherit"/> : <ArrowOutwardRoundedIcon />}>{busy ? "Please wait..." : isSignup ? "Create account" : "Sign in"}</Button>
       </form>
       <div className="auth-switch">{isSignup ? "Already have an account?" : "New to VupsRouter?"} <Link to={isSignup ? "/signin" : "/signup"} state={location.state}>{isSignup ? "Sign in" : "Create an account"}</Link></div>
       <p className="auth-terms">By continuing, you agree to our <Link to="/terms">Terms of Service</Link> and <Link to="/privacy-policy">Privacy Policy</Link>.</p>
@@ -397,6 +408,8 @@ export default function App() {
     <Route element={<ProtectedAppLayout />}>
       <Route path="/chat" element={<><PageMeta title="Chat — VupsRouter" description="Chat with Vups v3 Galax or route requests through your own AI provider." noIndex /><ChatPage /></>} />
       <Route path="/settings" element={<><PageMeta title="API Settings — VupsRouter" noIndex /><SettingsPage embedded /></>} />
+      <Route path="/combo" element={<><PageMeta title="Vups Combo AI — VupsRouter" noIndex /><ComboPage /></>} />
+      <Route path="/combo/settings" element={<><PageMeta title="Combo Settings — VupsRouter" noIndex /><ComboSettingsPage /></>} />
       <Route path="/app-settings" element={<><PageMeta title="Application Settings — VupsRouter" noIndex /><AppSettingsPage /></>} />
       <Route path="/automations" element={<><PageMeta title="Automations — VupsRouter" noIndex /><AutomationsPage /></>} />
       <Route path="/plugins" element={<><PageMeta title="Plugins — VupsRouter" noIndex /><PluginsPage /></>} />

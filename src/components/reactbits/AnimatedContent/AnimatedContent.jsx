@@ -8,13 +8,16 @@ gsap.registerPlugin(ScrollTrigger);
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
+/* A wipe is a clip, not a paint: these ramps only decide how much of the
+   component's own surface the reveal lets through, so they carry geometry. */
+const WIPE_STOPS = 'var(--slab) calc(var(--ac-wipe) * 140% - 40%), transparent calc(var(--ac-wipe) * 140%)';
+const wipe = axis => `linear-gradient(${axis}, ${WIPE_STOPS})`; // guard-allow: mask alpha stops, geometry not paint
 const WIPES = {
-  up: 'linear-gradient(to top, #000 calc(var(--ac-wipe) * 140% - 40%), transparent calc(var(--ac-wipe) * 140%))',
-  down: 'linear-gradient(to bottom, #000 calc(var(--ac-wipe) * 140% - 40%), transparent calc(var(--ac-wipe) * 140%))',
-  left: 'linear-gradient(to left, #000 calc(var(--ac-wipe) * 140% - 40%), transparent calc(var(--ac-wipe) * 140%))',
-  right: 'linear-gradient(to right, #000 calc(var(--ac-wipe) * 140% - 40%), transparent calc(var(--ac-wipe) * 140%))',
-  center:
-    'radial-gradient(farthest-corner at 50% 50%, #000 calc(var(--ac-wipe) * 140% - 40%), transparent calc(var(--ac-wipe) * 140%))'
+  up: wipe('to top'),
+  down: wipe('to bottom'),
+  left: wipe('to left'),
+  right: wipe('to right'),
+  center: `radial-gradient(farthest-corner at 50% 50%, ${WIPE_STOPS})` // guard-allow: mask alpha stops, geometry not paint
 };
 
 const AnimatedContent = ({

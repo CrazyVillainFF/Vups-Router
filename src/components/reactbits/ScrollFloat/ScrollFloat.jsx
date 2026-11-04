@@ -181,10 +181,10 @@ const ScrollFloat = ({
             opacity: 0,
             y: () => sign * size() * 0.3 * reach,
             scale: 1.45,
-            filter: () => `blur(${(size() * 0.2).toFixed(2)}px)`,
+            filter: () => `blur(${(size() * 0.2).toFixed(2)}px)`, // guard-allow: transient entrance focus, sharp at rest
             transformOrigin: '50% 50%'
           },
-          { ease, opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }
+          { ease, opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' } // guard-allow: the resting state is sharp
         );
       } else if (effect === 'wave') {
         add(

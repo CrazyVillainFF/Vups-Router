@@ -74,6 +74,7 @@ jobs:
     outputs:
       mode: ${{ steps.probe.outputs.mode }}
       required: ${{ steps.probe.outputs.required }}
+      updater: ${{ steps.probe.outputs.updater }}
     steps:
       - id: probe
         env:
@@ -90,6 +91,11 @@ jobs:
           # Setting this repository variable to "true" turns a missing
           # signature into a hard failure, instead of an honest unsigned build.
           WINDOWS_SIGNING_REQUIRED: ${{ vars.WINDOWS_SIGNING_REQUIRED }}
+          # Tauri updater minisign key. Its presence is probed here because the
+          # `secrets` context is not readable from a step-level `if`, so the
+          # signing step can only be gated on this job's output. An empty
+          # password is allowed: an unencrypted key needs none.
+          UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           required=false
@@ -101,8 +107,11 @@ jobs:
           elif [ -n "$PFX" ] && [ -n "$PFX_PASSWORD" ]; then
             mode=pfx
           fi
+          updater=false
+          if [ -n "$UPDATER_KEY" ]; then updater=true; fi
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
           echo "required=$required" >> "$GITHUB_OUTPUT"
+          echo "updater=$updater" >> "$GITHUB_OUTPUT"
           {
             echo "### Windows code signing"
             echo
@@ -118,6 +127,12 @@ jobs:
                   echo "\`WINDOWS_SIGNING_REQUIRED\` is not set, so unsigned installers are published and the release notes say so plainly. See [docs/download-and-native.md](../main/docs/download-and-native.md) for exactly what to add."
                 fi ;;
             esac
+            echo
+            if [ "$updater" = "true" ]; then
+              echo "Tauri updater key (\`TAURI_SIGNING_PRIVATE_KEY\`) is configured: the published installer will be minisign-signed and a signed \`latest.json\` manifest will accompany it, so installed desktop apps can update in place."
+            else
+              echo "Tauri updater key is not configured: no \`latest.json\` is published, so the desktop app reports that in-app install is unavailable and points to the release page (this matches the pre-updater behaviour)."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
@@ -145,7 +160,13 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - run: npm run tauri:build
+      # createUpdaterArtifacts stays OFF (it is false in tauri.conf.json) so the
+      # bundler never emits a signature: the updater's minisign signature has to
+      # cover the exact bytes users download, which is the installer AFTER
+      # Authenticode signing. The signature and manifest are made in a later
+      # step from those final bytes.
+      - name: Build the Windows installers
+        run: npm run tauri:build
       - name: Stage installers under stable asset names
         shell: pwsh
         run: |
@@ -242,6 +263,30 @@ jobs:
             Remove-Item $pfx -Force -ErrorAction SilentlyContinue
           }
 
+      # The updater signs the installer that is actually published, so this runs
+      # after Authenticode signing has rewritten the executable. It is skipped
+      # when no minisign key is configured: the app then checks the feed and
+      # honestly reports that in-app install is unavailable, exactly as before.
+      - name: Sign the update package and publish its manifest
+        if: needs.windows-signing-available.outputs.updater == 'true'
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = "release-assets/$env:WINDOWS_EXE_ASSET"
+          if (-not (Test-Path $exe)) { Write-Error "No staged installer to sign for the updater."; exit 1 }
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          # --app-version binds the version into the signature so a tampered
+          # manifest cannot pair a new version number with old bytes.
+          npx tauri signer sign --app-version $version $exe
+          $sig = "$exe.sig"
+          if (-not (Test-Path $sig)) { Write-Error "tauri did not produce $sig."; exit 1 }
+          $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/latest/download/$env:WINDOWS_EXE_ASSET"
+          node scripts/make-updater-manifest.mjs --signature-file $sig --version $version --url $url --out release-assets/latest.json --notes "VupsRouter $version for Windows"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Windows in-app updates: signed manifest ``latest.json`` published for version ``$version``."
+
       - name: Verify signatures and record checksums
         id: verify
         shell: pwsh
@@ -289,8 +334,13 @@ jobs:
             Write-Error "WINDOWS_SIGNING_REQUIRED is 'true' but no code-signing credentials are configured. Add the Azure Artifact Signing or PFX secrets; unsigned installers must not be published under this setting."
             exit 1
           }
+          # Checksums cover every staged file, not just the installers. The
+          # updater signature and latest.json are published alongside them, and
+          # the publish job refuses to attach any asset that has no build-time
+          # checksum — enumerating only the installers here would drop both and
+          # block the release.
           $checksumLines = @(
-            foreach ($file in $files) {
+            foreach ($file in @(Get-ChildItem release-assets -File)) {
               $hash = (Get-FileHash -Algorithm SHA256 -Path $file.FullName).Hash.ToLowerInvariant()
               "$hash  $($file.Name)"
             }
@@ -666,6 +716,10 @@ jobs:
               fi
               echo
               echo "The desktop app bundles the web client at build time and calls the hosted API, so it needs internet access and only changes when a new release is published."
+              if [ -f "assets/latest.json" ]; then
+                echo
+                echo "This release carries a signed \`latest.json\` update manifest, so an installed VupsRouter desktop app can fetch and install this version from **Settings → Updates** without visiting GitHub. The manifest and the app are tied together by a minisign signature over the exact installer bytes; a mismatched or tampered package is refused."
+              fi
               echo
             fi
             if [ -f "assets/$ANDROID_DEBUG_ASSET" ]; then

@@ -1,11 +1,11 @@
 .prompt-bar {
-  --pb-bg: #111c2e;
-  --pb-ink: #e9eef7;
-  --pb-menu: #16233a;
+  --pb-bg: var(--bg);
+  --pb-ink: var(--text);
+  --pb-menu: var(--surface);
   --pb-w: 400px;
   --pb-radius: 16px;
   --pb-press: 0.96;
-  --pb-spark: #6c9bff;
+  --pb-spark: var(--accent);
   --pb-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --pb-muted: color-mix(in srgb, var(--pb-ink) 55%, transparent);
   --pb-hover: color-mix(in srgb, var(--pb-ink) 8%, transparent);
@@ -30,8 +30,7 @@
   border-radius: 12px;
   background: var(--pb-menu);
   box-shadow:
-    0 10px 30px -10px rgba(0, 0, 0, 0.35),
-    0 1px 2px rgba(0, 0, 0, 0.08);
+    none;
   transform-origin: bottom center;
   animation: prompt-bar-pop 180ms var(--pb-ease-out) both;
 }
@@ -45,7 +44,7 @@
   width: auto;
   min-width: 280px;
   max-width: min(92vw, 420px);
-  max-height: min(360px, calc(100dvh - 24px));
+  max-height: min(70vh, 520px);
   overflow: hidden;
   padding: 0;
   border-radius: 14px;
@@ -134,7 +133,7 @@
   overscroll-behavior: contain;
   padding: 6px 6px 8px;
   scrollbar-width: thin;
-  scrollbar-color: #243247 transparent;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 .prompt-bar__menu[data-kind='model'] .prompt-bar__list::-webkit-scrollbar {
@@ -143,7 +142,7 @@
 
 .prompt-bar__menu[data-kind='model'] .prompt-bar__list::-webkit-scrollbar-thumb {
   border-radius: 6px;
-  background: #243247;
+  background: var(--surface);
 }
 
 .prompt-bar__menu[data-kind='model'] .prompt-bar__list::-webkit-scrollbar-track {
@@ -405,8 +404,8 @@
 
 .prompt-bar__model-delete:hover,
 .prompt-bar__model-delete:focus-visible {
-  background: color-mix(in srgb, #e08585 16%, transparent);
-  color: #e89a9a;
+  background: color-mix(in srgb, var(--error) 16%, transparent);
+  color: var(--error);
   opacity: 1;
 }
 
@@ -451,6 +450,42 @@
 
 .prompt-bar__row--model .prompt-bar__row-check {
   margin-left: 12px;
+}
+
+/* Apex coordinates the user's own models. The row carries no app mark - the name
+   plus the Apex badge say it - while the composer chip keeps the mark so a
+   selected Combo chat is recognisable at a glance. */
+.prompt-bar__pick-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.prompt-bar__pick-mark img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.prompt-bar__row--combo {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--pb-spark) 65%, transparent);
+}
+
+.prompt-bar__row--combo .prompt-bar__row-name {
+  font-weight: 600;
+}
+
+.prompt-bar__model-badge--apex {
+  border-color: color-mix(in srgb, var(--pb-spark) 62%, transparent);
+  background: color-mix(in srgb, var(--pb-spark) 22%, transparent);
+  letter-spacing: 0.06em;
+  text-transform: none;
+}
+
+.prompt-bar__pick--combo {
+  color: var(--pb-ink);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pb-spark) 45%, transparent);
 }
 
 .prompt-bar__group {
@@ -500,11 +535,7 @@
   inset: 0;
   z-index: -1;
   border-radius: inherit;
-  background: radial-gradient(
-    140% 120% at 0% 100%,
-    color-mix(in srgb, var(--pb-spark) 26%, transparent),
-    transparent 62%
-  );
+  background: var(--surface);
   opacity: 0;
   pointer-events: none;
   transition: opacity 500ms ease;
@@ -646,7 +677,7 @@
   padding: 8px 10px;
   border: 1px solid color-mix(in srgb, var(--pb-ink) 14%, transparent);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--pb-menu) 82%, #000);
+  background: color-mix(in srgb, var(--pb-menu) 82%, var(--slab));
   animation: prompt-bar-pop 180ms var(--pb-ease-out) both;
 }
 
@@ -772,8 +803,8 @@
 }
 
 .prompt-bar__attach-card[data-status='error'] {
-  border-color: color-mix(in srgb, #ff7a7a 55%, transparent);
-  background: color-mix(in srgb, #ff7a7a 8%, transparent);
+  border-color: color-mix(in srgb, var(--error) 55%, transparent);
+  background: color-mix(in srgb, var(--error) 8%, transparent);
 }
 
 .prompt-bar__attach-card[data-status='cancelled'] {
@@ -840,7 +871,7 @@
 }
 
 .prompt-bar__attach-note[data-error] {
-  color: #ff9b9b;
+  color: var(--error);
 }
 
 .prompt-bar__attach-status {
@@ -857,19 +888,19 @@
 }
 
 .prompt-bar__attach-status[data-status='ready'] {
-  background: color-mix(in srgb, #4ade80 16%, transparent);
-  color: #7ee2a8;
+  background: color-mix(in srgb, var(--ok) 16%, transparent);
+  color: var(--ok);
 }
 
 .prompt-bar__attach-status[data-status='preparing'],
 .prompt-bar__attach-status[data-status='reading'] {
   background: color-mix(in srgb, var(--pb-spark) 18%, transparent);
-  color: color-mix(in srgb, var(--pb-spark) 82%, #fff);
+  color: color-mix(in srgb, var(--pb-spark) 82%, var(--text));
 }
 
 .prompt-bar__attach-status[data-status='error'] {
-  background: color-mix(in srgb, #ff7a7a 18%, transparent);
-  color: #ff9b9b;
+  background: color-mix(in srgb, var(--error) 18%, transparent);
+  color: var(--error);
 }
 
 .prompt-bar__attach-link {
@@ -877,7 +908,7 @@
   padding: 0;
   border: 0;
   background: none;
-  color: color-mix(in srgb, var(--pb-spark) 78%, #fff);
+  color: color-mix(in srgb, var(--pb-spark) 78%, var(--text));
   font-size: 10px;
   font-weight: 600;
   line-height: 1.4;
@@ -973,7 +1004,7 @@ button.prompt-bar__attach-main {
 
 .prompt-bar__attach-warn {
   margin: 0;
-  color: #ffc27a;
+  color: var(--accent);
   font-size: 10.5px;
   line-height: 1.45;
 }
@@ -1046,7 +1077,7 @@ button.prompt-bar__attach-main {
 }
 
 .prompt-bar__attach-tile[data-error] {
-  border-color: color-mix(in srgb, #ff7a7a 60%, transparent);
+  border-color: color-mix(in srgb, var(--error) 60%, transparent);
 }
 
 .prompt-bar__attach-tile-name {
@@ -1070,13 +1101,13 @@ button.prompt-bar__attach-main {
   padding: 0;
   border: 0;
   border-radius: 999px;
-  background: rgba(10, 16, 28, 0.78);
-  color: #fff;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  color: var(--text);
   cursor: pointer;
 }
 
 .prompt-bar__attach-remove:hover {
-  background: #e5484d;
+  background: var(--error);
 }
 
 .prompt-bar__attach-tile-flag {
@@ -1088,10 +1119,10 @@ button.prompt-bar__attach-main {
   width: 16px;
   height: 16px;
   border-radius: 999px;
-  background: #e5484d;
-  color: #fff;
+  background: var(--error);
+  color: var(--text);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .prompt-bar__attach-busy {
@@ -1135,10 +1166,10 @@ button.prompt-bar__attach-main {
   align-items: flex-start;
   gap: 6px;
   padding: 6px 8px;
-  border: 1px solid color-mix(in srgb, #ff7a7a 42%, transparent);
+  border: 1px solid color-mix(in srgb, var(--error) 42%, transparent);
   border-radius: 8px;
-  background: color-mix(in srgb, #ff7a7a 8%, transparent);
-  color: #ffb3b3;
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+  color: var(--error);
   font-size: 11px;
   line-height: 1.45;
 }
@@ -1436,7 +1467,7 @@ button.prompt-bar__attach-main {
   margin-left: -7px;
   border-radius: 7px;
   background: var(--pb-ink);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  box-shadow: none;
   transition:
     left 220ms var(--pb-ease-out),
     background-color 300ms ease;
@@ -1543,8 +1574,8 @@ button.prompt-bar__attach-main {
 }
 
 .prompt-bar__chip[data-error] {
-  border-color: rgba(255, 107, 107, 0.55);
-  color: #e8b0b0;
+  border-color: color-mix(in srgb, var(--error) 55%, transparent);
+  color: var(--error);
 }
 
 .prompt-bar__file {

@@ -1,9 +1,9 @@
 .code-slots {
-  --cs-accent: #f5f5f5;
-  --cs-ink: #f5f5f5;
-  --cs-slot: #27272a;
-  --cs-digit: #18181b;
-  --cs-danger: #ff3b30;
+  --cs-accent: var(--text);
+  --cs-ink: var(--text);
+  --cs-slot: var(--surface);
+  --cs-digit: var(--bg);
+  --cs-danger: var(--error);
   --cs-size: 44px;
   --cs-height: 52px;
   --cs-gap: 8px;

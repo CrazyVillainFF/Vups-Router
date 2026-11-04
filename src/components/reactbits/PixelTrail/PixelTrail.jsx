@@ -1,5 +1,6 @@
 'use client';
 
+import { token, mix } from "../../../tokens.js";
 import { useEffect, useRef } from 'react';
 
 import './PixelTrail.css';
@@ -218,7 +219,7 @@ const parseColor = (() => {
     }
     if (!context) return fallback;
     context.clearRect(0, 0, 1, 1);
-    context.fillStyle = '#000';
+    context.fillStyle = token("slab");
     context.fillStyle = value;
     context.fillRect(0, 0, 1, 1);
     const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
@@ -243,7 +244,7 @@ export default function PixelTrail({
   interpolate = 5,
   easingFunction = identityEase,
   gooeyFilter = { strength: 2 },
-  color = '#ffffff',
+  color = token("text"),
   trailColor,
   shape = 'square',
   gap = 0.08,
@@ -414,8 +415,8 @@ export default function PixelTrail({
       ctx.globalCompositeOperation = 'screen';
       const radius = TRAIL_SIZE * s.trailSize * intensity;
       const gradient = ctx.createRadialGradient(x, y, Math.max(0, radius * 0.25), x, y, Math.max(0, radius));
-      gradient.addColorStop(0, 'rgba(255, 255, 255, 0.2)');
-      gradient.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+      gradient.addColorStop(0, mix("text", 0.2));
+      gradient.addColorStop(1, mix("slab", 0.02));
       ctx.beginPath();
       ctx.fillStyle = gradient;
       ctx.arc(x, y, Math.max(0, radius), 0, Math.PI * 2);
@@ -426,7 +427,7 @@ export default function PixelTrail({
       const glaze = ageCtx.createRadialGradient(x * scale, y * scale, 0, x * scale, y * scale, radius * scale);
       glaze.addColorStop(0, `rgb(${fresh}, ${fresh}, ${fresh})`);
       glaze.addColorStop(0.75, `rgb(${fresh}, ${fresh}, ${fresh})`);
-      glaze.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      glaze.addColorStop(1, mix("slab", 0.02));
       ageCtx.globalCompositeOperation = 'lighten';
       ageCtx.beginPath();
       ageCtx.fillStyle = glaze;

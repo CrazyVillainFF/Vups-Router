@@ -2,6 +2,9 @@ export const MODEL_SELECTION_STORAGE_KEY = "vupsrouter.chat.modelSelection";
 export const VUPS_MODELS_GROUP = "VUPS MODELS";
 export const VUPS_MODEL_ID = "vups-v3-galax";
 export const VUPS_MODEL_NAME = "Vups v3 Galax";
+export const COMBO_MODEL_ID = "vups-combo-apex";
+export const COMBO_MODEL_NAME = "Vups Combo AI";
+export const COMBO_IDENTITY = "Apex";
 export const VUPS_CAPABILITIES = [
   "Full-stack developer",
   "Motion design",
@@ -59,6 +62,59 @@ function cleanEntries(entries) {
 
 function isGatewayEntry(entry) {
   return entry?.gateway === true || entry?.source === OMNIROUTE_SOURCE;
+}
+
+// The Apex row coordinates the models the user selected for Combo, so it is
+// only selectable when that set actually exists. When it does not, the row
+// stays visible with the real reason instead of becoming a fake model entry or
+// silently swapping the user onto a single model.
+function comboRow(state) {
+  const selectedCount = Math.max(0, Number(state?.selectedCount) || 0);
+  // A null working count means no availability check has ever run. Number(null)
+  // is 0, which would display "0 of N working" as if a check had failed.
+  const rawWorking = Number(state?.workingCount);
+  const worked = state?.workingCount === null || state?.workingCount === undefined ? null : rawWorking;
+  const workingCount = Number.isFinite(worked) ? Math.min(selectedCount, Math.max(0, worked)) : null;
+  const enabled = state?.enabled === true;
+  const usable = enabled && selectedCount > 0;
+  const tag = state?.loading
+    ? "Loading its model set"
+    : !enabled
+      ? state?.unavailable
+        ? "Could not load its model set"
+        : "Turned off in Vups Combo AI settings"
+      : selectedCount === 0
+        ? "Open Vups Combo AI and select models"
+        : workingCount === null
+          ? `${selectedCount} model${selectedCount === 1 ? "" : "s"} selected`
+          : `${workingCount} of ${selectedCount} working`;
+  return {
+    key: `combo:${COMBO_MODEL_ID}`,
+    kind: "combo",
+    group: VUPS_MODELS_GROUP,
+    name: COMBO_MODEL_NAME,
+    model: COMBO_MODEL_ID,
+    configId: "",
+    providerId: "",
+    provider: "Vups",
+    ownedBy: "Vups",
+    apiKeyMasked: "",
+    saved: false,
+    shared: false,
+    vups: false,
+    combo: true,
+    builtin: true,
+    free: false,
+    badge: COMBO_IDENTITY,
+    vision: null,
+    capabilities: {},
+    capabilityLabels: [],
+    disabled: usable ? undefined : true,
+    comboSelectedCount: selectedCount,
+    comboWorkingCount: workingCount,
+    tag,
+    meta: "Coordinates your selected models on one task"
+  };
 }
 
 function vupsRow() {
@@ -254,7 +310,15 @@ function gatewayRow(entry) {
   };
 }
 
-export function buildCatalog({ models = [], shared = null, omniroute = null, vups = false, modelType = null, freeCatalog = null } = {}) {
+export function buildCatalog({
+  models = [],
+  shared = null,
+  omniroute = null,
+  vups = false,
+  modelType = null,
+  freeCatalog = null,
+  combo = null
+} = {}) {
   const entries = cleanEntries(models);
   const saved = new Map();
   for (const entry of entries) {
@@ -333,25 +397,25 @@ export function buildCatalog({ models = [], shared = null, omniroute = null, vup
     gateways.set(row.key, row);
   }
 
+  // Apex stays on top in every filter: it is a coordinator over the user's own
+  // models, so neither the Free nor the Your-keys filter hides or claims it.
+  const headRows = [...(combo ? [comboRow(combo)] : []), ...(vups ? [vupsRow()] : [])];
+
   if (modelType === FREE_MODEL_TYPE) {
     const freeRows = new Map();
     for (const row of [...free.values(), ...freeCatalogOnly.values(), ...saved.values()]) {
       if (!row.free) continue;
       freeRows.set(row.key, { ...row, group: SHARED_GROUP });
     }
-    return [...(vups ? [vupsRow()] : []), ...freeRows.values()];
+    return [...headRows, ...freeRows.values()];
   }
 
   if (modelType === CUSTOM_MODEL_TYPE) {
-    return [
-      ...(vups ? [vupsRow()] : []),
-      ...saved.values(),
-      ...gateways.values()
-    ];
+    return [...headRows, ...saved.values(), ...gateways.values()];
   }
 
   return [
-    ...(vups ? [vupsRow()] : []),
+    ...headRows,
     ...saved.values(),
     ...free.values(),
     ...freeCatalogOnly.values(),
@@ -361,6 +425,7 @@ export function buildCatalog({ models = [], shared = null, omniroute = null, vup
 
 export function selectionFromRow(row) {
   if (!row) return null;
+  if (row.combo) return { kind: "combo", model: COMBO_MODEL_ID };
   if (row.vups) return { kind: "vups", model: VUPS_MODEL_ID };
   if (row.gateway) return { kind: "gateway", source: row.source || OMNIROUTE_SOURCE, model: row.model };
   if (row.shared) return { kind: "shared", model: row.model };
@@ -375,6 +440,7 @@ export function resolveSelection(catalog, selection) {
   if (!wanted || typeof wanted !== "object" || typeof wanted.model !== "string") return null;
   const model = wanted.model.trim();
   if (!model) return null;
+  if (wanted.kind === "combo") return rows.find((row) => row.combo) || null;
   if (wanted.kind === "vups") return rows.find((row) => row.vups && row.model === model) || null;
   if (wanted.kind === "gateway") {
     const source = typeof wanted.source === "string" ? wanted.source : "";
@@ -401,11 +467,20 @@ export function resolveSelection(catalog, selection) {
 
 export function fallbackRow(catalog) {
   const rows = Array.isArray(catalog) ? catalog : [];
-  return rows.find((row) => row.vups) || rows.find((row) => row.shared) || rows.find((row) => !row.disabled) || null;
+  // Apex is never a fallback: multi-model coordination is an explicit choice,
+  // and a chat that lost its selection must not start spending every key.
+  const selectable = rows.filter((row) => !row.combo);
+  return (
+    selectable.find((row) => row.vups) ||
+    selectable.find((row) => row.shared) ||
+    selectable.find((row) => !row.disabled) ||
+    null
+  );
 }
 
 export function chatReference(row) {
   if (!row || row.disabled) return {};
+  if (row.combo) return { model: COMBO_MODEL_ID, combo: true };
   if (row.vups) return { model: VUPS_MODEL_ID, vups: true };
   if (row.gateway) return { model: row.model, source: row.source || OMNIROUTE_SOURCE };
   if (row.shared) return { model: row.model };
@@ -426,6 +501,7 @@ export function loadStoredSelection(storage = defaultStorage()) {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return null;
+    if (parsed.kind === "combo") return { kind: "combo", model: COMBO_MODEL_ID };
     if (parsed.kind === "vups") return { kind: "vups", model: VUPS_MODEL_ID };
     if (parsed.kind === "gateway" && typeof parsed.model === "string" && parsed.model) {
       return {
@@ -454,13 +530,15 @@ export function saveStoredSelection(selection, storage = defaultStorage()) {
       return;
     }
     const payload =
-      selection.kind === "vups"
-        ? { kind: "vups", model: VUPS_MODEL_ID }
-        : selection.kind === "gateway"
-          ? { kind: "gateway", source: selection.source || OMNIROUTE_SOURCE, model: selection.model }
-          : selection.kind === "saved"
-            ? { kind: "saved", configId: selection.configId || "", model: selection.model }
-            : { kind: "shared", model: selection.model };
+      selection.kind === "combo"
+        ? { kind: "combo", model: COMBO_MODEL_ID }
+        : selection.kind === "vups"
+          ? { kind: "vups", model: VUPS_MODEL_ID }
+          : selection.kind === "gateway"
+            ? { kind: "gateway", source: selection.source || OMNIROUTE_SOURCE, model: selection.model }
+            : selection.kind === "saved"
+              ? { kind: "saved", configId: selection.configId || "", model: selection.model }
+              : { kind: "shared", model: selection.model };
     storage.setItem(MODEL_SELECTION_STORAGE_KEY, JSON.stringify(payload));
   } catch {
     /* storage is best-effort: private mode or quota errors must not break chat */

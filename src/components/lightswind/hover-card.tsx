@@ -146,8 +146,8 @@ const HoverCardContent = React.forwardRef<HTMLDivElement, HoverCardContentProps>
               stiffness: 300
             }}
             className={cn(
-              `absolute z-50 w-64 rounded-md border   bg-white
-               p-4 text-black shadow-md`,
+              `absolute z-50 w-64 rounded-md border border-border-strong bg-popover
+               p-4 text-popover-foreground shadow-[var(--shadow-pop)]`,
               className
             )}
             style={{

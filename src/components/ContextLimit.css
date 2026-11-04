@@ -7,13 +7,12 @@
   max-width: 100%;
   margin-top: 10px;
   padding: 12px 14px;
-  border: 1px solid rgba(224, 180, 108, 0.32);
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
   border-radius: 11px;
   background:
-    radial-gradient(ellipse at 0% 0%, rgba(224, 180, 108, 0.1), transparent 60%),
-    rgba(224, 180, 108, 0.045);
+    color-mix(in srgb, var(--text) 3%, transparent);
   color: var(--muted);
-  font-family: "Outfit", sans-serif;
+  font-family: var(--font-sans), sans-serif;
 }
 
 .vr-context--limit {
@@ -35,7 +34,7 @@
 .vr-context__message {
   flex: 1 1 220px;
   margin: 0;
-  color: #e6d6b6;
+  color: var(--warn);
   font-size: 13px;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -52,16 +51,16 @@
   border: 1px solid var(--accent);
   border-radius: 8px;
   background: var(--accent);
-  color: #081018;
-  font: 500 12px "Outfit", sans-serif;
+  color: var(--on-accent);
+  font: 500 12px var(--font-sans), sans-serif;
   white-space: nowrap;
   cursor: pointer;
   transition: background 0.16s, border-color 0.16s, opacity 0.16s;
 }
 
 .vr-context--limit .vr-context__primary:hover:not(:disabled) {
-  background: #8bb2ff;
-  border-color: #8bb2ff;
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .vr-context--limit .vr-context__primary:disabled {
@@ -94,7 +93,7 @@
 
 .vr-context h3 {
   margin: 0;
-  color: #edd3a1;
+  color: var(--warn);
   font-size: 13.5px;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -102,23 +101,23 @@
 
 .vr-context p {
   margin: 0;
-  color: #c6cfe0;
+  color: var(--text);
   font-size: 12.5px;
   line-height: 1.55;
 }
 
 .vr-context code {
   padding: 1px 5px;
-  border: 1px solid rgba(224, 180, 108, 0.22);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
   border-radius: 5px;
-  background: rgba(8, 13, 23, 0.35);
-  color: #f0d6a8;
+  background: color-mix(in srgb, var(--bg) 35%, transparent);
+  color: var(--warn);
   font: 11.5px var(--mono);
   overflow-wrap: anywhere;
 }
 
 .vr-context__error {
-  color: #e8b0b0 !important;
+  color: var(--error) !important;
 }
 
 .vr-context__model {
@@ -143,7 +142,7 @@
   padding: 0 12px;
   border-radius: 8px;
   border: 1px solid transparent;
-  font: 500 12px "Outfit", sans-serif;
+  font: 500 12px var(--font-sans), sans-serif;
   white-space: nowrap;
   cursor: pointer;
   transition: background 0.16s, border-color 0.16s, color 0.16s, opacity 0.16s;
@@ -152,23 +151,23 @@
 .vr-context__primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #081018;
+  color: var(--on-accent);
 }
 
 .vr-context__primary:hover:not(:disabled) {
-  background: #8bb2ff;
-  border-color: #8bb2ff;
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .vr-context__secondary {
-  background: rgba(148, 163, 184, 0.08);
-  border-color: rgba(148, 163, 184, 0.22);
-  color: #dbe4f2;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  border-color: color-mix(in srgb, var(--text) 22%, transparent);
+  color: var(--text);
 }
 
 .vr-context__secondary:hover:not(:disabled) {
-  background: rgba(148, 163, 184, 0.14);
-  border-color: rgba(148, 163, 184, 0.34);
+  background: color-mix(in srgb, var(--text) 14%, transparent);
+  border-color: color-mix(in srgb, var(--text) 34%, transparent);
 }
 
 .vr-context__dismiss {
@@ -179,42 +178,40 @@
 
 .vr-context__dismiss:hover:not(:disabled) {
   color: var(--ink);
-  background: rgba(148, 163, 184, 0.08);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .vr-context__tertiary {
   background: transparent;
-  border-color: rgba(148, 163, 184, 0.2) !important;
+  border-color: color-mix(in srgb, var(--text) 20%, transparent) !important;
   color: var(--muted);
 }
 
 .vr-context__tertiary:hover:not(:disabled) {
   color: var(--ink);
-  background: rgba(148, 163, 184, 0.08);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 /* Firewall rejection: a server-side block, not a provider or credential error. */
 .vr-context--blocked {
-  border-color: rgba(224, 132, 132, 0.32);
+  border-color: color-mix(in srgb, var(--error) 32%, transparent);
   background:
-    radial-gradient(ellipse at 0% 0%, rgba(224, 132, 132, 0.1), transparent 60%),
-    rgba(224, 132, 132, 0.045);
+    color-mix(in srgb, var(--text) 3%, transparent);
 }
 
 .vr-context--blocked h3 {
-  color: #f2d0d0;
+  color: var(--error);
 }
 
 .vr-context--blocked .vr-context__message {
-  color: #f0d3d3;
+  color: var(--error);
 }
 
 /* Missing provider key: informational rather than a length warning. */
 .vr-context--key {
-  border-color: rgba(108, 155, 255, 0.3);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
   background:
-    radial-gradient(ellipse at 0% 0%, rgba(108, 155, 255, 0.11), transparent 60%),
-    rgba(108, 155, 255, 0.045);
+    var(--accent);
 }
 
 .vr-context--key .vr-context__icon {
@@ -222,12 +219,12 @@
 }
 
 .vr-context--key h3 {
-  color: #cfdcf5;
+  color: var(--text);
 }
 
 .vr-context--key code {
-  border-color: rgba(108, 155, 255, 0.25);
-  color: #d7e3ff;
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--text);
 }
 
 .vr-context__actions button:disabled {
@@ -253,10 +250,9 @@
   border: 1px solid var(--accent-line);
   border-radius: 12px 12px 5px 12px;
   background:
-    radial-gradient(ellipse at 100% 0%, rgba(108, 155, 255, 0.09), transparent 55%),
-    rgba(108, 155, 255, 0.045);
+    var(--accent);
   color: var(--muted);
-  font-family: "Outfit", sans-serif;
+  font-family: var(--font-sans), sans-serif;
 }
 
 .vr-handoff__head {
@@ -294,7 +290,7 @@
 
 .vr-handoff__goal {
   margin: 6px 0 0;
-  color: #e2e9f5;
+  color: var(--text);
   font-size: 13px;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -330,8 +326,8 @@
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(8, 13, 23, 0.45);
-  color: #cbd6e6;
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  color: var(--text);
   font: 10.5px/1.65 var(--mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -400,61 +396,61 @@
 }
 
 [data-theme="light"] .vr-context {
-  border-color: rgba(161, 111, 20, 0.32);
-  background: rgba(224, 180, 108, 0.12);
+  border-color: color-mix(in srgb, var(--warn) 32%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 [data-theme="light"] .vr-context h3 {
-  color: #7a5210;
+  color: var(--accent);
 }
 
 [data-theme="light"] .vr-context__message {
-  color: #5c4216;
+  color: var(--accent);
 }
 
 [data-theme="light"] .vr-context p {
-  color: #3d4a5d;
+  color: var(--muted);
 }
 
 [data-theme="light"] .vr-context code {
-  background: rgba(255, 255, 255, 0.65);
-  color: #7a5210;
+  background: color-mix(in srgb, var(--text) 65%, transparent);
+  color: var(--accent);
 }
 
 [data-theme="light"] .vr-context--key {
-  border-color: rgba(37, 84, 168, 0.28);
-  background: rgba(108, 155, 255, 0.1);
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 [data-theme="light"] .vr-context--key h3 {
-  color: #24467f;
+  color: var(--accent-text);
 }
 
 [data-theme="light"] .vr-context--key code {
-  color: #24467f;
+  color: var(--accent-text);
 }
 
 [data-theme="light"] .vr-context--blocked {
-  border-color: rgba(176, 64, 64, 0.28);
-  background: rgba(214, 96, 96, 0.1);
+  border-color: color-mix(in srgb, var(--error) 28%, transparent);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
 }
 
 [data-theme="light"] .vr-context--blocked h3 {
-  color: #7a2222;
+  color: var(--error);
 }
 
 [data-theme="light"] .vr-context--blocked .vr-context__message {
-  color: #7a2222;
+  color: var(--error);
 }
 
 [data-theme="light"] .vr-handoff {
-  background: rgba(108, 155, 255, 0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 [data-theme="light"] .vr-handoff__goal {
-  color: #1e2b3f;
+  color: var(--on-accent);
 }
 
 [data-theme="light"] .vr-handoff__details pre {
-  background: rgba(255, 255, 255, 0.72);
-  color: #243247;
+  background: color-mix(in srgb, var(--text) 72%, transparent);
+  color: var(--on-accent);
 }

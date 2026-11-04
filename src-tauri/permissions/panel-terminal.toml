@@ -1,0 +1,11 @@
+[[permission]]
+identifier = "allow-panel-terminal"
+description = "Allow the Windows workspace panel's terminal tab to run one user-driven Windows PowerShell session: start it in a folder that exists, send the lines the user types, read streamed output, and stop or close it with the whole process tree. Commands are authored by the user in this window, never by a model or by page content; model-initiated execution still goes through the desktop tool permission engine."
+commands.allow = [
+  "panel_terminal_start",
+  "panel_terminal_send",
+  "panel_terminal_status",
+  "panel_terminal_list",
+  "panel_terminal_stop",
+  "panel_terminal_close"
+]

@@ -17,7 +17,7 @@ export default function RollingTube3D({
     fontFamily: "var(--mono)",
     fontSize,
     letterSpacing: ".18em",
-    color: "var(--primarylw, #6c9bff)",
+    color: "var(--primarylw, var(--accent-text))",
     textTransform: "uppercase"
   };
 

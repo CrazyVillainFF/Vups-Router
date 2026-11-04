@@ -1,3 +1,4 @@
+import { token, mix } from "../tokens.js";
 import React, { useRef } from "react";
 import { Link } from "react-router-dom";
 import ArrowOutwardRoundedIcon from "@mui/icons-material/ArrowOutwardRounded";
@@ -92,8 +93,8 @@ function ProximityDemo() {
         falloff="gaussian"
         fromFontVariationSettings="'wght' 300"
         toFontVariationSettings="'wght' 900"
-        fromColor="#71819a"
-        toColor="#6c9bff"
+        fromColor="var(--muted)"
+        toColor="var(--accent-text)"
         className="ml-varprox"
         fontSize="clamp(1.4rem, 3.2vw, 2.1rem)"
       />
@@ -106,7 +107,7 @@ export default function MotionLabPage() {
     <>
       <PageMeta
         title="Motion Lab — VupsRouter"
-        description="A live React Bits motion lab built into VupsRouter: 28 animated text, surface, and scroll components tuned to the navy and cobalt system."
+        description="A live React Bits motion lab built into VupsRouter: 28 animated text, surface, and scroll components tuned to the VupsRouter token system."
       />
       <SiteHeader />
       <main id="main-content" className="ml-page">
@@ -117,8 +118,8 @@ export default function MotionLabPage() {
               <span className="ml-eyebrow-line" />
               <ShinyText
                 text="MOTION LAB / 28 COMPONENTS"
-                color="#8fa1bb"
-                shineColor="#e9eef7"
+                color="var(--muted)"
+                shineColor="var(--text)"
                 speed={2.6}
                 shineWidth={38}
               />
@@ -132,10 +133,10 @@ export default function MotionLabPage() {
               delay={26}
               duration={1.15}
               textAlign="left"
-              color="#e9eef7"
+              color="var(--text)"
             />
             <BlurText
-              text="A live collection of React Bits text, surface, and scroll components, restyled to the VupsRouter navy and cobalt system. Every piece below is running in this page."
+              text="A live collection of React Bits text, surface, and scroll components, restyled onto the VupsRouter token system. Every piece below is running in this page."
               className="ml-hero-description"
               animateBy="words"
               delay={28}
@@ -147,14 +148,14 @@ export default function MotionLabPage() {
                   as={Link}
                   to="/chat"
                   className="ml-hero-cta"
-                  color="#6c9bff"
-                  trailColor="#a9c2ff"
+                  color="var(--accent-text)"
+                  trailColor="var(--text)"
                   theme="dark"
                   duration={5}
                   thickness={1.2}
                   radius={999}
-                  backgroundColor="#0b1322"
-                  textColor="#e9eef7"
+                  backgroundColor="var(--bg)"
+                  textColor="var(--text)"
                 >
                   Open AI chat <ArrowOutwardRoundedIcon fontSize="small" />
                 </StarBorder>
@@ -187,7 +188,7 @@ export default function MotionLabPage() {
               spinDuration={26}
               onHover="speedUp"
               ring
-              ringColor="rgba(108,155,255,.28)"
+              ringColor="color-mix(in srgb, var(--accent) 28%, transparent)"
               className="ml-orbit-text"
             >
               <span className="ml-orbit-logo">
@@ -206,7 +207,7 @@ export default function MotionLabPage() {
             className="ml-velocity"
             fontSize="clamp(1.1rem, 2.4vw, 1.6rem)"
             fontWeight={500}
-            color="#6c9bff"
+            color="var(--accent-text)"
             fadeEdges
           />
         </div>
@@ -229,7 +230,7 @@ export default function MotionLabPage() {
                 delay={22}
                 duration={0.9}
                 textAlign="left"
-                color="#e9eef7"
+                color="var(--text)"
               />
             </DemoCard>
             <DemoCard number="02" name="BlurText" note="Word-by-word focus pull">
@@ -238,21 +239,21 @@ export default function MotionLabPage() {
             <DemoCard number="03" name="ShinyText" note="Sweeping light across type">
               <ShinyText
                 text="Premium by default."
-                color="#8fa1bb"
-                shineColor="#e9eef7"
+                color="var(--muted)"
+                shineColor="var(--text)"
                 speed={2.2}
                 shineWidth={46}
                 className="ml-demo-copy ml-shiny"
               />
             </DemoCard>
-            <DemoCard number="04" name="GradientText" note="Animated cobalt gradient">
+            <DemoCard number="04" name="GradientText" note="Animated accent sweep">
               <GradientText
-                colors={["#6c9bff", "#dbe6ff", "#3f6fe8"]}
+                colors={["var(--accent-text)", "var(--text)", "var(--accent-text)"]}
                 animationSpeed={7}
                 yoyo
                 className="ml-gradient"
               >
-                Cobalt current
+                Warm current
               </GradientText>
             </DemoCard>
             <DemoCard number="05" name="DecryptedText" note="Scramble on view or hover">
@@ -307,7 +308,7 @@ export default function MotionLabPage() {
                 loop={false}
                 showCursor
                 cursorCharacter="▌"
-                cursorColor="#6c9bff"
+                cursorColor="var(--accent)"
                 className="ml-type"
               />
             </DemoCard>
@@ -316,8 +317,8 @@ export default function MotionLabPage() {
                 text="GALAX"
                 fontFamily="Roboto Flex"
                 minFontSize={30}
-                textColor="#e9eef7"
-                pressureColor="#6c9bff"
+                textColor="var(--text)"
+                pressureColor="var(--accent)"
                 className="ml-pressure"
               />
             </DemoCard>
@@ -332,7 +333,7 @@ export default function MotionLabPage() {
                 fontWeight={600}
                 spinDuration={20}
                 ring
-                ringColor="rgba(108,155,255,.3)"
+                ringColor="color-mix(in srgb, var(--accent) 30%, transparent)"
                 className="ml-orbit-text"
               >
                 <span className="ml-circular-core">V3</span>
@@ -353,14 +354,9 @@ export default function MotionLabPage() {
             <DemoCard number="14" name="SpotlightCard" note="Cursor-led spotlight">
               <SpotlightCard
                 className="ml-spotlight"
-                spotlightColor="rgba(108,155,255,.5)"
+                spotlightColor="color-mix(in srgb, var(--accent) 50%, transparent)"
                 intensity={0.22}
                 spotlightSize={220}
-                style={{
-                  "--spotlight-card-surface": "#0c1626",
-                  "--spotlight-card-border": "rgba(108,155,255,.26)",
-                  "--spotlight-card-shadow": "0 24px 48px -24px rgba(2,6,16,.75)"
-                }}
               >
                 <span className="ml-demo-kicker">SPOTLIGHT / CARD</span>
                 <strong>Light follows the route.</strong>
@@ -371,13 +367,13 @@ export default function MotionLabPage() {
                 as={Link}
                 to="/chat"
                 className="ml-star"
-                color="#6c9bff"
-                trailColor="#a9c2ff"
+                color="var(--accent-text)"
+                trailColor="var(--text)"
                 theme="dark"
                 duration={4.5}
                 radius={999}
-                backgroundColor="#0b1322"
-                textColor="#e9eef7"
+                backgroundColor="var(--bg)"
+                textColor="var(--text)"
               >
                 Open AI chat
               </StarBorder>
@@ -389,7 +385,7 @@ export default function MotionLabPage() {
             </DemoCard>
             <DemoCard number="17" name="ClickSpark" note="Click to emit sparks">
               <ClickSpark
-                sparkColor="#6c9bff"
+                sparkColor="var(--accent)"
                 sparkSize={12}
                 sparkCount={12}
                 sparkRadius={36}
@@ -405,10 +401,10 @@ export default function MotionLabPage() {
                 className="ml-glare"
                 width="100%"
                 height="160px"
-                background="linear-gradient(135deg,#101c33,#0b1322)"
+                background="var(--surface)"
                 borderRadius="16px"
-                borderColor="rgba(148,163,184,.22)"
-                glareColor="#a9c2ff"
+                borderColor="var(--border-strong)"
+                glareColor="var(--text)"
                 glareOpacity={0.6}
                 mode="hover"
               >
@@ -417,8 +413,8 @@ export default function MotionLabPage() {
             </DemoCard>
             <DemoCard number="19" name="ElectricBorder" note="Charged canvas border">
               <ElectricBorder
-                color="#6c9bff"
-                glowColor="#6c9bff"
+                color="var(--accent-text)"
+                glowColor="var(--accent)"
                 borderRadius={16}
                 speed={0.9}
                 chaos={0.4}
@@ -443,7 +439,7 @@ export default function MotionLabPage() {
               <div className="ml-pixel">
                 <PixelTrail
                   gridSize={24}
-                  color="#6c9bff"
+                  color="var(--accent-text)"
                   trailSize={0.22}
                   maxAge={600}
                   gap={0.1}
@@ -464,7 +460,7 @@ export default function MotionLabPage() {
                   height="4.5rem"
                   strength={2.2}
                   layers={6}
-                  tint="#070b14"
+                  tint="var(--bg)"
                 />
               </div>
             </DemoCard>
@@ -522,7 +518,7 @@ export default function MotionLabPage() {
                 className="ml-velocity-demo"
                 fontSize="clamp(1.5rem, 3vw, 2.25rem)"
                 fontWeight={600}
-                color="#6c9bff"
+                color="var(--accent-text)"
                 fadeEdges
               />
             </DemoCard>
@@ -548,7 +544,7 @@ export default function MotionLabPage() {
             <h2>
               One system.
               <br />
-              <GradientText colors={["#6c9bff", "#dbe6ff", "#3f6fe8"]} animationSpeed={8} className="ml-outro-gradient">
+              <GradientText colors={["var(--accent-text)", "var(--text)", "var(--accent-text)"]} animationSpeed={8} className="ml-outro-gradient">
                 Every route in motion.
               </GradientText>
             </h2>
@@ -559,12 +555,12 @@ export default function MotionLabPage() {
               as={Link}
               to="/chat"
               className="ml-outro-cta"
-              color="#6c9bff"
-              trailColor="#a9c2ff"
+              color="var(--accent-text)"
+              trailColor="var(--text)"
               theme="dark"
               radius={999}
-              backgroundColor="#0b1322"
-              textColor="#e9eef7"
+              backgroundColor="var(--bg)"
+              textColor="var(--text)"
             >
               Start a chat <ArrowOutwardRoundedIcon fontSize="small" />
             </StarBorder>

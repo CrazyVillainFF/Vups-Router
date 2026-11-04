@@ -1,6 +1,7 @@
 import React from "react";
 
-const LOGO_SRC = "/vups-logo.png";
+// Exported so the WebGL core textures the same asset the DOM logo element uses.
+export const LOGO_SRC = "/vups-logo.png";
 const LOGO_SRC_SET = "/vups-logo-192.png 192w, /vups-logo.png 512w";
 
 export default function VupsLogo({

@@ -1,3 +1,4 @@
+import { token, mix } from "./tokens.js";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -924,13 +925,13 @@ export default function SettingsPage({ embedded = false }) {
                   <SpotlightCard
                     key={entry.id}
                     className="settings-provider-spot"
-                    spotlightColor="rgba(108,155,255,.28)"
+                    spotlightColor="color-mix(in srgb, var(--accent) 28%, transparent)"
                     intensity={0.16}
                     spotlightSize={220}
                     proximity={0}
                     borderGlow={0.4}
                     flare={false}
-                    style={{ "--spotlight-card-border": "#243247", display: "block" }}
+                    style={{ display: "block" }}
                   >
                     <article className="settings-provider-card settings-provider-card--bare">
                       <div className="settings-provider-name">

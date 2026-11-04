@@ -1,21 +1,18 @@
 .shiny-text {
   position: relative;
   display: inline-block;
-  background-repeat: no-repeat;
-  background-size: 100% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
 }
 
-.shiny-text__glow {
+/* A second copy of the words, sitting exactly on the first, visible only where the
+   animated alpha mask lets it through. The mask is written by the component; this
+   rule only has to keep the copy out of the accessibility tree and the selection. */
+.shiny-text__sweep {
   position: absolute;
   inset: 0;
-  background-repeat: no-repeat;
-  background-size: 100% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  filter: blur(0.14em);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
   pointer-events: none;
   user-select: none;
 }

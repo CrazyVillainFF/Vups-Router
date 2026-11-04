@@ -174,3 +174,51 @@ test("the picker renders compact filters and a save control", () => {
   assert.match(css, /\.prompt-bar__model-filter\[aria-pressed='true'\]/);
   assert.match(css, /\.prompt-bar__model-star\[data-on\]/);
 });
+
+test("the Apex entry survives every filter", () => {
+  const apex = { key: "combo", combo: true, model: "vups-combo-apex", free: false, saved: false };
+  const withApex = [apex, ...rows];
+
+  assert.deepEqual(filterModelRows(withApex, "all", []).map(row => row.key)[0], "combo");
+  const free = filterModelRows(withApex, "free", []);
+  assert.deepEqual(free.map(row => row.key), ["combo", "vups", "shared:free/a"]);
+  const saved = filterModelRows(withApex, "saved", ["shared:free/a"]);
+  assert.deepEqual(saved.map(row => row.key), ["combo", "shared:free/a"]);
+  assert.deepEqual(filterModelRows(withApex, "saved", []).map(row => row.key), ["combo"]);
+});
+
+test("a disabled status row stays out of the free list", () => {
+  const apex = { key: "combo", combo: true, model: "vups-combo-apex", free: false };
+  const disabledRow = { key: "status", free: true, disabled: true };
+  assert.deepEqual(
+    filterModelRows([apex, disabledRow], "free", []).map(row => row.key),
+    ["combo"],
+    "Apex is a coordinator, not a free model, but the disabled status row is not a model at all"
+  );
+});
+
+test("the Apex picker row carries no app mark and no placeholder icon", () => {
+  const picker = read("src/components/reactbits/PromptBar.jsx");
+  const rowMarkup = picker.slice(picker.indexOf("prompt-bar__row--combo"), picker.indexOf("prompt-bar__model-main"));
+  assert.ok(!/VupsLogo/.test(rowMarkup), "the Apex row must not render the app mark");
+  assert.ok(!/prompt-bar__model-mark/.test(picker), "no leading mark slot is left in the row");
+  assert.match(picker, /className="prompt-bar__pick-mark"/, "the composer chip keeps its mark");
+
+  const css = read("src/components/reactbits/PromptBar.css");
+  assert.ok(!/prompt-bar__model-mark/.test(css), "the row mark styles are gone with the element");
+  const comboChip = css.slice(css.indexOf(".prompt-bar__pick--combo"), css.indexOf(".prompt-bar__pick--combo") + 220);
+  assert.ok(!/gap:\s*5px/.test(comboChip), "the chip keeps the shared gap once the mark is removed");
+});
+
+test("the welcome screen opens on text instead of a brand graphic", () => {
+  const chat = read("src/ChatPage.jsx");
+  const welcome = chat.slice(chat.indexOf("function WelcomeScreen"), chat.indexOf("{configured && onStarter ?"));
+  assert.ok(!/vr-welcome-art|vr-welcome-icon|vr-welcome-ring/.test(welcome), "no oversized logo block");
+  assert.match(welcome, /vr-welcome-eyebrow/, "the eyebrow still leads");
+  assert.match(welcome, /vr-welcome-title/, "the heading still follows it");
+
+  const css = read("src/chat.css");
+  assert.ok(!/\.vr-welcome-art\s*\{/.test(css), "its styles are gone");
+  assert.ok(!/\.vr-welcome-icon\s*\{/.test(css), "the logo box styles are gone");
+  assert.ok(!/vr-welcome-pulse/.test(css), "the pulse animation had nothing left to drive");
+});

@@ -54,10 +54,6 @@ interface BorderBeamProps {
    */
   opacity?: number;
   /**
-   * The intensity of the glow effect.
-   */
-  glowIntensity?: number;
-  /**
    * Border radius of the beam in pixels.
    */
   beamBorderRadius?: number;
@@ -76,15 +72,14 @@ export const BorderBeam = ({
   size = 50,
   delay = 0,
   duration = 6,
-  colorFrom = "#7400ff",
-  colorTo = "#9b41ff",
+  colorFrom = "var(--accent)",
+  colorTo = "var(--accent)",
   transition,
   style,
   reverse = false,
   initialOffset = 0,
   borderThickness = 1,
   opacity = 1,
-  glowIntensity = 0,
   beamBorderRadius,
   pauseOnHover = false,
   speedMultiplier = 1,
@@ -92,11 +87,6 @@ export const BorderBeam = ({
   // Calculate actual duration based on speed multiplier
   const actualDuration = speedMultiplier ? duration / speedMultiplier : duration;
   
-  // Generate box shadow for glow effect
-  const glowEffect = glowIntensity > 0 
-    ? `0 0 ${glowIntensity * 5}px ${glowIntensity * 2}px var(--color-from)` 
-    : undefined;
-
   return (
  <div className="pointer-events-none absolute inset-0 rounded-[inherit] 
     border border-transparent [mask-clip:padding-box,border-box] 
@@ -119,7 +109,6 @@ export const BorderBeam = ({
           "--color-from": colorFrom,
           "--color-to": colorTo,
           opacity: opacity,
-          boxShadow: glowEffect,
           borderRadius: beamBorderRadius ? `${beamBorderRadius}px` : undefined,
           ...style,
         } as any}

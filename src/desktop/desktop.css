@@ -38,7 +38,13 @@
 
 /* The task list folds under the pinned tools block, so the last visible row
    was being sliced in half. A short fade marks the fold as "more below"
-   instead of looking like clipped content. */
+   instead of looking like clipped content.
+
+   The fade is a mask, not a gradient fill: a gradient *paint* is banned by
+   qa/guard-style.mjs, but a gradient in mask-image only decides how much of a
+   solid token colour survives, so it stays inside the single-source-of-colour
+   rule. Removing the mask leaves a hard --bg slab, which reads as clipped
+   content — the exact defect this rule exists to prevent. */
 .vr-sidebar-scroll {
   position: relative;
 }
@@ -49,7 +55,9 @@
   inset: auto 0 0 0;
   height: 24px;
   pointer-events: none;
-  background: linear-gradient(to top, var(--surface), rgba(13, 21, 36, 0));
+  background: var(--bg);
+  -webkit-mask-image: linear-gradient(to top, black 0%, transparent 100%);
+  mask-image: linear-gradient(to top, black 0%, transparent 100%);
 }
 
 .vr-desktop-sidebar .vr-sidebar-section {
@@ -155,15 +163,15 @@
   border: 0;
   border-radius: 6px;
   background: none;
-  color: #71819a;
+  color: var(--muted);
   cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
 
 .vr-sidebar-label-actions button:hover,
 .vr-sidebar-icon-btn:hover {
-  color: #e9eef7;
-  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
 }
 
 .vr-sidebar-label-actions button:disabled {
@@ -186,15 +194,15 @@
   height: 34px;
   border: 1px solid var(--line);
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.025);
-  color: #71819a;
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  color: var(--muted);
   transition: border-color 0.18s, background 0.18s;
 }
 
 .vr-task-search:focus-within {
-  border-color: rgba(108, 155, 255, 0.5);
-  background: rgba(108, 155, 255, 0.04);
-  color: #b9c6dd;
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  color: var(--muted);
 }
 
 .vr-task-search input {
@@ -203,12 +211,12 @@
   border: 0;
   outline: 0;
   background: none;
-  color: #e9eef7;
-  font: 400 12.5px "Outfit", sans-serif;
+  color: var(--text);
+  font: 400 12.5px var(--font-sans), sans-serif;
 }
 
 .vr-task-search input::placeholder {
-  color: #6f7f99;
+  color: var(--muted);
 }
 
 .vr-task-search input::-webkit-search-cancel-button {
@@ -224,13 +232,13 @@
   border: 0;
   border-radius: 5px;
   background: none;
-  color: #71819a;
+  color: var(--muted);
   cursor: pointer;
 }
 
 .vr-task-search button:hover {
-  color: #e9eef7;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .vr-workspaces-section {
@@ -245,18 +253,18 @@
   gap: 8px;
   width: 100%;
   padding: 8px 10px;
-  border: 1px dashed rgba(108, 155, 255, 0.24);
+  border: 1px dashed color-mix(in srgb, var(--accent) 24%, transparent);
   border-radius: 8px;
-  background: rgba(108, 155, 255, 0.03);
-  color: #93a2bb;
-  font: 400 12.5px "Outfit", sans-serif;
+  background: color-mix(in srgb, var(--accent) 3%, transparent);
+  color: var(--muted);
+  font: 400 12.5px var(--font-sans), sans-serif;
   cursor: pointer;
   text-align: left;
 }
 
 .vr-workspace-empty:hover {
-  color: #dce5f5;
-  border-color: rgba(108, 155, 255, 0.42);
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
 }
 
 .vr-workspace-shortlist {
@@ -277,21 +285,21 @@
   border: 0;
   border-radius: 7px;
   background: none;
-  color: #93a2bb;
-  font: 400 12.5px "Outfit", sans-serif;
+  color: var(--muted);
+  font: 400 12.5px var(--font-sans), sans-serif;
   text-align: left;
   cursor: pointer;
   overflow: hidden;
 }
 
 .vr-workspace-shortcut:hover {
-  color: #e9eef7;
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
 }
 
 .vr-workspace-shortcut[data-active] {
   color: var(--accent);
-  background: rgba(108, 155, 255, 0.07);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
 .vr-workspace-shortcut span {
@@ -305,8 +313,8 @@
 .vr-workspace-more {
   border: 0;
   background: none;
-  color: #71819a;
-  font: 11px "DM Mono", monospace;
+  color: var(--muted);
+  font: 11px var(--font-mono), monospace;
   padding: 5px 9px;
   cursor: pointer;
 }
@@ -318,22 +326,22 @@
 .vr-sidebar-error {
   display: block;
   padding: 6px 9px;
-  color: #e7a5a5;
+  color: var(--error);
   font-size: 11.5px;
   line-height: 1.45;
 }
 
 .vr-sidebar-empty {
   padding: 12px 10px;
-  color: #71819a;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.55;
 }
 
 .vr-sidebar-mini-status {
-  font: 9px "DM Mono", monospace;
+  font: 9px var(--font-mono), monospace;
   letter-spacing: 0.8px;
-  color: #71819a;
+  color: var(--muted);
   text-transform: uppercase;
 }
 
@@ -346,7 +354,7 @@
 
 .vr-conv-time,
 .vr-conv-match {
-  color: #66768f;
+  color: var(--muted);
   font-size: 10.5px;
   line-height: 1.4;
   overflow: hidden;
@@ -355,12 +363,12 @@
 }
 
 .vr-conv-match {
-  color: #8494ad;
+  color: var(--muted);
 }
 
 .vr-conv-item--active .vr-conv-time,
 .vr-conv-item--active .vr-conv-match {
-  color: rgba(140, 177, 255, 0.72);
+  color: color-mix(in srgb, var(--text) 72%, transparent);
 }
 
 .vr-conv-actions {
@@ -384,13 +392,13 @@
   border: 0;
   border-radius: 6px;
   background: none;
-  color: #71819a;
+  color: var(--muted);
   cursor: pointer;
 }
 
 .vr-conv-actions button:hover {
-  color: #e9eef7;
-  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
 }
 
 .vr-conv-actions .vr-conv-delete {
@@ -419,12 +427,12 @@
   min-width: 90px;
   height: 28px;
   padding: 0 8px;
-  border: 1px solid rgba(108, 155, 255, 0.45);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
   border-radius: 6px;
   outline: 0;
-  background: #0b1322;
-  color: #e9eef7;
-  font: 400 12.5px "Outfit", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 12.5px var(--font-sans), sans-serif;
 }
 
 .vr-task-rename button {
@@ -436,25 +444,25 @@
   border: 0;
   border-radius: 6px;
   background: none;
-  color: #93a2bb;
+  color: var(--muted);
   cursor: pointer;
 }
 
 .vr-task-rename button:hover {
-  color: #e9eef7;
-  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
 }
 
 .vr-task-rename-error {
   flex-basis: 100%;
   padding: 2px 4px;
-  color: #e7a5a5;
+  color: var(--error);
   font-size: 10.5px;
 }
 
 .vr-nav-item--active {
   color: var(--accent);
-  background: rgba(108, 155, 255, 0.07);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
 .vr-usage-card {
@@ -465,8 +473,8 @@
   padding: 9px 10px;
   border: 1px solid var(--line);
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.02);
-  color: #8d9cb5;
+  background: color-mix(in srgb, var(--text) 2%, transparent);
+  color: var(--muted);
   text-decoration: none;
   font-size: 10.5px;
   line-height: 1.4;
@@ -475,8 +483,8 @@
 
 .vr-usage-card:hover,
 .vr-usage-card--active {
-  border-color: rgba(108, 155, 255, 0.32);
-  background: rgba(108, 155, 255, 0.04);
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 
 .vr-usage-head,
@@ -491,17 +499,17 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: #a8b6cc;
+  color: var(--muted);
 }
 
 .vr-usage-head strong {
-  color: #e9eef7;
+  color: var(--text);
   font-weight: 500;
   white-space: nowrap;
 }
 
 .vr-usage-foot {
-  color: #66768f;
+  color: var(--muted);
   font-size: 9.5px;
 }
 
@@ -509,7 +517,7 @@
   display: block;
   height: 4px;
   border-radius: 99px;
-  background: rgba(255, 255, 255, 0.07);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
   overflow: hidden;
 }
 
@@ -517,7 +525,7 @@
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #4f83ff, #7ba6ff);
+  background: var(--accent);
   transition: width 0.3s ease;
 }
 
@@ -538,12 +546,12 @@
   min-width: 0;
   padding: 5px;
   border-radius: 8px;
-  color: #dce5f5;
+  color: var(--text);
   text-decoration: none;
 }
 
 .vr-account-link:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
 }
 
 .vr-account-avatar {
@@ -553,10 +561,10 @@
   height: 31px;
   flex-shrink: 0;
   border-radius: 9px;
-  background: rgba(108, 155, 255, 0.14);
-  border: 1px solid rgba(108, 155, 255, 0.26);
-  color: #9cbbff;
-  font: 600 11px "DM Mono", monospace;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  color: var(--text);
+  font: 600 11px var(--font-mono), monospace;
 }
 
 .vr-account-copy {
@@ -576,7 +584,7 @@
 
 .vr-account-copy span {
   font-size: 10px;
-  color: #71819a;
+  color: var(--muted);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -591,14 +599,14 @@
   border: 0;
   border-radius: 7px;
   background: none;
-  color: #71819a;
+  color: var(--muted);
   cursor: pointer;
   flex-shrink: 0;
 }
 
 .vr-account-signout:hover {
-  color: #e7a5a5;
-  background: rgba(255, 100, 100, 0.08);
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 8%, transparent);
 }
 
 .vr-sidebar--collapsed .vr-sidebar-nav-inner {
@@ -632,10 +640,10 @@
   min-width: 0;
   max-width: 220px;
   padding: 3px 8px;
-  border: 1px solid rgba(108, 155, 255, 0.18);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
   border-radius: 99px;
-  background: rgba(108, 155, 255, 0.05);
-  color: #8ea6ca;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  color: var(--muted);
   font-size: 10.5px;
   white-space: nowrap;
   overflow: hidden;
@@ -648,10 +656,10 @@
   gap: 5px;
   margin-left: auto;
   padding: 3px 9px;
-  border: 1px solid rgba(108, 155, 255, 0.18);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
   border-radius: 99px;
   background: transparent;
-  color: #8ea6ca;
+  color: var(--muted);
   font-size: 10.5px;
   cursor: pointer;
 }
@@ -661,8 +669,8 @@
 }
 
 .vr-header-tool-status:hover {
-  background: rgba(108, 155, 255, 0.08);
-  color: #cfe0ff;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--text);
 }
 
 .vr-tool-dialog {
@@ -682,7 +690,7 @@
   grid-template-columns: 170px minmax(0, 1fr);
   gap: 12px;
   padding: 9px 0;
-  border-bottom: 1px solid rgba(108, 155, 255, 0.08);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .vr-tool-status__row:last-child {
@@ -690,7 +698,7 @@
 }
 
 .vr-tool-status__row dt {
-  color: #71819a;
+  color: var(--muted);
   font-size: 11px;
 }
 
@@ -703,39 +711,39 @@
 }
 
 .vr-tool-status__row dd strong {
-  color: #e9eef7;
+  color: var(--text);
   font-size: 12.5px;
   font-weight: 550;
   overflow-wrap: anywhere;
 }
 
 .vr-tool-status__row dd span {
-  color: #8ea6ca;
+  color: var(--muted);
   font-size: 11px;
   line-height: 1.55;
 }
 
 .vr-tool-status__row[data-tone="ok"] dd strong {
-  color: #a9dfc0;
+  color: var(--ok);
 }
 
 .vr-tool-status__row[data-tone="warn"] dd strong {
-  color: #e7c68f;
+  color: var(--accent);
 }
 
 .vr-tool-status__row[data-tone="off"] dd strong {
-  color: #8ea6ca;
+  color: var(--muted);
 }
 
 .vr-tool-registry {
   margin: 0 22px 12px;
-  color: #93a2bb;
+  color: var(--muted);
   font-size: 11.5px;
 }
 
 .vr-tool-registry summary {
   cursor: pointer;
-  color: #a9c4ee;
+  color: var(--muted);
   font-size: 11.5px;
 }
 
@@ -749,8 +757,8 @@
 }
 
 .vr-tool-registry code {
-  font: 10.5px "DM Mono", monospace;
-  color: #cfe0ff;
+  font: 10.5px var(--font-mono), monospace;
+  color: var(--text);
 }
 
 .vr-workspace-bar {
@@ -760,9 +768,9 @@
   max-width: 860px;
   margin: 0 auto 8px;
   padding: 7px 10px;
-  border: 1px solid rgba(108, 155, 255, 0.18);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
   border-radius: 9px;
-  background: rgba(108, 155, 255, 0.04);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 
 .vr-workspace-bar__icon {
@@ -772,8 +780,8 @@
   height: 26px;
   flex-shrink: 0;
   border-radius: 7px;
-  background: rgba(108, 155, 255, 0.1);
-  color: #8fb1ff;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--muted);
 }
 
 .vr-workspace-bar__copy {
@@ -785,7 +793,7 @@
 }
 
 .vr-workspace-bar__copy strong {
-  color: #dce5f5;
+  color: var(--text);
   font-size: 11.5px;
   font-weight: 500;
   overflow: hidden;
@@ -794,7 +802,7 @@
 }
 
 .vr-workspace-bar__copy span {
-  color: #71819a;
+  color: var(--muted);
   font-size: 10px;
   overflow: hidden;
   white-space: nowrap;
@@ -804,16 +812,16 @@
 .vr-workspace-bar button {
   flex-shrink: 0;
   padding: 5px 9px;
-  border: 1px solid rgba(108, 155, 255, 0.26);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
   border-radius: 7px;
-  background: rgba(108, 155, 255, 0.08);
-  color: #a9c2ff;
-  font: 500 10.5px "Outfit", sans-serif;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--text);
+  font: 500 10.5px var(--font-sans), sans-serif;
   cursor: pointer;
 }
 
 .vr-workspace-bar button:hover {
-  background: rgba(108, 155, 255, 0.14);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .vr-workspace-bar button:disabled {
@@ -825,11 +833,11 @@
   flex-shrink: 0;
   max-width: 170px;
   padding: 5px 8px;
-  border: 1px solid rgba(108, 155, 255, 0.26);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
   border-radius: 7px;
-  background: #111c2e;
-  color: #cfe0ff;
-  font: 500 10.5px "Outfit", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font: 500 10.5px var(--font-sans), sans-serif;
   cursor: pointer;
 }
 
@@ -845,8 +853,7 @@
   display: grid;
   place-items: center;
   padding: 22px;
-  background: rgba(3, 7, 14, 0.72);
-  backdrop-filter: blur(7px);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
   animation: vr-modal-fade 0.16s ease;
 }
 
@@ -861,11 +868,11 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #243247;
+  border: 1px solid var(--border-strong);
   border-radius: 16px;
-  background: #0b1322;
-  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.6);
-  color: #e9eef7;
+  background: var(--bg);
+  box-shadow: none;
+  color: var(--text);
 }
 
 .vr-files-modal {
@@ -884,19 +891,19 @@
   margin: 3px 0 0;
   font-size: 22px;
   font-weight: 550;
-  letter-spacing: -0.4px;
+  letter-spacing: -0.3px;
 }
 
 .vr-modal-kicker {
-  font: 9px "DM Mono", monospace;
+  font: 9px var(--font-mono), monospace;
   letter-spacing: 1.6px;
-  color: #71819a;
+  color: var(--muted);
 }
 
 .vr-modal-copy {
   margin: 0;
   padding: 0 22px 12px;
-  color: #93a2bb;
+  color: var(--muted);
   font-size: 12.5px;
   line-height: 1.65;
 }
@@ -910,18 +917,18 @@
   border: 0;
   border-radius: 7px;
   background: none;
-  color: #71819a;
+  color: var(--muted);
   cursor: pointer;
 }
 
 .vr-icon-btn:hover {
-  color: #e9eef7;
-  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
 }
 
 .vr-icon-btn--danger:hover {
-  color: #e7a5a5;
-  background: rgba(255, 100, 100, 0.08);
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 8%, transparent);
 }
 
 .vr-workspace-toolbar {
@@ -940,19 +947,19 @@
   min-height: 31px;
   padding: 6px 11px;
   border-radius: 8px;
-  font: 500 11.5px "Outfit", sans-serif;
+  font: 500 11.5px var(--font-sans), sans-serif;
   cursor: pointer;
   transition: background 0.16s, border-color 0.16s, color 0.16s;
 }
 
 .vr-primary-small {
-  border: 1px solid rgba(108, 155, 255, 0.4);
-  background: rgba(108, 155, 255, 0.14);
-  color: #b6ccff;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
 }
 
 .vr-primary-small:hover {
-  background: rgba(108, 155, 255, 0.22);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .vr-primary-small:disabled {
@@ -962,13 +969,13 @@
 
 .vr-secondary-small {
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.02);
-  color: #9fadc3;
+  background: color-mix(in srgb, var(--text) 2%, transparent);
+  color: var(--muted);
 }
 
 .vr-secondary-small:hover {
-  border-color: #33455e;
-  color: #e9eef7;
+  border-color: var(--surface-2);
+  color: var(--text);
 }
 
 .vr-workspace-list,
@@ -994,8 +1001,8 @@
 }
 
 .vr-workspace-item[data-active] {
-  border-color: rgba(108, 155, 255, 0.2);
-  background: rgba(108, 155, 255, 0.045);
+  border-color: color-mix(in srgb, var(--accent) 20%, transparent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
 }
 
 .vr-workspace-icon {
@@ -1005,8 +1012,8 @@
   height: 32px;
   flex-shrink: 0;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  color: #8ea6ca;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  color: var(--muted);
 }
 
 .vr-workspace-main {
@@ -1019,12 +1026,12 @@
 
 .vr-workspace-name {
   font-size: 12.5px;
-  color: #dce5f5;
+  color: var(--text);
 }
 
 .vr-workspace-path {
   font-size: 10.5px;
-  color: #71819a;
+  color: var(--muted);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -1042,15 +1049,15 @@
   border: 1px solid var(--line);
   border-radius: 6px;
   background: none;
-  color: #93a2bb;
-  font: 500 10px "Outfit", sans-serif;
+  color: var(--muted);
+  font: 500 10px var(--font-sans), sans-serif;
   cursor: pointer;
 }
 
 .vr-workspace-use[aria-pressed="true"] {
-  border-color: rgba(108, 155, 255, 0.35);
-  background: rgba(108, 155, 255, 0.1);
-  color: #a9c2ff;
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
 }
 
 .vr-workspace-rename {
@@ -1064,12 +1071,12 @@
   min-width: 0;
   height: 28px;
   padding: 0 7px;
-  border: 1px solid rgba(108, 155, 255, 0.45);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
   border-radius: 6px;
   outline: 0;
-  background: #080f1c;
-  color: #e9eef7;
-  font: 400 12px "Outfit", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 12px var(--font-sans), sans-serif;
 }
 
 .vr-workspace-rename button {
@@ -1081,13 +1088,13 @@
   border: 0;
   border-radius: 5px;
   background: none;
-  color: #93a2bb;
+  color: var(--muted);
   cursor: pointer;
 }
 
 .vr-workspace-rename button:hover {
-  background: rgba(255, 255, 255, 0.07);
-  color: #e9eef7;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text);
 }
 
 .vr-modal-foot {
@@ -1098,7 +1105,7 @@
   margin-top: auto;
   padding: 12px 22px 18px;
   border-top: 1px solid var(--line);
-  color: #71819a;
+  color: var(--muted);
   font-size: 10.5px;
   line-height: 1.5;
 }
@@ -1115,7 +1122,7 @@
   padding: 22px;
   border: 1px dashed var(--line);
   border-radius: 10px;
-  color: #71819a;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.6;
   text-align: center;
@@ -1124,10 +1131,10 @@
 .vr-inline-error {
   margin: 0 22px 10px;
   padding: 8px 10px;
-  border: 1px solid rgba(231, 165, 165, 0.22);
+  border: 1px solid color-mix(in srgb, var(--error) 22%, transparent);
   border-radius: 8px;
-  background: rgba(255, 100, 100, 0.05);
-  color: #e7a5a5;
+  background: color-mix(in srgb, var(--error) 5%, transparent);
+  color: var(--error);
   font-size: 11.5px;
   line-height: 1.5;
 }
@@ -1141,12 +1148,12 @@
   height: 34px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
-  color: #71819a;
+  background: color-mix(in srgb, var(--text) 2%, transparent);
+  color: var(--muted);
 }
 
 .vr-file-search:focus-within {
-  border-color: rgba(108, 155, 255, 0.45);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .vr-file-search input {
@@ -1155,8 +1162,8 @@
   border: 0;
   outline: 0;
   background: none;
-  color: #e9eef7;
-  font: 400 12px "Outfit", sans-serif;
+  color: var(--text);
+  font: 400 12px var(--font-sans), sans-serif;
 }
 
 .vr-file-list {
@@ -1170,29 +1177,29 @@
   gap: 8px;
   padding: 7px 8px;
   border-radius: 7px;
-  color: #b7c3d6;
+  color: var(--muted);
   font-size: 11.5px;
   cursor: pointer;
 }
 
 .vr-file-row:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
 }
 
 .vr-file-row[data-selected] {
-  background: rgba(108, 155, 255, 0.07);
-  color: #dce5f5;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  color: var(--text);
 }
 
 .vr-file-row input {
-  accent-color: #6c9bff;
+  accent-color: var(--accent);
   flex-shrink: 0;
 }
 
 .vr-file-icon {
   display: grid;
   place-items: center;
-  color: #71819a;
+  color: var(--muted);
   flex-shrink: 0;
 }
 
@@ -1202,19 +1209,19 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-family: "DM Mono", monospace;
+  font-family: var(--font-mono), monospace;
   font-size: 10.5px;
 }
 
 .vr-file-size {
   flex-shrink: 0;
-  color: #66768f;
+  color: var(--muted);
   font-size: 10px;
 }
 
 .vr-file-note {
   margin: 0 22px 12px;
-  color: #71819a;
+  color: var(--muted);
   font-size: 10.5px;
   line-height: 1.55;
 }
@@ -1225,7 +1232,7 @@
   height: 100%;
   overflow-y: auto;
   background: var(--bg);
-  color: #e9eef7;
+  color: var(--text);
 }
 
 .vr-page-shell {
@@ -1245,8 +1252,8 @@
 .vr-page-kicker {
   display: block;
   margin-bottom: 8px;
-  color: #71819a;
-  font: 9px "DM Mono", monospace;
+  color: var(--muted);
+  font: 9px var(--font-mono), monospace;
   letter-spacing: 1.7px;
 }
 
@@ -1254,14 +1261,14 @@
   margin: 0 0 10px;
   font-size: clamp(2rem, 3.5vw, 2.8rem);
   font-weight: 550;
-  letter-spacing: -0.055em;
+  letter-spacing: -0.02em;
   line-height: 1.05;
 }
 
 .vr-page-head p {
   max-width: 690px;
   margin: 0;
-  color: #93a2bb;
+  color: var(--muted);
   font-size: 13.5px;
   line-height: 1.7;
 }
@@ -1275,7 +1282,7 @@
 
 .vr-page-note {
   margin: 12px 0 0;
-  color: #71819a;
+  color: var(--muted);
   font-size: 11.5px;
   line-height: 1.65;
 }
@@ -1301,7 +1308,7 @@
   justify-content: space-between;
   gap: 20px;
   padding: 13px 0;
-  border-top: 1px solid rgba(32, 42, 59, 0.7);
+  border-top: 1px solid var(--border);
 }
 
 .vr-setting-row:first-of-type {
@@ -1316,13 +1323,13 @@
 }
 
 .vr-setting-copy strong {
-  color: #dce5f5;
+  color: var(--text);
   font-size: 12.5px;
   font-weight: 500;
 }
 
 .vr-setting-copy span {
-  color: #71819a;
+  color: var(--muted);
   font-size: 11.5px;
   line-height: 1.55;
 }
@@ -1333,7 +1340,7 @@
 
 .vr-setting-hint {
   margin: 8px 0 0;
-  color: #71819a;
+  color: var(--muted);
   font-size: 11.5px;
   line-height: 1.55;
 }
@@ -1346,7 +1353,7 @@
 
 .vr-grant-list .vr-setting-copy span[title] {
   overflow: hidden;
-  color: #5f6f88;
+  color: var(--muted);
   font-family: var(--mono, monospace);
   font-size: 10.5px;
   text-overflow: ellipsis;
@@ -1359,33 +1366,33 @@
   align-items: center;
   justify-content: center;
   padding: 4px 8px;
-  border: 1px solid rgba(108, 155, 255, 0.25);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
   border-radius: 99px;
-  background: rgba(108, 155, 255, 0.08);
-  color: #9cbbff;
-  font: 500 9.5px "Outfit", sans-serif;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--text);
+  font: 500 9.5px var(--font-sans), sans-serif;
   white-space: nowrap;
 }
 
 .vr-status-pill {
-  border-color: rgba(160, 172, 193, 0.22);
-  background: rgba(160, 172, 193, 0.07);
-  color: #93a2bb;
+  border-color: color-mix(in srgb, var(--text) 22%, transparent);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--muted);
 }
 
 .vr-status-pill[data-ok] {
-  border-color: rgba(108, 155, 255, 0.25);
-  background: rgba(108, 155, 255, 0.08);
-  color: #9cbbff;
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--text);
 }
 
 .vr-toggle {
   appearance: none;
   width: 38px;
   height: 22px;
-  border: 1px solid #2b3a51;
+  border: 1px solid var(--border-strong);
   border-radius: 99px;
-  background: #111c2e;
+  background: var(--bg);
   cursor: pointer;
   position: relative;
   flex-shrink: 0;
@@ -1400,18 +1407,18 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #71819a;
+  background: var(--border-strong);
   transition: transform 0.18s, background 0.18s;
 }
 
 .vr-toggle:checked {
-  border-color: rgba(108, 155, 255, 0.5);
-  background: rgba(108, 155, 255, 0.22);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .vr-toggle:checked::after {
   transform: translateX(16px);
-  background: #9cbbff;
+  background: var(--accent);
 }
 
 .vr-toggle:focus-visible {
@@ -1422,16 +1429,16 @@
 .vr-select {
   min-height: 32px;
   padding: 5px 9px;
-  border: 1px solid #243247;
+  border: 1px solid var(--border-strong);
   border-radius: 7px;
-  background: #0b1322;
-  color: #dce5f5;
-  font: 400 12px "Outfit", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 12px var(--font-sans), sans-serif;
   outline: 0;
 }
 
 .vr-select:focus {
-  border-color: rgba(108, 155, 255, 0.5);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
 }
 
 .vr-shortcut-grid {
@@ -1439,7 +1446,7 @@
   grid-template-columns: max-content 1fr;
   gap: 8px 18px;
   align-items: center;
-  color: #93a2bb;
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -1451,12 +1458,12 @@
 .vr-shortcut-grid kbd {
   min-width: 24px;
   padding: 3px 6px;
-  border: 1px solid #2a3950;
-  border-bottom-color: #3c4f6b;
+  border: 1px solid var(--border-strong);
+  border-bottom-color: var(--surface-2);
   border-radius: 5px;
-  background: #0b1322;
-  color: #c6d2e5;
-  font: 10px "DM Mono", monospace;
+  background: var(--bg);
+  color: var(--text);
+  font: 10px var(--font-mono), monospace;
   text-align: center;
 }
 
@@ -1466,16 +1473,16 @@
   gap: 11px;
   margin: 18px 0;
   padding: 14px 16px;
-  border: 1px solid rgba(108, 155, 255, 0.22);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
   border-radius: 11px;
-  background: rgba(108, 155, 255, 0.045);
-  color: #9cbbff;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  color: var(--text);
 }
 
 .vr-callout--warning {
-  border-color: rgba(230, 180, 100, 0.24);
-  background: rgba(230, 180, 100, 0.045);
-  color: #d9b878;
+  border-color: color-mix(in srgb, var(--accent) 24%, transparent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  color: var(--warn);
 }
 
 .vr-callout div {
@@ -1485,13 +1492,13 @@
 }
 
 .vr-callout strong {
-  color: #dce5f5;
+  color: var(--text);
   font-size: 12.5px;
   font-weight: 500;
 }
 
 .vr-callout span {
-  color: #8d9cb5;
+  color: var(--muted);
   font-size: 11.5px;
   line-height: 1.6;
 }
@@ -1524,7 +1531,7 @@
 
 .vr-card p {
   margin: 0;
-  color: #8d9cb5;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.65;
 }
@@ -1541,8 +1548,8 @@
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: rgba(108, 155, 255, 0.08);
-  color: #8fb1ff;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--muted);
 }
 
 .vr-extension-card .vr-status-pill {
@@ -1550,7 +1557,7 @@
 }
 
 .vr-extension-meta {
-  color: #66768f;
+  color: var(--muted);
   font-size: 10.5px;
   line-height: 1.5;
 }
@@ -1581,7 +1588,7 @@
 }
 
 .vr-automation-form label > span {
-  color: #93a2bb;
+  color: var(--muted);
   font-size: 11px;
 }
 
@@ -1589,22 +1596,22 @@
 .vr-automation-form textarea {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid #243247;
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
   outline: 0;
-  background: #0b1322;
-  color: #e9eef7;
-  font: 400 12.5px "Outfit", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 12.5px var(--font-sans), sans-serif;
   resize: vertical;
 }
 
 .vr-automation-form input:focus,
 .vr-automation-form textarea:focus {
-  border-color: rgba(108, 155, 255, 0.5);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
 }
 
 .vr-automation-form small {
-  color: #66768f;
+  color: var(--muted);
   font-size: 10px;
   text-align: right;
 }
@@ -1662,9 +1669,9 @@
 .vr-automation-meta span {
   padding: 3px 7px;
   border-radius: 99px;
-  background: rgba(255, 255, 255, 0.04);
-  color: #71819a;
-  font: 9.5px "DM Mono", monospace;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  color: var(--muted);
+  font: 9.5px var(--font-mono), monospace;
 }
 
 .vr-link-button {
@@ -1675,13 +1682,13 @@
   padding: 0;
   border: 0;
   background: none;
-  color: #8fb1ff;
-  font: 500 11.5px "Outfit", sans-serif;
+  color: var(--muted);
+  font: 500 11.5px var(--font-sans), sans-serif;
   cursor: pointer;
 }
 
 .vr-link-button:hover {
-  color: #b6ccff;
+  color: var(--text);
 }
 
 .vr-empty-card {
@@ -1689,13 +1696,13 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 7px;
-  color: #71819a;
+  color: var(--muted);
   min-height: 150px;
   justify-content: center;
 }
 
 .vr-empty-card strong {
-  color: #dce5f5;
+  color: var(--text);
   font-size: 13px;
   font-weight: 500;
 }
@@ -1732,12 +1739,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  color: #93a2bb;
+  color: var(--muted);
   font-size: 12px;
 }
 
 .vr-usage-large strong {
-  color: #dce5f5;
+  color: var(--text);
   font-weight: 500;
 }
 
@@ -1758,8 +1765,8 @@
   justify-content: space-between;
   gap: 10px;
   padding: 10px 2px;
-  border-bottom: 1px solid rgba(32, 42, 59, 0.65);
-  color: #b7c3d6;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
   text-decoration: none;
   font-size: 12.5px;
 }
@@ -1889,7 +1896,7 @@ html[data-reduce-motion="true"] *::after {
   min-height: 0;
   padding: 18px 20px 20px;
   border-style: dashed;
-  color: var(--text-tertiary, #8494ab);
+  color: var(--text-tertiary, var(--muted));
 }
 
 .vr-empty-card strong {
@@ -1906,4 +1913,227 @@ html[data-reduce-motion="true"] *::after {
 
 .vr-empty-steps li::marker {
   color: var(--accent);
+}
+
+/* ══ Blocks — app shell sidebar (Phase 1) ═══════════════════════════
+   Same warm tokens, text-first rows, hairline separators. Every link, button
+   and dialog below keeps its existing handler; only the paint changed. */
+
+.vr-desktop-sidebar,
+#vr-sidebar {
+  font-family: var(--blocks-ui);
+}
+
+.vr-sidebar-label {
+  color: var(--blocks-muted);
+  font: 500 10px var(--blocks-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.vr-desktop-sidebar .vr-sidebar-label-row {
+  padding: 14px 8px 6px;
+}
+
+.vr-desktop-sidebar .vr-sidebar-body {
+  padding: 0 8px 8px;
+}
+
+.vr-desktop-sidebar .vr-sidebar-nav {
+  border-top: 1px solid var(--blocks-line);
+}
+
+.vr-conv-item {
+  padding: 7px 8px;
+  border-radius: 6px;
+  color: var(--blocks-muted);
+  font: 400 13px var(--blocks-ui);
+  transition: color 150ms ease-out, background 150ms ease-out;
+}
+
+.vr-conv-item:hover {
+  color: var(--blocks-ink);
+  background: var(--surface-hover);
+}
+
+.vr-conv-item--active {
+  color: var(--blocks-ink);
+  background: var(--blocks-raised);
+  box-shadow: inset 2px 0 0 var(--blocks-accent);
+}
+
+.vr-conv-item:focus-visible {
+  outline: 1px solid var(--blocks-accent);
+  outline-offset: -1px;
+}
+
+.vr-conv-time,
+.vr-conv-match {
+  font-family: var(--blocks-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.vr-nav-item {
+  padding: 8px 8px;
+  border-radius: 6px;
+  color: var(--blocks-muted);
+  font: 400 13px var(--blocks-ui);
+  transition: color 150ms ease-out, background 150ms ease-out;
+}
+
+.vr-nav-item:hover {
+  color: var(--blocks-ink);
+  background: var(--surface-hover);
+}
+
+.vr-nav-item--active {
+  color: var(--blocks-ink);
+  background: var(--blocks-raised);
+  box-shadow: inset 2px 0 0 var(--blocks-accent);
+}
+
+.vr-nav-item:focus-visible {
+  outline: 1px solid var(--blocks-accent);
+  outline-offset: -1px;
+}
+
+.vr-task-search {
+  border: 1px solid var(--blocks-line);
+  border-radius: 8px;
+  background: var(--blocks-surface);
+}
+
+.vr-task-search:focus-within {
+  border-color: var(--blocks-accent);
+}
+
+.vr-task-search input {
+  font-family: var(--blocks-mono);
+  font-size: 12px;
+  color: var(--blocks-ink);
+}
+
+.vr-task-search input::placeholder {
+  color: var(--blocks-muted);
+}
+
+/* Usage: mono count, hairline track, 2px bar, no gradient. */
+.vr-usage-card {
+  gap: 6px;
+  margin: 4px 8px 8px;
+  padding: 10px;
+  border: 1px solid var(--blocks-line);
+  border-radius: 8px;
+  background: var(--blocks-surface);
+  color: var(--blocks-muted);
+  font: 400 10.5px var(--blocks-mono);
+  transition: border-color 150ms ease-out;
+}
+
+.vr-usage-card:hover,
+.vr-usage-card--active {
+  border-color: var(--blocks-line-strong);
+  background: var(--blocks-surface);
+}
+
+.vr-usage-head > span {
+  gap: 5px;
+  color: var(--blocks-muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 9.5px;
+}
+
+.vr-usage-head strong {
+  color: var(--blocks-ink);
+  font-family: var(--blocks-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.vr-usage-foot {
+  color: var(--blocks-muted);
+  font-family: var(--blocks-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.vr-usage-bar {
+  height: 2px;
+  border-radius: 0;
+  background: var(--blocks-line);
+}
+
+.vr-usage-bar > span {
+  background: var(--blocks-accent);
+  border-radius: 0;
+  transition: width 200ms ease-out;
+}
+
+.vr-account-row {
+  padding: 8px 8px 10px;
+  border-top: 1px solid var(--blocks-line);
+}
+
+.vr-account-link {
+  border-radius: 6px;
+  color: var(--blocks-ink);
+}
+
+.vr-account-link:hover {
+  background: var(--surface-hover);
+}
+
+.vr-account-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--blocks-line-strong);
+  background: var(--blocks-raised);
+  color: var(--blocks-ink);
+  font: 500 11px var(--blocks-mono);
+}
+
+.vr-account-copy strong {
+  font-weight: 500;
+}
+
+.vr-account-copy span {
+  color: var(--blocks-muted);
+  font-family: var(--blocks-mono);
+}
+
+.vr-account-signout,
+.vr-account-theme {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--blocks-line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--blocks-muted);
+  cursor: pointer;
+  transition: color 150ms ease-out, border-color 150ms ease-out;
+}
+
+.vr-account-signout:hover,
+.vr-account-theme:hover {
+  color: var(--blocks-ink);
+  border-color: var(--blocks-line-strong);
+}
+
+.vr-account-theme {
+  color: var(--blocks-accent);
+  border-color: var(--blocks-line-strong);
+}
+
+.vr-account-signout:focus-visible,
+.vr-account-theme:focus-visible {
+  outline: 1px solid var(--blocks-accent);
+  outline-offset: 2px;
+}
+
+.vr-sidebar--collapsed .vr-account-row {
+  padding-left: 6px;
+  padding-right: 6px;
 }

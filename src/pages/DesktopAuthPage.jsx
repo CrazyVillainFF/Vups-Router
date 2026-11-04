@@ -1,3 +1,4 @@
+import { token, mix } from "../tokens.js";
 import React, { useEffect, useRef, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import Alert from "@mui/material/Alert";
@@ -74,8 +75,8 @@ export default function DesktopAuthPage() {
   return (
     <Container maxWidth="sm" sx={{ py: { xs: 6, md: 10 } }}>
       <PageMeta title="Connect the VupsRouter app" />
-      <Paper elevation={0} sx={{ p: { xs: 3, md: 5 }, borderRadius: 3, border: "1px solid rgba(120, 140, 180, 0.22)" }}>
-        <Typography variant="overline" sx={{ letterSpacing: "0.18em", color: "#8ea3c4" }}>
+      <Paper elevation={0} sx={{ p: { xs: 3, md: 5 }, borderRadius: 3, border: "1px solid var(--border-strong)" }}>
+        <Typography variant="overline" sx={{ letterSpacing: "0.18em", color: "var(--muted)" }}>
           APP SIGN-IN
         </Typography>
         <Typography variant="h4" component="h1" sx={{ mt: 1, mb: 2 }}>

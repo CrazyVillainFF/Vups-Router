@@ -37,7 +37,7 @@ test("AgentActivity uses ThoughtLine as the single thinking indicator and timer"
   assert.match(agent, /elapsed=\{elapsedSeconds\}/);
   assert.match(agent, /showTimer/);
   assert.match(agent, /glyph="sparkle"/);
-  assert.match(agent, /color=\{active \? "var\(--accent\)" : "#c7d2e3"\}/);
+  assert.match(agent, /color=\{active \? "var\(--accent\)" : "var\(--text\)"\}/);
   assert.doesNotMatch(agent, /color="currentColor"/);
   assert.match(agent, /collapsible=\{false\}/);
   assert.match(agent, /measuredSeconds\(/);

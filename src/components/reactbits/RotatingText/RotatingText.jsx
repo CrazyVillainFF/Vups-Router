@@ -91,7 +91,7 @@ const readableText = color => {
     const c = Math.min(Math.max(channel / 255, 0), 1);
     return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
   });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.3 ? '#0b0b0c' : '#ffffff';
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.3 ? 'var(--slab)' : 'var(--text)';
 };
 
 const RotatingText = forwardRef((props, ref) => {
@@ -104,7 +104,7 @@ const RotatingText = forwardRef((props, ref) => {
     effect = 'slide',
     direction = 'up',
     highlight = false,
-    highlightColor = '#a855f7',
+    highlightColor = 'var(--accent-text)',
     animatePresenceMode = 'wait',
     animatePresenceInitial = false,
     rotationInterval = 2000,

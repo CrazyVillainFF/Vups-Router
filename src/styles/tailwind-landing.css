@@ -1,18 +1,20 @@
-/* Tailwind layer for the vendored Lightswind UI components.
+/* Tailwind bridge for the vendored Lightswind components.
  *
- * The Lightswind UI components vendored in src/components/lightswind are
- * written as Tailwind utilities, so Tailwind is compiled for this page only.
- * Preflight (tailwindcss/base) is deliberately NOT imported: the rest of the
- * app is styled by src/styles.css and src/chat.css, and a global reset would
- * change the chat, settings and auth surfaces. Where a vendored component is
- * used outside .landing, the page that uses it supplies the few resets
- * preflight would otherwise have provided — see the vendored-component block
- * in src/settings.css.
+ * The Lightswind components in src/components/lightswind are written as Tailwind
+ * utilities against the shadcn semantic names (`bg-background`,
+ * `text-muted-foreground`, `border-border`). Preflight is deliberately NOT
+ * imported: the rest of the app is styled by src/styles.css and src/chat.css, and
+ * a global reset would change the chat, settings and auth surfaces. Where a
+ * vendored component is used outside .landing, the page that uses it supplies the
+ * few resets preflight would otherwise have provided — see the vendored-component
+ * block in src/settings.css.
  *
- * `dark` is redefined as "inside .landing or .settings-page" because the
- * product is dark-only; that makes every `dark:` variant in the vendored
- * components apply on both surfaces. No utility is emitted for a page that
- * does not use one, so this costs nothing on the other screens.
+ * This file used to be a second source of colour truth: twenty-odd HSL channel
+ * triples that hard-coded the old navy palette, so every vendored component kept
+ * painting blue no matter what html[data-theme] said. It is now a *translation
+ * layer only* — each shadcn name points at a product token, so a vendored
+ * component gets the same theme as everything else and the only raw colour in
+ * the product stays src/tokens.css.
  */
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
@@ -25,59 +27,52 @@
 @source "../components/lightswind";
 @source "../components/lib";
 
-@custom-variant dark (&:where(.landing, .landing *, .settings-page, .settings-page *));
+/* `dark:` means "the dark theme is active", not "this page happens to be dark".
+   Before the theme was real it was pinned to the two vendored surfaces, which is
+   why a light-theme switch left their dark-mode values in place. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/* Brand mapping: the VupsRouter tokens expressed as the HSL channels the
-   Lightswind components expect. Declared on :root as well as .landing so
-   portalled surfaces (dialog, tooltip, popover) keep the same palette. */
-:root,
-.landing {
-  color-scheme: dark;
-  --background: 228 50% 5%;
-  --foreground: 216 44% 94%;
-  --card: 220 47% 10%;
-  --card-foreground: 216 44% 94%;
-  --popover: 219 45% 13%;
-  --popover-foreground: 216 44% 94%;
-  --primary: 221 100% 71%;
-  --primary-foreground: 210 60% 6%;
-  --secondary: 218 42% 16%;
-  --secondary-foreground: 216 44% 94%;
-  --muted: 219 45% 13%;
-  --muted-foreground: 217 21% 67%;
-  --accent: 218 42% 16%;
-  --accent-foreground: 216 44% 94%;
-  --destructive: 0 55% 64%;
-  --destructive-foreground: 210 60% 6%;
-  --border: 217 22% 30%;
-  --input: 217 24% 38%;
-  --ring: 221 100% 71%;
-  --radius: 14px;
-  --primarylw: #6c9bff;
-  --primarylw-2: #3f6fe8;
-  --darklw: #0d1524;
+/* Three vendored components read the brand colour as a raw custom property
+   instead of a utility (`var(--primarylw)` inside a color-mix). They are aliases
+   onto the product token, not a palette of their own. */
+:root {
+  --primarylw: var(--accent);
+  --primarylw-2: var(--accent);
+  --darklw: var(--bg);
 }
 
 @theme inline {
-  --color-background: hsl(var(--background));
-  --color-foreground: hsl(var(--foreground));
-  --color-card: hsl(var(--card));
-  --color-card-foreground: hsl(var(--card-foreground));
-  --color-popover: hsl(var(--popover));
-  --color-popover-foreground: hsl(var(--popover-foreground));
-  --color-primary: hsl(var(--primary));
-  --color-primary-foreground: hsl(var(--primary-foreground));
-  --color-secondary: hsl(var(--secondary));
-  --color-secondary-foreground: hsl(var(--secondary-foreground));
-  --color-muted: hsl(var(--muted));
-  --color-muted-foreground: hsl(var(--muted-foreground));
-  --color-accent: hsl(var(--accent));
-  --color-accent-foreground: hsl(var(--accent-foreground));
-  --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: hsl(var(--destructive-foreground));
-  --color-border: hsl(var(--border));
-  --color-input: hsl(var(--input));
-  --color-ring: hsl(var(--ring));
-  --color-primarylw: var(--primarylw);
-  --color-primarylw-2: var(--primarylw-2);
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--text);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--text);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--on-accent);
+  --color-secondary: var(--surface-2);
+  --color-secondary-foreground: var(--text);
+  --color-muted: var(--surface-2);
+  --color-muted-foreground: var(--muted);
+  /* shadcn's `accent` is a hovered surface, not the brand colour. */
+  --color-accent: var(--surface-2);
+  --color-accent-foreground: var(--text);
+  --color-destructive: var(--error);
+  --color-destructive-foreground: var(--surface);
+  --color-border: var(--border);
+  /* shadcn has one border tone; this design system has two, and menus, popovers
+     and fields need the stronger one. */
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--border-strong);
+  --color-ring: var(--accent);
+  --color-success: var(--ok);
+  --color-warning: var(--warn);
+  /* Two names the vendored components need but shadcn never had: orange used as
+     *text* (the fill hue is under AA on paper) and --faint, the decorative-only
+     tone for patterns and hairlines. */
+  --color-accent-text: var(--accent-text);
+  --color-faint: var(--faint);
+  --color-primarylw: var(--accent);
+  --color-primarylw-2: var(--accent);
+  --color-darklw: var(--bg);
 }

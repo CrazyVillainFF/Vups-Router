@@ -5,15 +5,17 @@ import { AlertCircle, CheckCircle, Info, X, AlertTriangle } from "lucide-react";
 
 const alertVariants = {
   variant: {
-    default: "bg-white dark:bg-black text-foreground",
+    default: "bg-[var(--surface)] text-[var(--text)] [&>svg]:text-[var(--muted)]",
     destructive:
-      " border-gray-400 dark:border-gray-700/50 text-red-500  [&>svg]:text-destructive",
+      "border-[var(--error)] text-[var(--error)] [&>svg]:text-[var(--error)]",
     success:
-      "border-green-500/50 text-green-700 dark:text-green-500 [&>svg]:text-green-500",
+      "border-[color-mix(in_srgb,var(--ok)_50%,transparent)] text-[var(--ok)] [&>svg]:text-[var(--ok)]",
     warning:
-      "border-yellow-500/50 text-yellow-700 dark:text-yellow-500 [&>svg]:text-yellow-500",
+      "border-[color-mix(in_srgb,var(--warn)_50%,transparent)] text-[var(--warn)] [&>svg]:text-[var(--warn)]",
+    /* An informational alert has no colour of its own. The vendored version used
+       the old blue, and the design system bans blue outright. */
     info:
-      "border-[color-mix(in_srgb,var(--primarylw)_50%,transparent)] text-blue-700 dark:text-primarylw [&>svg]:text-primarylw",
+      "border-[var(--border-strong)] text-[var(--text)] [&>svg]:text-[var(--muted)]",
   },
   size: {
     default: "p-4",
@@ -82,10 +84,10 @@ const Alert = React.forwardRef<HTMLDivElement, AlertProps>(
         {children}
         {dismissible && (
           <button
-            className="absolute top-4 right-4 rounded-full p-1 
-            text-foreground/70 opacity-70 
-            transition-opacity hover:opacity-100 
-            focus:outline-none focus:ring-2 focus:ring-ring 
+            className="absolute top-4 right-4 rounded-full p-1
+            text-[var(--muted)]
+            transition-colors hover:text-[var(--text)]
+            focus:outline-none focus:ring-2 focus:ring-ring
             focus:ring-offset-2"
             onClick={handleDismiss}
             aria-label="Dismiss alert"

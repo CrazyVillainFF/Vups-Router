@@ -17,9 +17,12 @@ const smootherstep = t => t * t * t * (t * (t * 6 - 15) + 10);
 
 const FADE_STEPS = Array.from({ length: 9 }, (_, i) => i / 8);
 
+const fade = t => `color-mix(in srgb, black ${(smootherstep(t) * 100).toFixed(2)}%, transparent)`;
+/* guard-allow: mask alpha stops, geometry not paint — this gradient only decides
+   how much of the marquee shows through at each end; it colours nothing. */
 const FADE_MASK = `linear-gradient(to right, ${[
-  ...FADE_STEPS.map(t => `rgba(0, 0, 0, ${smootherstep(t).toFixed(3)}) ${(t * 12).toFixed(1)}%`),
-  ...FADE_STEPS.map(t => `rgba(0, 0, 0, ${smootherstep(1 - t).toFixed(3)}) ${(88 + t * 12).toFixed(1)}%`)
+  ...FADE_STEPS.map(t => `${fade(t)} ${(t * 12).toFixed(1)}%`),
+  ...FADE_STEPS.map(t => `${fade(1 - t)} ${(88 + t * 12).toFixed(1)}%`)
 ].join(', ')})`;
 
 const OUTLINE_STYLE = {

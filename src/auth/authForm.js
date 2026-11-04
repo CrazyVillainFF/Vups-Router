@@ -1,6 +1,19 @@
+import { LEGAL } from "../legal/config.js";
 import { PASSWORD_MIN_LENGTH } from "./recoveryForm.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export const TERMS_CONSENT_ERROR = "Accept the Terms of Service and Privacy Policy to create your account.";
+
+/* Only the checkbox itself counts as consent: undefined, "" and "true" are all refusals. */
+export function consentError(accepted) {
+  return accepted === true ? "" : TERMS_CONSENT_ERROR;
+}
+
+/* The version stamp is the effective date printed on the legal pages themselves. */
+export function consentPolicyVersion() {
+  return LEGAL.effectiveDate;
+}
 
 export function initialPasswordVisibility() {
   return { password: false, confirmPassword: false };
@@ -35,7 +48,11 @@ export function authFormError(mode, form) {
   if (emailError) return emailError;
   const passwordError = validateAuthField("password", values.password);
   if (passwordError) return passwordError;
-  if (mode === "signup") return confirmPasswordError(values.password, values.confirmPassword);
+  if (mode === "signup") {
+    const confirmError = confirmPasswordError(values.password, values.confirmPassword);
+    if (confirmError) return confirmError;
+    return consentError(values.acceptTerms);
+  }
   return "";
 }
 
@@ -48,7 +65,9 @@ export function buildAuthPayload(mode, form) {
   if (mode === "signup") {
     return {
       name: typeof values.name === "string" ? values.name.trim() : "",
-      ...payload
+      ...payload,
+      acceptTerms: values.acceptTerms === true,
+      termsVersion: consentPolicyVersion()
     };
   }
   return payload;

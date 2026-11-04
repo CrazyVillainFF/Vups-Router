@@ -18,14 +18,18 @@ const PROFILES = {
   sheen: (t, softness) => 0.55 * bump(t, 0.5, 0.25 + 0.25 * softness) + 0.3 * bump(t, 0.5, 0.5)
 };
 
-const gradient = (color, opacity, variant, softness) => {
+/* The sweep profile is expressed as mask *alpha*, not as a painted gradient: the
+   band underneath it is one flat token colour, so every pixel it shows is either
+   that colour or the card. A design system that bans gradients and glows can still
+   move a highlight across a surface — it just has to clip it rather than mix it. */
+const gradient = (opacity, variant, softness) => {
   const profile = PROFILES[variant] ?? PROFILES.streak;
   const stops = Array.from({ length: 33 }, (_, index) => {
     const t = index / 32;
     const alpha = Math.round(Math.min(1, profile(t, softness) * opacity) * 1000) / 10;
-    return `color-mix(in srgb, ${color} ${alpha}%, transparent) ${(t * 100).toFixed(1)}%`;
+    return `color-mix(in srgb, black ${alpha}%, transparent) ${(t * 100).toFixed(1)}%`;
   });
-  return `linear-gradient(90deg, ${stops.join(', ')})`;
+  return `linear-gradient(90deg, ${stops.join(', ')})`; // guard-allow: mask alpha stops, geometry not paint
 };
 
 const ease = t => (1 - Math.cos(Math.PI * t)) / 2;
@@ -37,13 +41,12 @@ const GlareHover = ({
   borderRadius = '10px',
   borderColor = 'transparent',
   children,
-  glareColor = '#ffffff',
+  glareColor = 'var(--accent)',
   glareOpacity = 0.5,
   glareAngle = -45,
   glareSize = 30,
   softness = 0.6,
   variant = 'streak',
-  blendMode = 'screen',
   rimGlint = true,
   mode = 'hover',
   transitionDuration = 650,
@@ -255,8 +258,8 @@ const GlareHover = ({
     engineRef.current?.measure();
   }, [glareAngle, glareSize, rimGlint]);
 
-  const glare = gradient(glareColor, glareOpacity, variant, softness);
-  const rim = gradient(glareColor, Math.min(1, glareOpacity * 1.8), variant, softness);
+  const glare = gradient(glareOpacity, variant, softness);
+  const rim = gradient(Math.min(1, glareOpacity * 1.8), variant, softness);
 
   return (
     <div
@@ -268,9 +271,9 @@ const GlareHover = ({
         '--gh-bg': background,
         '--gh-br': borderRadius,
         '--gh-border': borderColor,
-        '--gh-glare': glare,
-        '--gh-rim': rim,
-        '--gh-blend': blendMode,
+        '--gh-color': glareColor,
+        '--gh-sweep': glare,
+        '--gh-rim-sweep': rim,
         ...style
       }}
     >

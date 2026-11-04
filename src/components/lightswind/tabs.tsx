@@ -134,6 +134,10 @@ const Tabs = React.forwardRef<HTMLDivElement, TabsProps>(
 );
 Tabs.displayName = "Tabs";
 
+/* The selected pill is an accent fill, so its label must be the accent ink:
+   `bg-primary` below and `text-primary-foreground` in TabsTrigger are one
+   decision, and pages that re-skin the track (see pages/landing/home.css) rely
+   on that pairing rather than re-declaring a colour. */
 const TabsList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => {
     const { indicatorStyle, registerTabsList, mounted } = React.useContext(TabsContext);
@@ -146,10 +150,7 @@ const TabsList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivEl
           registerTabsList(el);
         }}
         className={cn(
-          `relative inline-flex h-8 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 p-0.5 text-neutral-900 dark:text-neutral-100`,
-          `[.lw-3d_&]:bg-gradient-to-b [.lw-3d_&]:from-zinc-200 [.lw-3d_&]:to-zinc-100 dark:[.lw-3d_&]:from-zinc-900 dark:[.lw-3d_&]:to-zinc-950`,
-          `[.lw-3d_&]:shadow-[inset_0_2px_4px_rgba(0,0,0,0.12),0_1px_0_rgba(255,255,255,0.6)] dark:[.lw-3d_&]:shadow-[inset_0_2px_5px_rgba(0,0,0,0.5)]`,
-          `[.lw-3d_&]:border-black/15 dark:[.lw-3d_&]:border-white/15`,
+          `relative inline-flex h-8 items-center justify-center rounded-full bg-card border border-border p-0.5 text-foreground`,
           className
         )}
         {...props}
@@ -157,7 +158,7 @@ const TabsList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivEl
         {mounted && (
           <motion.div
             layout
-            className="tabs-bg-indicator absolute top-0.5 bottom-0.5 rounded-full bg-neutral-900 dark:bg-white [.lw-3d_&]:bg-gradient-to-b [.lw-3d_&]:from-zinc-800 [.lw-3d_&]:to-zinc-950 dark:[.lw-3d_&]:from-white dark:[.lw-3d_&]:to-zinc-200 [.lw-3d_&]:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.3),0_3px_6px_-1px_rgba(0,0,0,0.3)] dark:[.lw-3d_&]:shadow-[inset_0_1.5px_0_0_rgba(255,255,255,0.8),0_3px_6px_-1px_rgba(0,0,0,0.4)]"
+            className="tabs-bg-indicator absolute top-0.5 bottom-0.5 rounded-full bg-primary"
             style={{
               ...indicatorStyle,
               position: "absolute",
@@ -211,8 +212,8 @@ const TabsTrigger = React.forwardRef<
          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
          focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50`,
         isActive
-          ? "text-white dark:text-neutral-950 font-bold"
-          : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white font-semibold",
+          ? "text-primary-foreground font-bold"
+          : "text-muted-foreground hover:text-foreground font-semibold",
         className
       )}
       onClick={(e) => {

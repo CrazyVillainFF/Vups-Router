@@ -10,16 +10,25 @@ const TAU = Math.PI * 2;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+/* GradientText no longer paints a gradient. The moving image it builds is an alpha
+   MASK, and two flat token colours sit underneath it — so any pixel of the headline
+   is either colour A, colour B, or a blend of the two, and a blend of two readable
+   colours is still readable. That is what keeps an animated headline inside a design
+   system that bans gradient fills, and it is why `colors` now means "the two colours
+   the sweep passes between" rather than "the stops of a painted ramp". */
 export default function GradientText({
   children,
-  colors = ['#5227FF', '#FF9FFC', '#B497CF'],
+  colors = ['var(--accent)', 'var(--text)'],
   animationSpeed = 8,
   variant = 'linear',
   angle = 90,
   direction,
   scale = 3,
   yoyo = true,
-  glow = 0,
+  /* Named `glow` by the vendored API. It is the sweep layer's opacity — how much of
+     the second colour the moving mask is allowed to show — and nothing about it is
+     a glow: a glow is emitted light, and this is a flat colour clipped by a mask. */
+  glow = 1,
   showBorder = false,
   borderWidth = 1.5,
   pauseOnHover = false,
@@ -30,7 +39,7 @@ export default function GradientText({
   const rootRef = useRef(null);
   const settingsRef = useRef(null);
   const wakeRef = useRef(null);
-  const palette = colors.length > 1 ? colors : [colors[0] ?? '#ffffff', colors[0] ?? '#ffffff'];
+  const palette = colors.length > 1 ? colors : [colors[0] ?? 'var(--text)', colors[0] ?? 'var(--text)'];
 
   settingsRef.current = {
     colors: palette,
@@ -59,11 +68,12 @@ export default function GradientText({
 
     const paint = () => {
       const s = settingsRef.current;
-      const list = s.colors;
       const cycle = state.time / s.speed;
       let image;
       if (s.variant === 'flow') {
-        const blobs = list.map((color, i) => {
+        /* Each blob is an opaque core fading to nothing, and the union of their
+           alphas is what shows through of the second colour. */
+        const blobs = Array.from({ length: s.colors.length }, (_entry, i) => {
           const spin = cycle * TAU;
           const rate = 0.55 + ((i * 0.618) % 1) * 0.5;
           let x = 50 + 44 * Math.sin(spin * rate + i * 2.1);
@@ -72,16 +82,17 @@ export default function GradientText({
             x += (state.px * 100 - x) * state.pull;
             y += (state.py * 100 - y) * state.pull;
           }
-          return `radial-gradient(ellipse ${(22 + 12 * s.scale).toFixed(1)}% ${(60 + 30 * s.scale).toFixed(1)}% at ${x.toFixed(2)}% ${y.toFixed(2)}%, ${color} 0%, transparent 100%)`;
+          return `radial-gradient(ellipse ${(22 + 12 * s.scale).toFixed(1)}% ${(60 + 30 * s.scale).toFixed(1)}% at ${x.toFixed(2)}% ${y.toFixed(2)}%, black 0%, transparent 100%)`; // guard-allow: mask alpha stops, geometry not paint
         });
-        image = `${blobs.join(', ')}, linear-gradient(${s.angle}deg, ${list.join(', ')})`;
+        image = `${blobs.join(', ')}, linear-gradient(${s.angle}deg, black 0%, transparent 100%)`; // guard-allow: mask alpha stops, geometry not paint
       } else if (s.variant === 'conic') {
         const sway = s.yoyo ? Math.sin(cycle * Math.PI) * 50 : cycle * 360;
         const cx = 50 + (state.px * 100 - 50) * state.pull;
         const cy = 260 + (state.py * 100 - 260) * state.pull;
-        image = `repeating-conic-gradient(from ${(sway - 30).toFixed(2)}deg at ${cx.toFixed(2)}% ${cy.toFixed(2)}%, ${[...list, list[0]].map((color, i) => `${color} ${((i / list.length) * 60 * (3 / s.scale)).toFixed(2)}deg`).join(', ')})`;
+        const spokes = Array.from({ length: s.colors.length }, (_entry, i) =>
+          `${i % 2 ? 'transparent' : 'black'} ${((i / s.colors.length) * 60 * (3 / s.scale)).toFixed(2)}deg`).join(', ');
+        image = `repeating-conic-gradient(from ${(sway - 30).toFixed(2)}deg at ${cx.toFixed(2)}% ${cy.toFixed(2)}%, ${spokes})`; // guard-allow: mask alpha stops, geometry not paint
       } else {
-        const loop = [...list, list[0]];
         const period = 100 * s.scale;
         let offset;
         if (s.yoyo) {
@@ -92,10 +103,12 @@ export default function GradientText({
           offset = (cycle % 1) * period;
         }
         offset += (state.px - 0.5) * period * 0.5 * state.pull;
-        const stops = loop.map((color, i) => `${color} ${((i / (loop.length - 1)) * period - offset).toFixed(2)}%`);
-        image = `repeating-linear-gradient(${s.angle}deg, ${stops.join(', ')})`;
+        /* Black and transparent at the same positions the painted ramp used: the
+           band travels, but nothing about it is a colour. */
+        const stops = [0, 1].flatMap(i => [`${i ? 'transparent' : 'black'} ${(i * period / 2 - offset).toFixed(2)}%`]);
+        image = `repeating-linear-gradient(${s.angle}deg, ${stops.join(', ')})`; // guard-allow: mask alpha stops, geometry not paint
       }
-      root.style.setProperty('--gt-gradient', image);
+      root.style.setProperty('--gt-sweep', image);
     };
 
     const tick = now => {
@@ -174,26 +187,29 @@ export default function GradientText({
     };
   }, []);
 
-  const loop = [...palette, palette[0]];
+  /* The list's last colour is what the headline always reads as; the first is the
+     colour the sweep passes through. Both are flat, so `background-clip: text` and
+     the transparent text fill it needed are gone. */
+  const base = palette[palette.length - 1];
+  const tint = palette[0];
 
   return (
     <span
       ref={rootRef}
       className={`gradient-text${showBorder ? ' gradient-text--border' : ''}${className ? ` ${className}` : ''}`}
       style={{
-        '--gt-gradient': `linear-gradient(${direction ? (ANGLES[direction] ?? angle) : angle}deg, ${loop.join(', ')})`,
+        '--gt-base': base,
+        '--gt-tint': tint,
         '--gt-border': `${borderWidth}px`,
-        '--gt-glow': clamp(glow, 0, 1),
+        '--gt-strength': clamp(glow, 0, 1),
         ...style
       }}
     >
       <span className="gradient-text__inner">
         <span className="gradient-text__content">{children}</span>
-        {glow > 0 ? (
-          <span className="gradient-text__glow" aria-hidden="true">
-            {children}
-          </span>
-        ) : null}
+        <span className="gradient-text__sweep" aria-hidden="true">
+          {children}
+        </span>
       </span>
     </span>
   );

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <rect width="1024" height="1024" rx="270" fill="#FF5B1F"/>
+  <!-- faded center stem -->
+  <rect x="487" y="320" width="50" height="240" fill="#171613" opacity="0.35"/>
+  <!-- branches -->
+  <g stroke="#171613" stroke-width="50" fill="none" stroke-linecap="butt">
+    <line x1="330" y1="322" x2="512" y2="610"/>
+    <line x1="694" y1="322" x2="512" y2="610"/>
+    <line x1="512" y1="580" x2="512" y2="715"/>
+  </g>
+  <!-- nodes (rings) -->
+  <g stroke="#171613" stroke-width="38" fill="none">
+    <circle cx="312" cy="292" r="41"/>
+    <circle cx="512" cy="292" r="41"/>
+    <circle cx="712" cy="292" r="41"/>
+    <circle cx="512" cy="745" r="38"/>
+  </g>
+</svg>

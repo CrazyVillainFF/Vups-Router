@@ -178,7 +178,6 @@ export default function CountUp({
     return buildRoll(a, b, !!play?.spin, { compact, decimals, places, separator });
   }, [mode, play, startValue, endValue, compact, decimals, places, separator]);
 
-  const [initialText] = useState(() => formatValue(startValue));
   const latestRef = useRef(null);
 
   useIsoLayoutEffect(() => {
@@ -441,7 +440,7 @@ export default function CountUp({
         </>
       ) : (
         <span key="count" ref={textRef}>
-          {initialText}
+          {finalText}
         </span>
       )}
     </span>

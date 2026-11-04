@@ -1,3 +1,4 @@
+import { token } from "../../tokens.js";
 import { Fragment, isValidElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { animate, useMotionValue, useMotionValueEvent, useReducedMotion } from 'motion/react';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -41,6 +42,7 @@ import {
   saveSavedModelIds,
   toggleSavedModel
 } from '../../chat/savedModels.js';
+import VupsLogo from '../VupsLogo.jsx';
 import './PromptBar.css';
 
 const ARROW_UP = [12, 4.5, 18.5, 11, 14.25, 11, 14.25, 19.5, 9.75, 19.5, 9.75, 11, 5.5, 11];
@@ -390,10 +392,10 @@ export default function PromptBar({
   attachmentAccept = 'image/png,image/jpeg,image/webp,image/gif',
   pasteMinBytes = PASTE_MIN_BYTES,
   showCamera = false,
-  background = '#111c2e',
-  color = '#e9eef7',
-  menuBackground = '#16233a',
-  sparkColor = '#6c9bff',
+  background = token("bg"),
+  color = token("text"),
+  menuBackground = token("surface"),
+  sparkColor = token("accent"),
   sparkBoost = 1,
   width = 400,
   radius = 16,
@@ -402,6 +404,7 @@ export default function PromptBar({
   squash = 0.12,
   tilt = 8,
   pressScale = 0.96,
+  onModelMenuOpenChange,
   className = ''
 }) {
   const reduce = useReducedMotion();
@@ -462,7 +465,7 @@ export default function PromptBar({
   const [listening, setListening] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [modelMenuMaxHeight, setModelMenuMaxHeight] = useState(360);
+  const [modelMenuMaxHeight, setModelMenuMaxHeight] = useState(520);
   const [attaching, setAttaching] = useState(0);
   const [scanning, setScanning] = useState(false);
   const [preparing, setPreparing] = useState(null);
@@ -500,11 +503,19 @@ export default function PromptBar({
   const token = dismissed || !hasTokenMenus ? null : parseToken(draft);
   const open = plusOpen ? 'at' : (token?.kind ?? (modelOpen ? 'model' : effortOpen ? 'effort' : null));
 
+  useEffect(() => {
+    onModelMenuOpenChange?.(open === 'model');
+  }, [open, onModelMenuOpenChange]);
+
   useLayoutEffect(() => {
     if (open !== 'model' || !rootRef.current) return undefined;
     const update = () => {
       const top = rootRef.current?.getBoundingClientRect().top ?? 0;
-      setModelMenuMaxHeight(Math.max(120, Math.min(360, Math.floor(top - 20))));
+      // The menu grows upward, so it is bounded by the space above the bar as
+      // well as by the viewport-wide ceiling; a short column still has to scroll
+      // rather than collapse into an unreadable sliver.
+      const room = Math.min(520, Math.floor(window.innerHeight * 0.7), Math.floor(top - 20));
+      setModelMenuMaxHeight(Math.max(160, room));
     };
     update();
     window.addEventListener('resize', update);
@@ -1233,7 +1244,9 @@ export default function PromptBar({
                           aria-disabled={row.disabled ? 'true' : undefined}
                           data-active={i === cursor ? '' : undefined}
                           data-disabled={row.disabled ? '' : undefined}
-                          className="prompt-bar__row prompt-bar__row--model prompt-bar__row--managed"
+                          className={`prompt-bar__row prompt-bar__row--model prompt-bar__row--managed${
+                            row.combo ? ' prompt-bar__row--combo' : ''
+                          }`}
                           onMouseDown={e => e.preventDefault()}
                           onPointerEnter={() => setActive(i)}
                           onClick={() => pick(row)}
@@ -1246,7 +1259,19 @@ export default function PromptBar({
                               >
                                 {row.name}
                               </span>
-                              {row.badge ? <span className={`prompt-bar__model-badge${row.vups ? ' prompt-bar__model-badge--vups' : ''}`}>{row.badge}</span> : null}
+                              {row.badge ? (
+                                <span
+                                  className={`prompt-bar__model-badge${
+                                    row.combo
+                                      ? ' prompt-bar__model-badge--apex'
+                                      : row.vups
+                                        ? ' prompt-bar__model-badge--vups'
+                                        : ''
+                                  }`}
+                                >
+                                  {row.badge}
+                                </span>
+                              ) : null}
                             </span>
                             {row.tag ? <span className="prompt-bar__model-sub">{row.tag}</span> : null}
                             {row.capabilityLabels?.length > 0 ? (
@@ -1271,7 +1296,7 @@ export default function PromptBar({
                               </span>
                             ) : null}
                           </span>
-                          {!row.disabled && row.model ? (
+                          {!row.disabled && row.model && !row.combo ? (
                             <button
                               type="button"
                               className="prompt-bar__model-star"
@@ -1601,11 +1626,14 @@ export default function PromptBar({
           {models.length > 0 ? (
             <button
               type="button"
-              className="prompt-bar__pick prompt-bar__pick--model"
+              className={`prompt-bar__pick prompt-bar__pick--model${
+                model.combo ? ' prompt-bar__pick--combo' : ''
+              }`}
               aria-label={`Choose model, currently ${model.name}`}
-              title={model.name}
+              title={model.tag ? `${model.name} - ${model.tag}` : model.name}
               aria-expanded={modelOpen}
               data-on={modelOpen ? '' : undefined}
+              data-combo={model.combo ? '' : undefined}
               onMouseDown={e => e.preventDefault()}
               onClick={() => {
                 focusInput();
@@ -1615,6 +1643,11 @@ export default function PromptBar({
                 setModelOpen(v => !v);
               }}
             >
+              {model.combo ? (
+                <span className="prompt-bar__pick-mark" aria-hidden="true">
+                  <VupsLogo sizes="16px" loading="lazy" />
+                </span>
+              ) : null}
               <span title={model.name}>{model.name}</span>
               <HugeiconsIcon icon={ArrowDown01Icon} size={12} strokeWidth={2.4} />
             </button>

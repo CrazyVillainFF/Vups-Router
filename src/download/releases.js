@@ -82,7 +82,7 @@ export const PREVIEWS = [
     id: "home",
     category: "Home",
     title: "Your AI workspace.",
-    description: "The real VupsRouter landing page, with the same dark navy system and blue accents.",
+    description: "The real VupsRouter landing page, on the same warm-neutral token system with one orange accent.",
     source: "Live product screenshot",
     image: "/previews/home-desktop.png",
     alt: "Screenshot of the live VupsRouter home page hero and navigation."

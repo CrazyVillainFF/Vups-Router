@@ -158,7 +158,7 @@ export default function AgentActivity({
         glyph="sparkle"
         // A concrete color keeps the shimmer gradient readable; currentColor
         // would resolve against the transparent text fill.
-        color={active ? "var(--accent)" : "#c7d2e3"}
+        color={active ? "var(--accent)" : "var(--text)"}
         fontSize={13}
         breathPeriod={1.6}
         breathDepth={0.45}

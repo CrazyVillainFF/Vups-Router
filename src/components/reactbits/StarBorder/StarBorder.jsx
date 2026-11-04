@@ -1,23 +1,27 @@
 'use client';
 
+import { token, mix as mixColor } from "../../../tokens.js";
 import { useEffect, useRef } from 'react';
 
 import './StarBorder.css';
 
-const THEMES = {
+/* Resolved on every render, not at module load: a token read at import time
+   freezes to whichever theme was active when the bundle first evaluated, and a
+   theme switch would then leave this canvas painting the old palette. */
+const themePalettes = () => ({
   dark: {
-    surface: '#0c0c0f',
-    text: '#fafafa',
-    track: 'rgba(255, 255, 255, 0.1)',
-    light: '#ffffff'
+    surface: token("bg"),
+    text: token("text"),
+    track: mixColor("text", 0.1),
+    light: token("text")
   },
   light: {
-    surface: '#ffffff',
-    text: '#18181b',
-    track: 'rgba(24, 24, 27, 0.12)',
-    light: '#18181b'
+    surface: token("text"),
+    text: token("bg"),
+    track: mixColor("slab", 0.12),
+    light: token("bg")
   }
-};
+});
 
 const HOVERS = ['lap', 'brighten', 'reveal', 'none'];
 const BLEED = 48;
@@ -37,7 +41,7 @@ let colorContext = null;
 const toRgb = color => {
   colorContext = colorContext ?? document.createElement('canvas').getContext('2d');
   if (!colorContext) return WHITE;
-  colorContext.fillStyle = '#000000';
+  colorContext.fillStyle = token("slab");
   colorContext.fillStyle = color;
   const value = String(colorContext.fillStyle);
   if (value.startsWith('#')) {
@@ -153,7 +157,8 @@ const StarBorder = ({
   const rootRef = useRef(null);
   const canvasRef = useRef(null);
   const wakeRef = useRef(null);
-  const palette = THEMES[theme] ?? THEMES.dark;
+  const palettes = themePalettes();
+  const palette = palettes[theme] ?? palettes.dark;
   const light = color ?? palette.light;
   const settings = {
     light: theme === 'light',

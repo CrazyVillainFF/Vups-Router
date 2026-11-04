@@ -24,6 +24,7 @@ import {
   isAndroidApp,
   isTauriApp
 } from "../src/native/appInfo.js";
+import { createUpdaterProgress, updaterErrorMessage } from "../src/native/windowsUpdater.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = file => readFileSync(path.join(root, file), "utf8");
@@ -245,7 +246,11 @@ test("the settings page hosts one shared updates section and guards every operat
   assert.match(component, /installingRef\.current/);
   assert.match(component, /Update download failed/);
   assert.match(component, /Update installation failed/);
-  assert.match(component, /signed update manifest/);
+  assert.match(component, /isWindowsUpdaterAvailable\(\)/);
+  assert.match(component, /checkWindowsUpdate\(\)/);
+  assert.match(component, /windowsUpdate\.downloadAndInstall\(/);
+  assert.match(component, /restartWindowsApp\(\)/);
+  assert.doesNotMatch(component, /signed update manifest|Automatic installation is not configured/);
   assert.doesNotMatch(component, /uninstall/i);
 });
 
@@ -283,3 +288,89 @@ function componentSource() {
 test("the release page constant comes from the official repository, not a guessed URL", () => {
   assert.equal(RELEASES_PAGE_URL, "https://github.com/CrazyVillainFF/Vups-Router/releases");
 });
+
+test("the Windows updater is wired through config, plugins, capability, and package", () => {
+  const conf = JSON.parse(read("src-tauri/tauri.conf.json"));
+  assert.equal(
+    conf.bundle.createUpdaterArtifacts,
+    false,
+    "the bundler must not sign: the updater signature is made after Authenticode rewrites the installer"
+  );
+  assert.equal(typeof conf.plugins?.updater?.pubkey, "string", "the updater needs a public key to verify");
+  assert.match(
+    conf.plugins.updater.pubkey,
+    /^dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6/,
+    "the embedded key must be a minisign PUBLIC key, never a private key"
+  );
+  assert.ok(
+    conf.plugins.updater.endpoints.includes(
+      "https://github.com/CrazyVillainFF/Vups-Router/releases/latest/download/latest.json"
+    ),
+    "the updater reads the signed manifest published beside the installers"
+  );
+
+  const cargo = read("src-tauri/Cargo.toml");
+  assert.match(cargo, /tauri-plugin-updater\s*=\s*"2"/);
+  assert.match(cargo, /tauri-plugin-process\s*=\s*"2"/);
+
+  const main = read("src-tauri/src/main.rs");
+  assert.match(main, /tauri_plugin_updater::Builder::new\(\)\.build\(\)/);
+  assert.match(main, /tauri_plugin_process::init\(\)/);
+
+  const capability = JSON.parse(read("src-tauri/capabilities/default.json"));
+  assert.ok(capability.permissions.includes("updater:default"));
+  assert.ok(capability.permissions.includes("process:allow-restart"));
+
+  const pkg = JSON.parse(read("package.json"));
+  assert.match(pkg.dependencies["@tauri-apps/plugin-updater"], /^\^2/);
+  assert.match(pkg.dependencies["@tauri-apps/plugin-process"], /^\^2/);
+});
+
+test("the release workflow signs the updater after Authenticode and never lets the bundler sign early", () => {
+  const wf = read(".github/workflows/native-builds.yml");
+  // The bundler must not be switched on anywhere in CI, or the .sig would cover
+  // pre-Authenticode bytes and the app would reject its own update.
+  assert.doesNotMatch(wf, /createUpdaterArtifacts["']?\s*:\s*true/, "CI must not enable bundler signing");
+
+  const azure = wf.indexOf("azure/artifact-signing-action");
+  const pfx = wf.indexOf("SIGNTOOL sign /v /fd SHA256");
+  const updaterSign = wf.indexOf("tauri signer sign --app-version");
+  const manifest = wf.indexOf("make-updater-manifest.mjs");
+  const checksumAll = wf.indexOf("Get-ChildItem release-assets -File");
+
+  assert.ok(updaterSign > 0, "the updater package must be signed by hand");
+  assert.ok(manifest > 0, "latest.json must be generated from the signature");
+  assert.ok(azure > 0 && updaterSign > azure, "updater signing runs after Azure Authenticode");
+  assert.ok(pfx > 0 && updaterSign > pfx, "updater signing runs after PFX Authenticode");
+  // The publish gate rejects any attached asset without a build-time checksum,
+  // so the checksum step must cover every staged file, not just the installers.
+  assert.ok(checksumAll > 0, "checksums must enumerate all release-assets, including .sig and latest.json");
+});
+
+test("updater download events fold into honest progress", () => {
+  const handle = createUpdaterProgress();
+  assert.deepEqual(handle({ event: "Started", data: { contentLength: 100 } }), {
+    received: 0,
+    total: 100,
+    percent: 0
+  });
+  assert.equal(handle({ event: "Progress", data: { chunkLength: 50 } }).percent, 50);
+  assert.equal(handle({ event: "Progress", data: { chunkLength: 50 } }).percent, 100);
+
+  const unknown = createUpdaterProgress();
+  assert.equal(unknown({ event: "Started", data: {} }).percent, null);
+  assert.equal(unknown({ event: "Progress", data: { chunkLength: 10 } }).percent, null);
+  assert.deepEqual(unknown({ event: "Finished" }), { received: 10, total: 10, percent: 100 });
+});
+
+test("updater failures map to actionable, non-fabricated messages", () => {
+  assert.match(updaterErrorMessage(new Error("Invalid signature")), /could not be verified/);
+  assert.match(updaterErrorMessage(new Error("request timed out")), /took too long/);
+  assert.match(
+    updaterErrorMessage(new Error("error sending request for url (https://github.com/…/latest.json)")),
+    /Unable to reach the update service/
+  );
+  assert.match(updaterErrorMessage(new Error("404 Not Found")), /unavailable right now/);
+  assert.match(updaterErrorMessage(new Error("weird")), /weird/);
+});
+

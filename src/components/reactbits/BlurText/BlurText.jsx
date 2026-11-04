@@ -363,7 +363,7 @@ const BlurText = ({
     const dimmed = focusWord !== -1 && focusWord !== w;
     return {
       ...WORD_STYLE,
-      filter: dimmed ? `blur(${dim}px)` : 'blur(0px)',
+      filter: dimmed ? `blur(${dim}px)` : 'blur(0px)', // guard-allow: depth-of-field on hover, sharp at rest
       opacity: dimmed ? 0.3 : 1,
       transition: `filter 0.45s ${CSS_EASE}, opacity 0.45s ${CSS_EASE}`
     };

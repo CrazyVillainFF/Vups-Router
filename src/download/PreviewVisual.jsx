@@ -39,11 +39,11 @@ function ChatMock() {
           <b><Sparkles size={10} /> Vups v3 Galax</b>
         </div>
         <div className="dl-mock__messages">
-          <div className="dl-mock__msg dl-mock__msg--user">Make the hero feel more editorial, but keep the dark navy system.</div>
+          <div className="dl-mock__msg dl-mock__msg--user">Make the hero feel more editorial, but keep the warm dark theme.</div>
           <div className="dl-mock__msg dl-mock__msg--ai">
             <span className="dl-mock__avatar">V</span>
             <div>
-              <p>I&apos;ll tighten the headline scale, add a ruled grid, and keep the blue accent to one focal word.</p>
+              <p>I&apos;ll tighten the headline scale, add a ruled grid, and keep the orange accent to one focal word.</p>
               <div className="dl-mock__progress"><i /> Generating response <span>2.1s</span></div>
             </div>
           </div>

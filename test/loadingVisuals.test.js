@@ -258,13 +258,14 @@ test("the chat wires Bouncy to the single real streaming turn", () => {
   assert.match(visuals, /import "ldrs\/react\/Quantum\.css";/);
   assert.match(visuals, /import \{ Bouncy \} from "ldrs\/react";/);
   assert.match(visuals, /import "ldrs\/react\/Bouncy\.css";/);
-  assert.match(visuals, /<Quantum size="30" speed="1\.75" color="var\(--vr-loader-color, var\(--accent, #6c9bff\)\)" \/>/);
-  assert.match(visuals, /<Bouncy size="22" speed="1\.75" color="var\(--vr-loader-color, var\(--accent, #6c9bff\)\)" \/>/);
+  assert.match(visuals, /<Quantum size="30" speed="1\.75" color="var\(--vr-loader-color\)" \/>/);
+  assert.match(visuals, /<Bouncy size=\{22\} speed="1\.75" color="var\(--vr-loader-color\)" \/>/);
 });
 
 test("reduced motion pauses both loaders on a visible frame", () => {
   const css = read("src/components/LoadingVisuals.css");
-  assert.match(css, /--vr-loader-color: var\(--accent, #6c9bff\)/);
+  assert.match(css, /--vr-loader-color: var\(--accent\)/);
+  /* The accent fallback is a token now; no hexes allowed. */
   const reduce = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/)?.[0] || "";
   assert.match(reduce, /animation-play-state: paused !important/);
   assert.match(reduce, /animation-duration: var\(--uib-speed, 1\.75s\) !important/);

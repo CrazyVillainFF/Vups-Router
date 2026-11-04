@@ -1,11 +1,15 @@
 [[permission]]
 identifier = "allow-workspace-commands"
-description = "Allow the VupsRouter workspace bridge to list, pick, rename, remove, scan, and read local workspace files."
+description = "Allow the VupsRouter workspace panel to list, pick, rename, remove, scan, read, tree, search, and Git-review the user's registered local workspaces. Every path stays inside the workspace folder the user selected."
 commands.allow = [
   "workspace_list",
   "workspace_pick",
   "workspace_rename",
   "workspace_remove",
   "workspace_scan",
-  "workspace_read"
+  "workspace_read",
+  "workspace_read_text",
+  "workspace_tree",
+  "workspace_search",
+  "workspace_git_review"
 ]

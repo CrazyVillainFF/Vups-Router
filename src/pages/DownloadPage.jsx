@@ -143,7 +143,6 @@ export default function DownloadPage() {
       <main>
         <section className="dl-hero" aria-labelledby="download-title">
           <span className="dl-hero__grid" aria-hidden="true" />
-          <span className="dl-hero__glow" aria-hidden="true" />
           <div className="dl-wrap">
             <Reveal className="dl-hero__copy">
               <div className="dl-kicker"><span /> DOWNLOAD CENTER <b>WEB · DESKTOP · ANDROID</b></div>

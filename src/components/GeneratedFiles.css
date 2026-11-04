@@ -3,7 +3,7 @@
   margin: 8px 0 2px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: rgba(148, 163, 184, 0.035);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
   overflow: hidden;
 }
 
@@ -15,7 +15,7 @@
   padding: 3px 5px 3px 10px;
   border-bottom: 1px solid var(--line);
   color: var(--muted);
-  font: 11px "Outfit", sans-serif;
+  font: 11px var(--font-sans), sans-serif;
 }
 
 .vr-files__head > svg {
@@ -24,7 +24,7 @@
 }
 
 .vr-files__summary {
-  color: #c6d1e2;
+  color: var(--text);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -52,7 +52,7 @@
 }
 
 .vr-files__row:hover {
-  background: rgba(148, 163, 184, 0.06);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
 }
 
 .vr-files__icon {
@@ -63,7 +63,7 @@
 .vr-files__name {
   min-width: 0;
   overflow: hidden;
-  color: #c4d0e2;
+  color: var(--text);
   font: 11.5px var(--mono);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -91,8 +91,8 @@
 
 .vr-files__download:hover:not(:disabled),
 .vr-files__zip:hover:not(:disabled) {
-  border-color: rgba(108, 155, 255, 0.28);
-  background: rgba(108, 155, 255, 0.1);
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   color: var(--accent);
 }
 
@@ -104,7 +104,7 @@
 
 .vr-files__download:disabled,
 .vr-files__zip:disabled {
-  color: #4e5b70;
+  color: var(--muted);
   cursor: not-allowed;
 }
 
@@ -118,8 +118,8 @@
   gap: 6px;
   margin: 0;
   padding: 2px 10px 7px;
-  color: #e0a5a5;
-  font: 11px "Outfit", sans-serif;
+  color: var(--error);
+  font: 11px var(--font-sans), sans-serif;
 }
 
 @keyframes vr-files-spin {
@@ -152,15 +152,15 @@
 }
 
 [data-theme="light"] .vr-files {
-  background: rgba(15, 23, 42, 0.025);
+  background: color-mix(in srgb, var(--bg) 3%, transparent);
 }
 
 [data-theme="light"] .vr-files__name,
 [data-theme="light"] .vr-files__summary {
-  color: #243247;
+  color: var(--on-accent);
 }
 
 [data-theme="light"] .vr-files__download:disabled,
 [data-theme="light"] .vr-files__zip:disabled {
-  color: #94a3b8;
+  color: var(--muted);
 }

@@ -12,6 +12,8 @@
     "allow-workspace-commands",
     "allow-desktop-tools",
     "allow-composer-files",
+    "allow-panel-browser",
+    "allow-panel-terminal",
     {
       "identifier": "opener:allow-open-url",
       "allow": [

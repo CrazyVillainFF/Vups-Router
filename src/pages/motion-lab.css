@@ -5,9 +5,7 @@
   isolation: isolate;
   overflow: hidden;
   background:
-    radial-gradient(ellipse at 18% 0%, rgba(63, 111, 232, .14), transparent 42%),
-    radial-gradient(ellipse at 88% 18%, rgba(108, 155, 255, .09), transparent 38%),
-    var(--bg);
+    var(--accent);
   padding-bottom: 90px;
 }
 
@@ -17,10 +15,9 @@
   z-index: -1;
   pointer-events: none;
   background-image:
-    linear-gradient(rgba(148, 163, 184, .035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, .035) 1px, transparent 1px);
+    color-mix(in srgb, var(--text) 3%, transparent);
   background-size: 72px 72px;
-  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, .7), transparent 72%);
+  mask-image: linear-gradient(to bottom, black, transparent 72%);
 }
 
 .ml-hero {
@@ -48,7 +45,7 @@
   width: 26px;
   height: 1px;
   background: var(--accent);
-  box-shadow: 0 0 14px rgba(108, 155, 255, .65);
+  box-shadow: none;
 }
 
 .ml-hero-title.split-parent {
@@ -58,7 +55,7 @@
   padding-bottom: .08em;
   font-size: clamp(3rem, 6.6vw, 6rem);
   font-weight: 600;
-  letter-spacing: -.065em;
+  letter-spacing: -0.02em;
   line-height: .96;
 }
 
@@ -90,7 +87,7 @@
   align-items: center;
   gap: 7px;
   font-size: 13px;
-  color: #c9d3e3;
+  color: var(--text);
   transition: gap .25s, color .25s;
 }
 
@@ -115,7 +112,7 @@
   font-size: 1.75rem;
   font-weight: 600;
   line-height: 1;
-  letter-spacing: -.04em;
+  letter-spacing: -0.02em;
   color: var(--ink);
 }
 
@@ -140,8 +137,8 @@
   width: min(88%, 380px);
   aspect-ratio: 1;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(63, 111, 232, .2), transparent 66%);
-  filter: blur(8px);
+  background: var(--surface-2);
+  filter: none;
 }
 
 .ml-hero-orbit .circular-text {
@@ -156,7 +153,7 @@
   height: 92px;
   border-radius: 26px;
   overflow: hidden;
-  box-shadow: 0 26px 70px rgba(2, 6, 14, .7);
+  box-shadow: none;
 }
 
 .ml-orbit-logo img { width: 100%; height: 100%; object-fit: contain; }
@@ -172,13 +169,13 @@
 .ml-velocity-band {
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
-  background: linear-gradient(90deg, rgba(108, 155, 255, .06), transparent 45%, rgba(108, 155, 255, .06));
+  background: var(--accent);
   padding: 17px 0;
 }
 
 .ml-velocity-band .scroller,
 .ml-stage .scroller {
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-sans), sans-serif;
   letter-spacing: .03em;
 }
 
@@ -211,7 +208,7 @@
   margin: 14px 0 0;
   font-size: clamp(2.1rem, 4.2vw, 3.6rem);
   font-weight: 550;
-  letter-spacing: -.055em;
+  letter-spacing: -0.02em;
   line-height: 1.02;
   color: var(--ink);
 }
@@ -238,8 +235,7 @@
   border: 1px solid var(--line);
   border-radius: 18px;
   background:
-    linear-gradient(145deg, rgba(108, 155, 255, .055), transparent 52%),
-    var(--surface);
+    color-mix(in srgb, var(--text) 3%, transparent);
   overflow: hidden;
 }
 
@@ -249,7 +245,7 @@
   inset: 0;
   pointer-events: none;
   border-radius: inherit;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 4%, transparent);
 }
 
 .ml-demo--wide { grid-column: 1 / -1; }
@@ -305,17 +301,17 @@
   font-size: clamp(1.15rem, 2.1vw, 1.55rem);
   font-weight: 500;
   line-height: 1.35;
-  letter-spacing: -.025em;
+  letter-spacing: -0.02em;
   color: var(--ink);
   justify-content: center;
 }
 
-.ml-shiny { color: #a8b6cb; }
+.ml-shiny { color: var(--muted); }
 
 .ml-gradient {
   font-size: clamp(1.65rem, 2.8vw, 2.35rem);
   font-weight: 600;
-  letter-spacing: -.04em;
+  letter-spacing: -0.02em;
   line-height: 1.1;
 }
 
@@ -330,7 +326,7 @@
   display: block;
   font-size: clamp(1.8rem, 3.6vw, 2.9rem);
   font-weight: 600;
-  letter-spacing: -.05em;
+  letter-spacing: -0.02em;
   line-height: 1.05;
   padding-bottom: .06em;
 }
@@ -348,7 +344,7 @@
 .ml-rotating-pill {
   padding: 4px 12px;
   border-radius: 8px;
-  background: rgba(108, 155, 255, .14);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--accent);
   font-weight: 600;
   border: 1px solid var(--accent-line);
@@ -357,7 +353,7 @@
 .ml-count {
   font-size: clamp(2.2rem, 4.6vw, 3.2rem);
   font-weight: 600;
-  letter-spacing: -.05em;
+  letter-spacing: -0.02em;
   color: var(--accent);
 }
 
@@ -391,7 +387,7 @@
 }
 
 .ml-stage--proximity .variable-proximity {
-  font-family: 'Roboto Flex', 'Outfit', sans-serif;
+  font-family: 'Roboto Flex', var(--font-sans), sans-serif;
   font-variation-settings: 'wght' 420;
   text-align: center;
   line-height: 1.3;
@@ -420,15 +416,15 @@
   gap: 8px;
   padding: 22px !important;
   border-radius: 15px !important;
-  --spotlight-card-surface: #0c1626;
-  --spotlight-card-border: rgba(108, 155, 255, .26);
+  --spotlight-card-surface: var(--bg);
+  --spotlight-card-border: color-mix(in srgb, var(--accent) 26%, transparent);
 }
 
 .ml-spotlight strong,
 .ml-reveal-card strong {
   font-size: clamp(1.1rem, 2vw, 1.4rem);
   font-weight: 500;
-  letter-spacing: -.03em;
+  letter-spacing: -0.02em;
   line-height: 1.35;
   color: var(--ink);
 }
@@ -450,12 +446,12 @@
   justify-content: center;
   padding: 14px 24px;
   border-radius: 999px;
-  background: linear-gradient(135deg, #6c9bff, #3f6fe8);
-  color: #07101f;
+  background: var(--accent);
+  color: var(--on-accent);
   font-size: 13px;
   font-weight: 650;
   letter-spacing: -.01em;
-  box-shadow: 0 18px 45px rgba(63, 111, 232, .28);
+  box-shadow: none;
 }
 
 .ml-spark {
@@ -471,7 +467,7 @@
   min-height: 136px;
   border: 1px dashed var(--line-strong);
   border-radius: 13px;
-  background: rgba(255, 255, 255, .012);
+  background: color-mix(in srgb, var(--text) 2%, transparent);
   font: 9px var(--mono);
   letter-spacing: .14em;
   text-transform: uppercase;
@@ -505,7 +501,7 @@
   min-height: 160px;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: #0b1322;
+  background: var(--bg);
   font-size: 13px;
   letter-spacing: .05em;
   color: var(--ink);
@@ -519,8 +515,7 @@
   border-radius: 14px;
   overflow: hidden;
   background:
-    radial-gradient(ellipse at 50% 50%, rgba(63, 111, 232, .16), transparent 62%),
-    #080f1b;
+    var(--surface);
 }
 
 .ml-pixel-label {
@@ -544,9 +539,7 @@
   border-radius: 14px;
   overflow: hidden;
   background:
-    linear-gradient(160deg, rgba(108, 155, 255, .2), transparent 55%),
-    repeating-linear-gradient(90deg, rgba(148, 163, 184, .08) 0 1px, transparent 1px 26px),
-    #0b1525;
+    var(--accent);
 }
 
 .ml-blur-content {
@@ -569,9 +562,9 @@
   align-items: flex-start;
   justify-content: space-between;
   padding: 18px;
-  border: 1px solid rgba(108, 155, 255, .3);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   border-radius: 14px;
-  background: linear-gradient(150deg, #14233d, #0a1322 70%);
+  background: var(--bg);
   color: var(--ink);
 }
 
@@ -584,12 +577,12 @@
 .ml-stack-face strong {
   font-size: 1.25rem;
   font-weight: 500;
-  letter-spacing: -.03em;
+  letter-spacing: -0.02em;
 }
 
-.ml-stack-face--alt { background: linear-gradient(150deg, #0f1b2f, #0a1322 70%); }
-.ml-stack-face--deep { background: linear-gradient(150deg, #1a2c4c, #0a1322 72%); }
-.ml-stack-face--line { background: linear-gradient(150deg, #0d1929, #0a1322 70%); }
+.ml-stack-face--alt { background: var(--bg); }
+.ml-stack-face--deep { background: var(--bg); }
+.ml-stack-face--line { background: var(--bg); }
 
 .ml-reveal-card {
   width: 100%;
@@ -601,7 +594,7 @@
   padding: 20px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: linear-gradient(150deg, rgba(108, 155, 255, .1), rgba(11, 19, 34, .9) 58%);
+  background: var(--surface-2);
 }
 
 .ml-scrollfloat-demo-text {
@@ -631,7 +624,7 @@
   padding: 0 14px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255, 255, 255, .02);
+  background: color-mix(in srgb, var(--text) 2%, transparent);
   font: 9px var(--mono);
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -649,7 +642,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 32px;
-  background: linear-gradient(90deg, rgba(108, 155, 255, .06), transparent 64%);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
 }
 
 .ml-outro h2 {
@@ -657,7 +650,7 @@
   font-size: clamp(2rem, 4vw, 3.2rem);
   font-weight: 550;
   line-height: 1.03;
-  letter-spacing: -.055em;
+  letter-spacing: -0.02em;
   color: var(--ink);
 }
 

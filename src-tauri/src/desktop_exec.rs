@@ -145,10 +145,13 @@ fn window_process_info(pid: u32) -> Result<Option<WindowProcess>, ExecError> {
     if pid == 0 {
         return Ok(None);
     }
+    // The record is assigned before the last statement: Windows PowerShell
+    // exits with 1 when the final command is a conditional that never ran,
+    // which would report a missing process as a PowerShell failure.
     let script = format!(
         "$p = Get-Process -Id {pid} -ErrorAction SilentlyContinue; \
-         if ($p) {{ [pscustomobject]@{{ pid = $p.Id; name = $p.ProcessName; title = [string]$p.MainWindowTitle }} \
-         | ConvertTo-Json -Compress }}"
+         $o = if ($p) {{ [pscustomobject]@{{ pid = $p.Id; name = $p.ProcessName; \
+         title = [string]$p.MainWindowTitle }} }}; $o | ConvertTo-Json -Compress"
     );
     let raw = run_powershell(&script, PROCESS_LIST_TIMEOUT)?;
     let trimmed = raw.trim();
@@ -2111,9 +2114,12 @@ mod tests {
     #[test]
     fn protected_and_unknown_processes_are_never_closed() {
         let registry = ProcessRegistry::default();
+        // Windows reports no process behind either pid, so the honest refusal
+        // is "not running": a numeric PID that cannot be verified as a windowed
+        // app is never killed, and a forced request does not change that.
         let error = registry.close("999999", false).expect_err("unknown");
-        assert_eq!(error.code, "unknown_process");
+        assert_eq!(error.code, "not_running");
         let error = registry.close("1", true).expect_err("system process");
-        assert_eq!(error.code, "unknown_process");
+        assert_eq!(error.code, "not_running");
     }
 }

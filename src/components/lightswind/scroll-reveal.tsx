@@ -127,12 +127,12 @@ export function ScrollReveal({
   const wordVariants = {
     hidden: {
       opacity: baseOpacity,
-      filter: enableBlur ? `blur(${blurStrength}px)` : "blur(0px)",
+      filter: enableBlur ? `blur(${blurStrength}px)` : "blur(0px)", // guard-allow: transient entrance focus, sharp at rest
       y: 20,
     },
     visible: {
       opacity: 1,
-      filter: "blur(0px)",
+      filter: "blur(0px)", // guard-allow: the resting state is sharp
       y: 0,
       transition: {
         // Removed `type: "spring"` here. Framer Motion infers "spring"

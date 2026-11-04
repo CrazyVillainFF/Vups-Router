@@ -5,6 +5,7 @@ import {
   CaretUp,
   ChatCircle,
   Check,
+  CirclesFour,
   FolderSimple,
   Folders,
   Gear,
@@ -18,6 +19,8 @@ import {
   SignOut,
   SlidersHorizontal,
   Sparkle,
+  Sun,
+  Moon,
   Trash,
   X
 } from "@phosphor-icons/react";
@@ -30,6 +33,7 @@ import { useTasks } from "./TaskContext.jsx";
 import { useWorkspaces } from "./WorkspaceContext.jsx";
 import WorkspaceManagerDialog from "./WorkspaceManagerDialog.jsx";
 import HoldToDeleteDialog from "../components/HoldToDeleteDialog.jsx";
+import { useHomeTheme } from "../home/useHomeTheme.js";
 
 const TOOLS_CLOSED_KEY = "vupsrouter.sidebarToolsClosed";
 
@@ -129,6 +133,8 @@ export default function DesktopSidebar({
   useEffect(() => {
     window.localStorage.setItem(TOOLS_CLOSED_KEY, toolsClosed ? "1" : "0");
   }, [toolsClosed]);
+
+  const { theme: homeTheme, toggleHomeTheme } = useHomeTheme();
 
   const usageLabel = useMemo(() => {
     if (!usage) {
@@ -455,6 +461,10 @@ export default function DesktopSidebar({
               aria-label="App navigation"
             >
               <div className="vr-sidebar-nav-inner" inert={!collapsed && toolsClosed}>
+                <Link to="/combo" className={navClass("/combo")} title="Vups Combo AI" onClick={onMobileClose}>
+                  <CirclesFour size={16} aria-hidden="true" />
+                  {!collapsed && <span>Vups Combo AI</span>}
+                </Link>
                 <Link to="/automations" className={navClass("/automations")} title="Automations" onClick={onMobileClose}>
                   <Robot size={16} aria-hidden="true" />
                   {!collapsed && <span>Automations</span>}
@@ -508,13 +518,13 @@ export default function DesktopSidebar({
             <Link to="/account" className={`vr-usage-card${location.pathname === "/account" ? " vr-usage-card--active" : ""}`} title={usageError || usageLabel}>
               <span className="vr-usage-head">
                 <span><Sparkle size={13} /> Daily usage</span>
-                <strong>{usage ? `${usage.remaining} left` : "—"}</strong>
+                <strong>{usage ? `${usage.dailyUsed} / ${usage.dailyQuota} today` : "—"}</strong>
               </span>
               <span className="vr-usage-bar" aria-hidden="true">
                 <span style={{ width: `${usagePercent}%` }} />
               </span>
               <span className="vr-usage-foot">
-                <span>{usageLabel}</span>
+                <span>{usage ? (usage.remaining ? `${usage.remaining} left` : "Daily limit reached") : usageLabel}</span>
                 {usage?.resetAt ? <span>Resets {new Date(usage.resetAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span> : null}
               </span>
             </Link>
@@ -530,6 +540,15 @@ export default function DesktopSidebar({
               </span>
             )}
           </Link>
+          <button
+            type="button"
+            className="vr-account-theme"
+            onClick={toggleHomeTheme}
+            aria-label={`Home theme: ${homeTheme}. Switch to ${homeTheme === "light" ? "dark" : "light"}.`}
+            title={homeTheme === "light" ? "Switch to the dark theme" : "Switch to the light theme"}
+          >
+            {homeTheme === "light" ? <Moon size={16} /> : <Sun size={16} />}
+          </button>
           <button type="button" className="vr-account-signout" onClick={onSignOut} aria-label="Sign out" title="Sign out">
             <SignOut size={16} />
           </button>

@@ -70,7 +70,7 @@ const TextPressure = ({
 
   textColor = 'currentColor',
   pressureColor = '',
-  strokeColor = '#FF0000',
+  strokeColor = 'var(--error)',
   strokeWidth = 3,
   className = '',
 

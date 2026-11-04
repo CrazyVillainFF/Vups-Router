@@ -74,7 +74,7 @@
   grid-area: 1 / 1;
   width: max-content;
   opacity: 0;
-  filter: blur(var(--tl-blur));
+  filter: none;
   transition:
     opacity var(--tl-settle) var(--tl-ease-out),
     filter var(--tl-settle) var(--tl-ease-out);
@@ -82,7 +82,7 @@
 
 .thought-line__text[data-active] {
   opacity: 1;
-  filter: blur(0);
+  filter: none;
 }
 
 .thought-line__text--done[data-active] {
@@ -94,12 +94,7 @@
 }
 
 .thought-line[data-working] .thought-line__breath[data-shimmer] {
-  background: linear-gradient(
-    100deg,
-    color-mix(in srgb, var(--tl-color) 50%, transparent) 30%,
-    var(--tl-color) 50%,
-    color-mix(in srgb, var(--tl-color) 50%, transparent) 70%
-  );
+  background: var(--surface);
   background-size: 250% 100%;
   background-position: 125% 0;
   -webkit-background-clip: text;

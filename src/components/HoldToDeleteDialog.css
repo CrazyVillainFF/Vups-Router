@@ -5,8 +5,7 @@
   display: grid;
   place-items: center;
   padding: 20px;
-  background: rgba(3, 7, 14, 0.82);
-  backdrop-filter: blur(8px);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
 }
 
 .vr-hold-delete-dialog {
@@ -14,11 +13,11 @@
   max-height: min(90vh, 680px);
   overflow-y: auto;
   padding: 22px;
-  border: 1px solid #3b2530;
+  border: 1px solid var(--border);
   border-radius: 16px;
-  background: linear-gradient(160deg, rgba(70, 25, 38, 0.24), transparent 42%), #0c111c;
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55);
-  color: #e9eef7;
+  background: var(--bg);
+  box-shadow: none;
+  color: var(--text);
 }
 
 .vr-hold-delete-head {
@@ -33,24 +32,24 @@
   width: 38px;
   height: 38px;
   flex: 0 0 38px;
-  border: 1px solid rgba(224, 93, 111, 0.38);
+  border: 1px solid color-mix(in srgb, var(--error) 38%, transparent);
   border-radius: 11px;
-  background: rgba(224, 93, 111, 0.12);
-  color: #ff8a9a;
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  color: var(--error);
 }
 
 .vr-hold-delete-kicker {
   display: block;
   font: 9px var(--mono, monospace);
   letter-spacing: 1.6px;
-  color: #ff8a9a;
+  color: var(--error);
 }
 
 .vr-hold-delete-head h2 {
   margin: 6px 0 0;
   font-size: 21px;
   line-height: 1.2;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.02em;
   font-weight: 600;
 }
 
@@ -59,15 +58,15 @@
   gap: 4px;
   margin: 18px 0 0;
   padding: 11px 13px;
-  border: 1px solid #263247;
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
-  background: #0a1220;
+  background: var(--bg);
 }
 
 .vr-hold-delete-item span {
   font: 9px var(--mono, monospace);
   letter-spacing: 1.2px;
-  color: #74849c;
+  color: var(--muted);
   text-transform: uppercase;
 }
 
@@ -75,21 +74,21 @@
   overflow-wrap: anywhere;
   font-size: 13px;
   font-weight: 550;
-  color: #f0f4fb;
+  color: var(--text);
 }
 
 .vr-hold-delete-copy {
   margin: 12px 0 0;
   font-size: 12px;
   line-height: 1.65;
-  color: #9aa8bd;
+  color: var(--muted);
 }
 
 .vr-hold-delete-instruction {
   margin: 12px 0 0;
   font-size: 11px;
   line-height: 1.6;
-  color: #74849c;
+  color: var(--muted);
 }
 
 .vr-hold-delete-error,
@@ -105,15 +104,15 @@
 }
 
 .vr-hold-delete-error {
-  border: 1px solid rgba(224, 93, 111, 0.34);
-  background: rgba(224, 93, 111, 0.1);
-  color: #ffb3bd;
+  border: 1px solid color-mix(in srgb, var(--error) 34%, transparent);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+  color: var(--error);
 }
 
 .vr-hold-delete-success {
-  border: 1px solid rgba(72, 187, 120, 0.3);
-  background: rgba(72, 187, 120, 0.1);
-  color: #a7efc2;
+  border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+  color: var(--ok);
 }
 
 .vr-hold-delete-error svg,
@@ -132,10 +131,10 @@
 .vr-hold-delete-cancel {
   min-height: 46px;
   padding: 0 16px;
-  border: 1px solid #2b3a50;
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
-  background: #111a2a;
-  color: #c8d2e1;
+  background: var(--bg);
+  color: var(--text);
   font: inherit;
   font-size: 12px;
   font-weight: 550;
@@ -143,8 +142,8 @@
 }
 
 .vr-hold-delete-cancel:hover {
-  border-color: #45617f;
-  background: #152136;
+  border-color: var(--border);
+  background: var(--surface);
 }
 
 .vr-hold-delete-cancel:disabled {
@@ -157,10 +156,10 @@
   min-height: 46px;
   overflow: hidden;
   padding: 0 16px;
-  border: 1px solid #5e2b38;
+  border: 1px solid var(--error);
   border-radius: 10px;
-  background: #24141b;
-  color: #ffd9df;
+  background: var(--bg);
+  color: var(--error);
   font: inherit;
   font-size: 12px;
   font-weight: 650;
@@ -174,7 +173,7 @@
   position: absolute;
   inset: 0 auto 0 0;
   width: calc(var(--hold-progress, 0) * 100%);
-  background: linear-gradient(90deg, #8f2638, #d34c61);
+  background: var(--surface-2);
 }
 
 .vr-hold-delete-button__label {
@@ -187,16 +186,16 @@
 }
 
 .vr-hold-delete-button:hover {
-  border-color: #8f3c4d;
+  border-color: var(--error);
 }
 
 .vr-hold-delete-button[data-phase="holding"] {
-  border-color: #f07a89;
-  box-shadow: 0 0 0 2px rgba(224, 93, 111, 0.16);
+  border-color: var(--error);
+  box-shadow: none;
 }
 
 .vr-hold-delete-button[data-phase="done"] {
-  border-color: #ff9daa;
+  border-color: var(--error);
 }
 
 .vr-hold-delete-button:disabled {
@@ -208,21 +207,21 @@
 .vr-hold-delete-cancel:focus-visible,
 .vr-hold-delete-explicit:focus-visible,
 .vr-hold-delete-alternative summary:focus-visible {
-  outline: 2px solid #ff8a9a;
+  outline: 2px solid var(--error);
   outline-offset: 2px;
 }
 
 .vr-hold-delete-alternative {
   margin-top: 15px;
   padding-top: 12px;
-  border-top: 1px solid #1f2a3b;
+  border-top: 1px solid var(--border-strong);
   font-size: 11px;
-  color: #74849c;
+  color: var(--muted);
 }
 
 .vr-hold-delete-alternative summary {
   cursor: pointer;
-  color: #aab6c9;
+  color: var(--muted);
 }
 
 .vr-hold-delete-alternative p {
@@ -233,10 +232,10 @@
 .vr-hold-delete-explicit {
   margin-top: 9px;
   padding: 8px 11px;
-  border: 1px solid rgba(224, 93, 111, 0.38);
+  border: 1px solid color-mix(in srgb, var(--error) 38%, transparent);
   border-radius: 8px;
   background: transparent;
-  color: #ffb3bd;
+  color: var(--error);
   font: inherit;
   font-size: 11px;
   font-weight: 600;
@@ -244,7 +243,7 @@
 }
 
 .vr-hold-delete-explicit:hover {
-  background: rgba(224, 93, 111, 0.1);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
 }
 
 .vr-hold-delete-explicit:disabled {

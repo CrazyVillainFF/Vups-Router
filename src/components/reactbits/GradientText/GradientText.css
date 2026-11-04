@@ -12,20 +12,23 @@
   border-radius: 999px;
 }
 
+/* The ring is one flat colour cut to a 1px frame by two overlapping masks. The
+   masks are geometry: `linear-gradient(black 0 0)` fills a box with opaque black,
+   and `content-box exclude` subtracts the inside. Nothing here paints a ramp. */
 .gradient-text--border::before {
   content: '';
   position: absolute;
   inset: 0;
   padding: var(--gt-border);
   border-radius: inherit;
-  background-image: var(--gt-gradient);
+  background: var(--gt-tint);
   -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
+    linear-gradient(black 0 0) content-box,
+    linear-gradient(black 0 0);
   -webkit-mask-composite: xor;
   mask:
-    linear-gradient(#000 0 0) content-box exclude,
-    linear-gradient(#000 0 0);
+    linear-gradient(black 0 0) content-box exclude,
+    linear-gradient(black 0 0);
   pointer-events: none;
 }
 
@@ -36,22 +39,20 @@
 
 .gradient-text__content {
   display: inline-block;
-  background-image: var(--gt-gradient);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--gt-base);
 }
 
-.gradient-text__glow {
+/* The animated layer: the same words, in the second colour, revealed only where the
+   moving alpha mask lets them through. It is aria-hidden because the base layer
+   already says these words, and it is never interactive. */
+.gradient-text__sweep {
   position: absolute;
   inset: 0;
-  z-index: -1;
-  background-image: var(--gt-gradient);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: blur(0.3em) saturate(1.4);
-  opacity: var(--gt-glow);
+  display: inline-block;
+  color: var(--gt-tint);
+  opacity: var(--gt-strength, 1);
+  -webkit-mask-image: var(--gt-sweep, linear-gradient(black 0 0));
+  mask-image: var(--gt-sweep, linear-gradient(black 0 0));
   pointer-events: none;
   user-select: none;
 }

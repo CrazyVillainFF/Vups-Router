@@ -14,7 +14,7 @@ const DEFAULT_IMAGES = [
 
 const ORIGINS = { fan: [0.9, 0.9], cascade: [0.5, 0.5], deck: [0.5, 0], pile: [0.5, 0.5] };
 const EXITS = { fan: [1, -0.3], cascade: [0.8, 0.6], deck: [0, 1] };
-const SHADOW = '0 14px 34px -10px rgba(0, 0, 0, 0.45), 0 3px 8px -2px rgba(0, 0, 0, 0.18)';
+const SHADOW = '0 14px 34px -10px color-mix(in srgb, var(--slab) 45%, transparent), 0 3px 8px -2px color-mix(in srgb, var(--slab) 18%, transparent)';
 const CLICK_SLOP = 6;
 const FLICK_SPEED = 650;
 const LEAN_SPEED = 1300;
@@ -75,7 +75,7 @@ export default function Stack({
   depth = 0.5,
   radius = 16,
   frame = 0,
-  frameColor = '#ffffff',
+  frameColor = 'var(--text)',
   shadow = true,
   tilt = 30,
   threshold = 90,

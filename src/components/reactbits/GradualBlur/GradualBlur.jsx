@@ -38,6 +38,10 @@ const findScroller = (container, root, target, vertical) => {
   return sibling || (scrolls(parent) ? parent : null);
 };
 
+/* `strength` and `layers` came from a stacked-backdrop-blur implementation.
+   backdrop-filter is banned, so the fade is built from stacked translucent slabs
+   of one token colour instead: `strength` bends the ramp, `layers` is its
+   resolution, and the old `saturation` (accepted, unread) has nothing left to act on. */
 const GradualBlur = ({
   position = 'bottom',
   target = 'parent',
@@ -48,7 +52,6 @@ const GradualBlur = ({
   curve = 'linear',
   exponential = true,
   opacity = 1,
-  saturation = 1,
   tint = 'transparent',
   autoHide = false,
   container,
@@ -66,60 +69,39 @@ const GradualBlur = ({
   const stack = useMemo(() => {
     const count = Math.min(Math.max(Math.round(layers) || 1, 1), 16);
     const shape = CURVES[curve] || CURVES.linear;
-    const maxBlur = Math.max(strength, 0) * 12;
+    const peak = clamp01(opacity);
+    const bend = exponential ? 4 * clamp01(Math.max(strength, 0) / 3) : 0;
     const level = u => {
       const t = shape(clamp01(u));
-      return maxBlur * (exponential ? (Math.pow(2, 4 * t) - 1) / 15 : t);
+      return bend ? (Math.pow(2, bend * t) - 1) / (Math.pow(2, bend) - 1) : t;
     };
-    const boost = Math.pow(Math.max(saturation, 0), 1 / count);
     const fade = `${toTime(duration)} ${easing}`;
     const direction = DIRECTIONS[edge];
+    const veil = tint && tint !== 'transparent' ? tint : 'var(--bg)';
+
+    /* A slab covers everything outward from its own band, so the composite is
+       1 - product(1 - weight). Solving each weight against that identity makes
+       the total alpha land on `level` at every band edge and interpolate inside it. */
     const steps = [];
+    let remaining = 1;
     for (let i = 0; i < count; i++) {
-      const from = level(i / count);
-      const to = level((i + 1) / count);
-      const radius = Math.sqrt(Math.max(to * to - from * from, 0));
-      const filter = [
-        `blur(calc(${radius.toFixed(3)}px * var(--gradual-blur-reveal, 1) * var(--gradual-blur-hover, 1)))`,
-        boost !== 1 ? `saturate(calc(1 + ${(boost - 1).toFixed(4)} * var(--gradual-blur-reveal, 1)))` : ''
-      ]
-        .filter(Boolean)
-        .join(' ');
-      const mask = `linear-gradient(${direction}, transparent ${((i / count) * 100).toFixed(2)}%, #000 ${(((i + 1) / count) * 100).toFixed(2)}%)`;
+      const left = Math.max(1 - peak * level((i + 1) / count), 1e-6);
+      const weight = clamp01(1 - left / remaining);
+      remaining = left;
+      const mask = `linear-gradient(${direction}, transparent ${((i / count) * 100).toFixed(2)}%, black ${(((i + 1) / count) * 100).toFixed(2)}%)`; // guard-allow: mask alpha stops, geometry not paint
       steps.push({
         position: 'absolute',
         inset: 0,
         borderRadius: 'inherit',
-        backdropFilter: filter,
-        WebkitBackdropFilter: filter,
+        background: veil,
         maskImage: mask,
         WebkitMaskImage: mask,
-        opacity,
-        transition: `backdrop-filter ${fade}, -webkit-backdrop-filter ${fade}`
+        opacity: weight ? `calc(${weight.toFixed(4)} * var(--gradual-blur-reveal, 1) * var(--gradual-blur-hover, 1))` : 0,
+        transition: `opacity ${fade}`
       });
     }
-    const stops = Array.from({ length: 9 }, (_, k) => {
-      const u = k / 8;
-      const t = shape(u);
-      const alpha = t * t * t * (t * (t * 6 - 15) + 10);
-      return `rgba(0, 0, 0, ${alpha.toFixed(3)}) ${(u * 100).toFixed(1)}%`;
-    }).join(', ');
-    const tintMask = `linear-gradient(${direction}, ${stops})`;
-    const wash =
-      tint && tint !== 'transparent'
-        ? {
-            position: 'absolute',
-            inset: 0,
-            borderRadius: 'inherit',
-            background: tint,
-            maskImage: tintMask,
-            WebkitMaskImage: tintMask,
-            opacity: 'calc(var(--gradual-blur-reveal, 1) * min(var(--gradual-blur-hover, 1), 1))',
-            transition: `opacity ${fade}`
-          }
-        : null;
-    return { steps, wash };
-  }, [layers, curve, strength, exponential, saturation, duration, easing, edge, opacity, tint]);
+    return { steps };
+  }, [layers, curve, strength, exponential, duration, easing, edge, opacity, tint]);
 
   useIsomorphicLayoutEffect(() => {
     const root = rootRef.current;
@@ -237,7 +219,6 @@ const GradualBlur = ({
       {stack.steps.map((layer, index) => (
         <div key={index} style={layer} />
       ))}
-      {stack.wash && <div style={stack.wash} />}
     </div>
   );
 };

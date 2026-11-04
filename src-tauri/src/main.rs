@@ -5,6 +5,7 @@ mod desktop_exec;
 mod desktop_server;
 mod desktop_tools;
 mod panel_browser;
+mod panel_terminal;
 mod workspace;
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
@@ -14,7 +15,10 @@ fn main() {
         .manage(desktop_tools::DesktopToolState::default())
         .manage(composer_files::ComposerFileState::default())
         .manage(panel_browser::BrowserState::default())
+        .manage(panel_terminal::TerminalState::default())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let url = desktop_server::start(app.handle().clone()).map_err(std::io::Error::other)?;
             let url = url
@@ -54,6 +58,12 @@ fn main() {
             panel_browser::panel_browser_screenshot,
             panel_browser::panel_browser_close,
             panel_browser::panel_browser_close_all,
+            panel_terminal::panel_terminal_start,
+            panel_terminal::panel_terminal_send,
+            panel_terminal::panel_terminal_status,
+            panel_terminal::panel_terminal_list,
+            panel_terminal::panel_terminal_stop,
+            panel_terminal::panel_terminal_close,
             desktop_tools::desktop_tool_set_policy,
             desktop_tools::desktop_tool_policy_status,
             desktop_tools::desktop_tool_execute,
@@ -74,6 +84,9 @@ fn main() {
             // owns it.
             if matches!(event, tauri::RunEvent::Exit) {
                 if let Some(state) = app_handle.try_state::<desktop_tools::DesktopToolState>() {
+                    state.shutdown();
+                }
+                if let Some(state) = app_handle.try_state::<panel_terminal::TerminalState>() {
                     state.shutdown();
                 }
             }

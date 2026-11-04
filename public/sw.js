@@ -1,4 +1,4 @@
-const CACHE_VERSION = "vupsrouter-v2";
+const CACHE_VERSION = "vupsrouter-v3";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const OFFLINE_URL = "/offline.html";

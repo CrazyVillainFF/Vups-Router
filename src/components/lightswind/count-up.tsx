@@ -45,9 +45,11 @@ const animationStyles = {
 
 const colorSchemes = {
   default: "text-foreground",
-  gradient: "bg-clip-text text-transparent bg-gradient-to-r from-primarylw to-purple-600",
-  primary: "text-primary",
-  secondary: "text-secondary",
+  /* Named "gradient" by the vendored API, but a painted gradient is banned and
+     the accent fill is a fill colour: a numeral this large reads as text. */
+  gradient: "text-accent-text",
+  primary: "text-accent-text",
+  secondary: "text-muted-foreground",
   custom: "",
 };
 

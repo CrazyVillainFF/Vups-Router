@@ -1,0 +1,19 @@
+[[permission]]
+identifier = "allow-panel-browser"
+description = "Allow the Windows workspace panel's embedded browser to create, navigate, inspect, control, screenshot, and close a real WebView2 surface. The native layer restricts every address to http and https and rejects file, data, and javascript targets."
+commands.allow = [
+  "panel_browser_create",
+  "panel_browser_set_bounds",
+  "panel_browser_navigate",
+  "panel_browser_back",
+  "panel_browser_forward",
+  "panel_browser_reload",
+  "panel_browser_status",
+  "panel_browser_inspect",
+  "panel_browser_click",
+  "panel_browser_type",
+  "panel_browser_scroll",
+  "panel_browser_screenshot",
+  "panel_browser_close",
+  "panel_browser_close_all"
+]

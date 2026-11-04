@@ -64,3 +64,35 @@ export async function readWorkspaceFile(owner, id, path) {
     throw new Error(bridgeError(error, "Could not read this workspace file."));
   }
 }
+
+export async function readWorkspaceText(owner, id, path) {
+  try {
+    return await tauriInvoke("workspace_read_text", { owner, id, path });
+  } catch (error) {
+    throw new Error(bridgeError(error, "Could not read this workspace file."));
+  }
+}
+
+export async function listWorkspaceTree(owner, id, path) {
+  try {
+    return await tauriInvoke("workspace_tree", { owner, id, path });
+  } catch (error) {
+    throw new Error(bridgeError(error, "Could not list this workspace folder."));
+  }
+}
+
+export async function searchWorkspace(owner, id, query) {
+  try {
+    return await tauriInvoke("workspace_search", { owner, id, query });
+  } catch (error) {
+    throw new Error(bridgeError(error, "Could not search the workspace."));
+  }
+}
+
+export async function reviewWorkspaceGit(owner, id) {
+  try {
+    return await tauriInvoke("workspace_git_review", { owner, id });
+  } catch (error) {
+    throw new Error(bridgeError(error, "Could not review this workspace's Git changes."));
+  }
+}

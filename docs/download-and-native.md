@@ -134,6 +134,33 @@ The desktop shell serves the bundled UI from a loopback server with its own CSP 
 
 Current environment status: Rustup 1.29.1, Rust 1.99.1 MSVC, and the Visual Studio C++ workload are installed. `npm run tauri:build` produces `VupsRouter_1.0.1_x64-setup.exe` and `VupsRouter_1.0.1_x64_en-US.msi`. The installers are unsigned until one of the two credential sets above exists.
 
+### Windows in-app updates
+
+The desktop shell can install the next version from **Settings → Updates** without opening a browser. It is the Tauri v2 updater plugin (`tauri-plugin-updater` + `@tauri-apps/plugin-updater`), configured in `src-tauri/tauri.conf.json` (`plugins.updater`) and wired through `src/native/windowsUpdater.js`. The JS layer only calls the plugin; the manifest fetch and the download happen in Rust, so no update URL is subject to the WebView CSP and no update traffic touches `/api`.
+
+It reads a static JSON manifest published as a release asset:
+
+```text
+https://github.com/CrazyVillainFF/Vups-Router/releases/latest/download/latest.json
+```
+
+The manifest names the version and pairs the installer URL with a **minisign** signature over the exact published bytes. This signature is a second identity, separate from Authenticode: Authenticode (`WINDOWS_CERT_*` / `AZURE_TRUSTED_CERT_*`) is what removes the SmartScreen prompt, while the updater minisign key is what lets the app trust an update. The public half is embedded in `tauri.conf.json` and ships inside the app; only the holder of the private half can publish a manifest the installed app accepts. Losing that private key means every existing install can no longer be updated in place, exactly like the Android release keystore.
+
+Because Authenticode signing rewrites the executable, the updater signature must be made **after** it, over the final bytes — otherwise the app verifies the manifest against a file that no longer matches. So `native-builds.yml` builds with `createUpdaterArtifacts` disabled, runs Authenticode, then a separate step signs the finished installer with `tauri signer sign --app-version <v>` and generates `latest.json` via `scripts/make-updater-manifest.mjs`. The `.sig`, the installer and the manifest are all checksummed after signing, so the publish gate still requires a build-time record for every attached asset.
+
+Two secrets drive it, both read by the `windows` job; either absent means the step is skipped and the app behaves as before (it reports that in-app install is unavailable and offers the release page — no manifest is published, nothing is fabricated):
+
+| Kind | Name | Value |
+| --- | --- | --- |
+| secret | `TAURI_SIGNING_PRIVATE_KEY` | Contents of the updater **private** key file (`~/.tauri/vupsrouter_updater.key`), stored as a literal string |
+| secret | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The password that key was generated with (empty only if the key is unencrypted) |
+
+The matching keypair was generated locally; its **public** key is already committed in `tauri.conf.json`. No private key, password, or signature value is committed or printed anywhere — the workflow reads them as env only and the manifest script logs just the version and output path.
+
+Because the updater ships inside the app, only installs built from the first updater-enabled release onward can update themselves; a desktop build published before this feature has no updater code, so its users install that first updater-enabled build once by hand. `createUpdaterArtifacts` is `false` in the committed config so a plain `npm run tauri:build` works with no key present; CI never enables it, and the manifest signature is produced by the separate post-Authenticode step.
+
+Current environment status: the updater is wired and its tests pass, but `TAURI_SIGNING_PRIVATE_KEY` is **not yet configured** on the repository, so `latest.json` is not being published and installed Windows apps cannot update in place yet. It becomes live on the first release built after those two secrets are added.
+
 ## Android / Capacitor
 
 The Capacitor project is in `android/`. It uses app id `com.vupsrouter.app` and the same production URL for the same session-cookie reason described above. This is a native Capacitor shell around the real VupsRouter interface, not an APK-labelled shortcut.
@@ -186,3 +213,4 @@ Current environment status: the v1.0.9 release-signed APK builds locally with Gr
 
 - Web: service-worker cache version is in `public/sw.js`; bump it when cache semantics change. Hashed Vite assets are cached at runtime; navigation is network-first, so a new deployment is picked up online.
 - Windows/Android: bump `package.json`, `src-tauri/tauri.conf.json`, and `android/app/build.gradle` (`versionName` and `versionCode`, which must increase or existing installs cannot upgrade), then push the matching `v*` tag. The published asset names do not change, so every `releases/latest/download/...` link starts serving the new build on its own; the README and the Download page need no edit per release.
+- Android keeps the shell pointed at the live site, so only the UI ever changes between installs; the APK itself updates in place by downloading the release-signed APK and opening the system installer (see the Android release identity above). Windows updates in place only when `latest.json` was published, which requires `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (see "Windows in-app updates"); without them the desktop app falls back to linking the release page.

@@ -80,12 +80,17 @@ export function toggleSavedModel(row, savedIds) {
   return { ids: normalizeSavedModelIds([...current, id]), saved: true };
 }
 
+// Apex is a coordinator over the user's own models, not a member of any price or
+// star bucket, so the Free and Saved tabs keep it at the top instead of filtering
+// it away. Excluding it made the same entry appear and vanish depending on the tab.
 export function filterModelRows(rows, filter, savedIds) {
   const list = Array.isArray(rows) ? rows : [];
-  if (filter === "free") return list.filter(row => row?.free === true && !row.disabled);
+  const head = list.filter(row => row?.combo === true);
+  const rest = list.filter(row => row?.combo !== true);
+  if (filter === "free") return [...head, ...rest.filter(row => row?.free === true && !row.disabled)];
   if (filter === "saved") {
     const ids = new Set(normalizeSavedModelIds(savedIds));
-    return list.filter(row => ids.has(savedModelId(row)));
+    return [...head, ...rest.filter(row => ids.has(savedModelId(row)))];
   }
   return list;
 }

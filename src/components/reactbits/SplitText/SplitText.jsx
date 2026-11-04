@@ -26,8 +26,8 @@ const getEffect = (effect, em) => {
       return { from: { opacity: 0 }, to: { opacity: 1 }, ease: 'power2.inOut' };
     case 'blur':
       return {
-        from: { opacity: 0, filter: `blur(${Math.round(em * 1.4) / 10}px)` },
-        to: { opacity: 1, filter: 'blur(0px)' },
+        from: { opacity: 0, filter: `blur(${Math.round(em * 1.4) / 10}px)` }, // guard-allow: transient entrance focus, not a painted blur
+        to: { opacity: 1, filter: 'blur(0px)' }, // guard-allow: the resting state is sharp
         ease: 'power2.out'
       };
     case 'flip': {

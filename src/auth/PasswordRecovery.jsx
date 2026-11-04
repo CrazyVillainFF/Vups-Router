@@ -102,7 +102,7 @@ export function ForgotPasswordPage() {
         edge="end"
         aria-label={visible ? "Hide password" : "Show password"}
         onClick={() => setVisibility(current => toggleVisibility(current, field))}
-        sx={{ color: "#9aa8bd", "&:hover": { color: "#6c9bff" } }}
+        sx={{ color: "var(--muted)", "&:hover": { color: "var(--accent-text)" } }}
       >
         {visible ? <EyeOffIcon /> : <EyeIcon />}
       </IconButton>
@@ -250,11 +250,11 @@ export function ForgotPasswordPage() {
           onComplete={handleVerify}
           disabled={busy || slotStatus === "success"}
           autoFocus
-          accentColor="#6c9bff"
-          inkColor="#6c9bff"
-          slotColor="#101a2b"
-          digitColor="#081018"
-          dangerColor="#e08585"
+          accentColor="var(--accent)"
+          inkColor="var(--accent-text)"
+          slotColor="var(--bg)"
+          digitColor="var(--on-accent)"
+          dangerColor="var(--error)"
           slotSize={42}
           gap={8}
           radius={12}

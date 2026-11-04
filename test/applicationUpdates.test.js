@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { after, afterEach, before, test } from "node:test";
 import { JSDOM } from "jsdom";
 import { transformWithEsbuild } from "vite";
+import { __setWindowsUpdaterDepsForTest } from "../src/native/windowsUpdater.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourcePath = path.join(root, "src", "components", "ApplicationUpdates.jsx");
@@ -75,6 +76,7 @@ afterEach(async () => {
   await React.act(async () => {
     for (const entry of mounted.splice(0)) await entry.root.unmount();
   });
+  __setWindowsUpdaterDepsForTest(null);
   delete dom.window.Capacitor;
   delete dom.window.__TAURI_INTERNALS__;
   dom.window.localStorage.clear();
@@ -338,7 +340,33 @@ test("a completed update is restored after leaving settings, with data kept inta
   assert.match(container.textContent, /Installed version/);
 });
 
-test("Windows reports the release but never pretends an installer is wired up", async () => {
+test("Windows installs the signed update in place, then restarts to finish", async () => {
+  const calls = [];
+  __setWindowsUpdaterDepsForTest({
+    updater: {
+      check: async () => {
+        calls.push(["check"]);
+        return {
+          version: "1.0.9",
+          date: "2026-10-30T12:00:00.000Z",
+          body: "Newer build.",
+          close: async () => {},
+          downloadAndInstall: async onEvent => {
+            calls.push(["downloadAndInstall"]);
+            onEvent({ event: "Started", data: { contentLength: 100 } });
+            onEvent({ event: "Progress", data: { chunkLength: 50 } });
+            onEvent({ event: "Progress", data: { chunkLength: 50 } });
+            onEvent({ event: "Finished" });
+          }
+        };
+      }
+    },
+    process: {
+      relaunch: async () => {
+        calls.push(["relaunch"]);
+      }
+    }
+  });
   dom.window.__TAURI_INTERNALS__ = {
     invoke: async cmd => (cmd === "plugin:app|version" ? "1.0.8" : null)
   };
@@ -349,9 +377,38 @@ test("Windows reports the release but never pretends an installer is wired up", 
   assert.match(container.textContent, /Windows app/);
   assert.match(container.textContent, /Version 1\.0\.8/);
   await click(button(container, "Check for updates"));
-  assert.match(container.textContent, /Automatic installation is not configured in this Windows build/);
-  assert.match(container.textContent, /signed update manifest/);
-  assert.ok(button(container, "Open release page"));
+
+  assert.match(container.textContent, /Update available — 1\.0\.9 can be installed now/);
+  assert.deepEqual(calls[0], ["check"]);
+  const update = button(container, "Update to 1.0.9");
+  assert.ok(update, "Windows offers an in-app update, not a browser hand-off");
   assert.equal(button(container, "Download update"), undefined);
   assert.equal(button(container, "Install update"), undefined);
+
+  await click(update);
+  assert.match(container.textContent, /Version 1\.0\.9 is installed\. Restart/);
+  assert.deepEqual(calls[1], ["downloadAndInstall"]);
+
+  await click(button(container, "Restart now"));
+  assert.deepEqual(calls[2], ["relaunch"]);
+});
+
+test("Windows reports an honest failure when the updater cannot reach the manifest", async () => {
+  __setWindowsUpdaterDepsForTest({
+    updater: {
+      check: async () => {
+        throw new Error("error sending request for url (https://github.com/.../latest.json)");
+      }
+    },
+    process: { relaunch: async () => {} }
+  });
+  dom.window.__TAURI_INTERNALS__ = {
+    invoke: async cmd => (cmd === "plugin:app|version" ? "1.0.8" : null)
+  };
+  const { default: Component } = await loadComponent();
+  const container = await render(Component);
+
+  await click(button(container, "Check for updates"));
+  assert.match(container.textContent, /Unable to reach the update service\. Check your connection/);
+  assert.equal(button(container, "Update to 1.0.9"), undefined);
 });

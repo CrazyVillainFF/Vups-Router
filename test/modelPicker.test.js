@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  COMBO_IDENTITY,
+  COMBO_MODEL_ID,
+  COMBO_MODEL_NAME,
   CUSTOM_MODEL_TYPE,
   FREE_MODEL_TYPE,
   GATEWAY_GROUP,
@@ -21,6 +24,10 @@ import {
   saveStoredSelection,
   selectionFromRow
 } from "../src/chat/modelCatalog.js";
+
+function apexState(overrides = {}) {
+  return { enabled: true, selectedCount: 4, workingCount: 2, ...overrides };
+}
 
 function savedModel(configId, model, { provider = "DeepSeek", masked = "sk-…aaaa", providerId = "deepseek" } = {}) {
   return {
@@ -562,4 +569,131 @@ test("missing catalogue metadata cannot turn a model into free by name alone", (
     freeCatalog: null
   });
   assert.equal(catalog.length, 0);
+});
+
+// ─── Vups Combo AI (Apex) in the normal model selector ───────────────────────
+
+test("Vups Combo AI is a first-class row at the top of the normal model selector", () => {
+  const catalog = buildCatalog({
+    models: [savedModel("cfg-a", "deepseek-chat"), savedModel("cfg-b", "glm-4")],
+    vups: true,
+    combo: apexState()
+  });
+  const apex = catalog[0];
+  assert.equal(apex.combo, true);
+  assert.equal(apex.kind, "combo");
+  assert.equal(apex.key, `combo:${COMBO_MODEL_ID}`);
+  assert.equal(apex.name, COMBO_MODEL_NAME);
+  assert.equal(apex.model, COMBO_MODEL_ID);
+  assert.equal(apex.badge, COMBO_IDENTITY);
+  assert.equal(apex.group, VUPS_MODELS_GROUP);
+  assert.equal(apex.disabled, undefined);
+  assert.equal(apex.comboSelectedCount, 4);
+  assert.equal(apex.comboWorkingCount, 2);
+  assert.equal(apex.tag, "2 of 4 working");
+  assert.equal(catalog.filter((row) => row.combo).length, 1);
+  assert.ok(catalog.some((row) => row.vups), "the single-model rows stay in the same list");
+});
+
+test("Apex is not counted as a free or personal model by the picker filters", () => {
+  const forType = (modelType) =>
+    buildCatalog({
+      models: [savedModel("cfg-a", "deepseek-chat")],
+      shared: sharedStatus([sharedModel("shared-free")]),
+      vups: false,
+      modelType,
+      combo: apexState({ selectedCount: 2, workingCount: 2 })
+    });
+  const free = forType(FREE_MODEL_TYPE);
+  assert.equal(free[0].combo, true);
+  assert.equal(free[0].free, false);
+  assert.equal(free.some((row) => row.combo && row.group === SHARED_GROUP), false);
+  const personal = forType(CUSTOM_MODEL_TYPE);
+  assert.equal(personal[0].combo, true);
+  assert.equal(personal[0].group, VUPS_MODELS_GROUP);
+  assert.equal(personal.filter((row) => row.combo).length, 1);
+});
+
+test("Apex only reports availability a real check proved", () => {
+  const row = (state) => buildCatalog({ models: [savedModel("cfg-a", "deepseek-chat")], combo: state })[0];
+  assert.equal(row({ enabled: true, selectedCount: 3, workingCount: null }).tag, "3 models selected");
+  assert.equal(row({ enabled: true, selectedCount: 1, workingCount: null }).tag, "1 model selected");
+  assert.equal(row({ enabled: true, selectedCount: 3, workingCount: 0 }).tag, "0 of 3 working");
+  assert.equal(row({ enabled: true, selectedCount: 3, workingCount: 2 }).tag, "2 of 3 working");
+  assert.equal(row({ enabled: true, selectedCount: 0, workingCount: null }).tag, "Open Vups Combo AI and select models");
+  assert.equal(row({ enabled: false, selectedCount: 4, workingCount: 2 }).tag, "Turned off in Vups Combo AI settings");
+  assert.equal(row({ enabled: true, selectedCount: 4, workingCount: 2, loading: true }).tag, "Loading its model set");
+  assert.equal(
+    row({ enabled: false, selectedCount: 0, workingCount: null, unavailable: true }).tag,
+    "Could not load its model set"
+  );
+});
+
+test("an unusable Apex row is disabled, never silently replaced by another model", () => {
+  const catalog = buildCatalog({ models: [savedModel("cfg-a", "deepseek-chat")], combo: apexState({ enabled: false }) });
+  const apex = catalog[0];
+  assert.equal(apex.disabled, true);
+  assert.deepEqual(chatReference(apex), {}, "a disabled row cannot produce a request reference");
+  assert.equal(fallbackRow(catalog)?.model, "deepseek-chat");
+  assert.equal(fallbackRow(catalog)?.combo, undefined);
+});
+
+test("a usable Apex row is still never the automatic fallback", () => {
+  const catalog = buildCatalog({ models: [savedModel("cfg-a", "deepseek-chat")], vups: false, combo: apexState() });
+  assert.equal(catalog[0].combo, true);
+  assert.equal(catalog[0].disabled, undefined, "Apex is selectable on purpose");
+  const fallback = fallbackRow(catalog);
+  assert.equal(fallback.combo, undefined, "a chat that lost its selection must not start spending every key");
+  assert.equal(fallback.model, "deepseek-chat");
+});
+
+test("choosing Vups Combo AI routes a combo reference and no provider credential", () => {
+  const catalog = buildCatalog({ models: [savedModel("cfg-a", "deepseek-chat")], combo: apexState() });
+  const apex = catalog[0];
+  assert.deepEqual(chatReference(apex), { model: COMBO_MODEL_ID, combo: true });
+  const reference = chatReference(apex);
+  assert.equal("configId" in reference, false);
+  assert.equal("providerId" in reference, false);
+  assert.equal(apex.apiKeyMasked, "");
+});
+
+test("the Apex selection survives a reload of the chat page", () => {
+  const storage = fakeStorage();
+  const catalog = buildCatalog({ models: [savedModel("cfg-a", "deepseek-chat")], combo: apexState() });
+  saveStoredSelection(selectionFromRow(catalog[0]), storage);
+  const stored = loadStoredSelection(storage);
+  assert.deepEqual(stored, { kind: "combo", model: COMBO_MODEL_ID });
+  const afterReload = buildCatalog({ models: [savedModel("cfg-a", "deepseek-chat")], combo: apexState() });
+  assert.equal(resolveSelection(afterReload, stored)?.combo, true);
+  assert.equal(storage.dump().includes("sk-"), false, "no credential is written to the selection");
+});
+
+test("a stored Apex selection reloads into the real reason when Combo becomes unusable", () => {
+  const storage = fakeStorage();
+  saveStoredSelection({ kind: "combo", model: COMBO_MODEL_ID }, storage);
+  const stored = loadStoredSelection(storage);
+  const catalog = buildCatalog({ models: [savedModel("cfg-a", "deepseek-chat")], combo: apexState({ enabled: false }) });
+  const resolved = resolveSelection(catalog, stored);
+  assert.equal(resolved.combo, true);
+  assert.equal(resolved.disabled, true);
+  assert.equal(resolved.tag, "Turned off in Vups Combo AI settings");
+});
+
+test("selecting an ordinary model next to Apex keeps single-model behaviour", () => {
+  const catalog = buildCatalog({
+    models: [savedModel("cfg-a", "deepseek-chat"), savedModel("cfg-b", "glm-4")],
+    shared: sharedStatus([sharedModel("shared-free")]),
+    vups: true,
+    combo: apexState()
+  });
+  const saved = catalog.find((row) => row.model === "deepseek-chat");
+  assert.equal(saved.combo, undefined);
+  assert.deepEqual(selectionFromRow(saved), { kind: "saved", configId: "cfg-a", model: "deepseek-chat" });
+  const reference = chatReference(saved);
+  assert.equal(reference.combo, undefined);
+  assert.equal(reference.model, "deepseek-chat");
+  assert.equal(reference.configId, "cfg-a");
+  const sharedRow = catalog.find((row) => row.shared);
+  assert.equal(resolveSelection(catalog, selectionFromRow(sharedRow))?.model, "shared-free");
+  assert.equal(resolveSelection(catalog, selectionFromRow(saved))?.key, saved.key);
 });

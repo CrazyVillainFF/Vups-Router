@@ -52,8 +52,8 @@ const EFFECTS = {
   },
   blur: {
     keyframes: [
-      { opacity: 0, filter: 'blur(0.3em)' },
-      { opacity: 1, filter: 'blur(0em)' }
+      { opacity: 0, filter: 'blur(0.3em)' }, // guard-allow: transient entrance focus, sharp at rest
+      { opacity: 1, filter: 'blur(0em)' } // guard-allow: the resting state is sharp
     ],
     options: { duration: 520, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
   },

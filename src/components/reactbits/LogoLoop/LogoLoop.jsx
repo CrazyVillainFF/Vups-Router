@@ -35,14 +35,17 @@ const smootherstep = t => t * t * t * (t * (t * 6 - 15) + 10);
 const fadeMask = (size, vertical) => {
   const span = clamp(size, 0, 0.5) * 100;
   if (span <= 0) return undefined;
+  /* An edge fade is a clip, not a paint: the stop carries alpha only, and the
+     thing it admits is whatever the row of logos already costs. */
+  const alpha = t => `color-mix(in srgb, black ${(smootherstep(t) * 100).toFixed(2)}%, transparent)`;
   const stops = [];
   for (let i = 0; i <= 12; i++) {
-    stops.push(`rgba(0,0,0,${smootherstep(i / 12).toFixed(4)}) ${((span * i) / 12).toFixed(3)}%`);
+    stops.push(`${alpha(i / 12)} ${((span * i) / 12).toFixed(3)}%`);
   }
   for (let i = 12; i >= 0; i--) {
-    stops.push(`rgba(0,0,0,${smootherstep(i / 12).toFixed(4)}) ${(100 - (span * i) / 12).toFixed(3)}%`);
+    stops.push(`${alpha(i / 12)} ${(100 - (span * i) / 12).toFixed(3)}%`);
   }
-  return `linear-gradient(${vertical ? 'to bottom' : 'to right'}, ${stops.join(', ')})`;
+  return `linear-gradient(${vertical ? 'to bottom' : 'to right'}, ${stops.join(', ')})`; // guard-allow: mask alpha stops, geometry not paint
 };
 
 const rotationMatrix = (degX, degY) => {

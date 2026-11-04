@@ -8,7 +8,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const read = file => readFileSync(path.resolve(here, "..", file), "utf8");
 
 test("the semantic token layer names intent instead of repeating hex values", () => {
-  const css = read("src/styles.css");
+  const css = read("src/tokens.css");
   for (const token of [
     "--font-sans",
     "--text-2xs",
@@ -19,7 +19,7 @@ test("the semantic token layer names intent instead of repeating hex values", ()
     "--space-16",
     "--radius-xs",
     "--radius-pill",
-    "--elev-1",
+    "--shadow-sm",
     "--duration-fast",
     "--duration-slow",
     "--ease-standard",
@@ -36,7 +36,7 @@ test("the semantic token layer names intent instead of repeating hex values", ()
     assert.match(css, new RegExp(`${token}\\s*:`), `${token} is missing from the token layer`);
   }
   // Colour roles must alias the existing primitives, not fork a second palette.
-  assert.match(css, /--text-primary:\s*var\(--ink\)/);
+  assert.match(css, /--text-primary:\s*var\(--text\)/);
   assert.match(css, /--text-secondary:\s*var\(--muted\)/);
 });
 

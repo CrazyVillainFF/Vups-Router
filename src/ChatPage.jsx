@@ -100,6 +100,10 @@ import {
 } from "./desktop/composerFiles.js";
 import { streamChatResponse } from "./services/chat.js";
 import { runDesktopToolChat } from "./services/desktopChat.js";
+import { fetchComboState } from "./combo/comboApi.js";
+import { comboCatalogState } from "./combo/comboSelection.js";
+import { endComboRun, reportComboEvent, startComboRun } from "./combo/comboLive.js";
+import { runComboTurn } from "./combo/comboTurn.js";
 import {
   cancelDesktopToolApprovals,
   cancelDesktopToolOperation,
@@ -159,6 +163,7 @@ import { usePreferences } from "./desktop/PreferencesContext.jsx";
 import { useTasks } from "./desktop/TaskContext.jsx";
 import { useWorkspaces } from "./desktop/WorkspaceContext.jsx";
 import WorkspaceFilesDialog from "./desktop/WorkspaceFilesDialog.jsx";
+import { isSideTaskOperation } from "./desktop/sideTaskRun.js";
 import "./chat.css";
 
 // â”€â”€â”€ Chat configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -339,6 +344,17 @@ const DESKTOP_TOOL_FALLBACK_REASONS = {
 // turns go straight to plain chat. The next launch re-probes, so a redeployed
 // backend starts using tools again without the user clearing anything.
 const DESKTOP_TOOLS_MISSING_KEY = "vr.desktopToolsMissing";
+
+// The Apex row is drawn before its model set has loaded, and it reports that
+// rather than pretending the user has no Combo models. A failed load says the
+// same thing: the row stays visible with the real reason, never a fake count.
+const COMBO_PENDING_STATE = { enabled: false, selectedCount: 0, workingCount: null, loading: true };
+const COMBO_UNLOADED_STATE = {
+  enabled: false,
+  selectedCount: 0,
+  workingCount: null,
+  unavailable: true
+};
 
 // Only the final message may carry images — the backend rejects attachments
 // on earlier messages, so trimmed history stays text-only.
@@ -1063,16 +1079,11 @@ function WelcomeScreen({ configured, modelName, sharedActive, gatewayActive, vup
   return (
     <div className="vr-welcome">
       <div className="vr-welcome-inner">
-        <div className="vr-welcome-art" aria-hidden="true">
-          <div className="vr-welcome-ring ring-outer" />
-          <div className="vr-welcome-ring ring-inner" />
-          <div className="vr-welcome-icon">
-            <VupsLogo />
-          </div>
-        </div>
-        <p className="vr-welcome-eyebrow">VupsRouter workspace</p>
+        <p className="vr-welcome-eyebrow">
+          VupsRouter <em>AI</em>
+        </p>
         <h1 className="vr-welcome-title">
-          VupsRouter <span>AI</span>
+          Ask once. We pick the <span>block.</span>
         </h1>
         <p className="vr-welcome-desc">
           {configured
@@ -1087,21 +1098,35 @@ function WelcomeScreen({ configured, modelName, sharedActive, gatewayActive, vup
               ? "Checking for an available AI model..."
               : "Vups v3 Galax is not configured on this server yet. Add your own AI provider in API settings."}
         </p>
+        {configured ? (
+          <p className="vr-welcome-note">
+            The blocks are the models on this server. Pick one here or in the composer - the request
+            goes to that model and its provider, nothing else.
+          </p>
+        ) : null}
         {configured && onStarter ? (
           <section className="vr-welcome-start" aria-label="Starting points">
             <p className="vr-welcome-start-label">
               Start with a prompt. It fills the message box, and nothing is sent until you press Enter.
+              <span className="vr-welcome-start-keys">
+                <kbd className="vr-welcome-kbd">Enter</kbd> send
+                <kbd className="vr-welcome-kbd">Shift</kbd>
+                <kbd className="vr-welcome-kbd">Enter</kbd> newline
+              </span>
             </p>
             <div className="vr-welcome-starters">
-              {STARTER_PROMPTS.map(item => (
+              {STARTER_PROMPTS.map((item, index) => (
                 <button
                   key={item.title}
                   type="button"
                   className="vr-welcome-starter"
                   onClick={() => onStarter(item.prompt)}
                 >
-                  <span className="vr-welcome-starter-title">{item.title}</span>
-                  <span className="vr-welcome-starter-hint">{item.hint}</span>
+                  <span className="vr-welcome-starter-num">{String(index + 1).padStart(2, "0")}</span>
+                  <span className="vr-welcome-starter-body">
+                    <span className="vr-welcome-starter-title">{item.title}</span>
+                    <span className="vr-welcome-starter-hint">{item.hint}</span>
+                  </span>
                 </button>
               ))}
             </div>
@@ -1237,6 +1262,7 @@ export default function ChatPage() {
   const [shared, setShared] = useState(null);
   const [omniroute, setOmniroute] = useState(null);
   const [selection, setSelection] = useState(null);
+  const [comboState, setComboState] = useState(COMBO_PENDING_STATE);
   const [catalogReady, setCatalogReady] = useState(false);
   const [modelType, setModelType] = useState(CUSTOM_MODEL_TYPE);
   const [freeCatalog, setFreeCatalog] = useState(null);
@@ -1488,9 +1514,32 @@ export default function ChatPage() {
       });
   }, [refreshConversations]);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchComboState()
+      .then(data => {
+        if (!cancelled) setComboState(comboCatalogState(data?.config));
+      })
+      .catch(() => {
+        if (!cancelled) setComboState(COMBO_UNLOADED_STATE);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const catalog = useMemo(
-    () => buildCatalog({ models: providerModels, shared, omniroute, vups: true, modelType, freeCatalog }),
-    [providerModels, shared, omniroute, modelType, freeCatalog]
+    () =>
+      buildCatalog({
+        models: providerModels,
+        shared,
+        omniroute,
+        vups: true,
+        modelType,
+        freeCatalog,
+        combo: comboState
+      }),
+    [providerModels, shared, omniroute, modelType, freeCatalog, comboState]
   );
 
   useEffect(() => {
@@ -1513,6 +1562,7 @@ export default function ChatPage() {
   const activeIsShared = Boolean(activeRow?.shared);
   const activeIsGateway = Boolean(activeRow?.gateway);
   const activeIsVups = Boolean(activeRow?.vups);
+  const activeIsCombo = Boolean(activeRow?.combo);
 
   function changeModel(row) {
     const next = selectionFromRow(row);
@@ -1579,6 +1629,9 @@ export default function ChatPage() {
       // this page can resume, so it is denied in the native layer immediately
       // instead of leaving a live card that could authorize abandoned work.
       const activeOperation = streamingIdRef.current;
+      // A side-task run answers its own approvals in the workspace panel.
+      // Denying them here would stop work this page does not own.
+      if (isSideTaskOperation(prompt.operationId)) return;
       if (!activeOperation || (prompt.operationId && prompt.operationId !== activeOperation)) {
         respondDesktopToolApproval(prompt.requestId, "deny").catch(() => {});
         return;
@@ -1669,6 +1722,12 @@ export default function ChatPage() {
     if (images.length === 0) return true;
     const selectedRow =
       catalog.find((row) => row.key === meta?.model?.key) || meta?.model || activeRow;
+    if (selectedRow?.combo) {
+      setComposerWarning(
+        "Vups Combo AI sends text to your selected models. Remove the images to run this task on Combo."
+      );
+      return false;
+    }
     if (selectedRow?.vision !== false) return true;
     const label = chatReference(selectedRow).model || selectedRow?.name || "this model";
     setComposerWarning(
@@ -2140,7 +2199,11 @@ export default function ChatPage() {
     }
 
     if (!canChat) {
-      setNotice(unavailableModelNotice(shared, omniroute));
+      setNotice(
+        activeRow?.combo
+          ? `Vups Combo AI cannot run yet - ${activeRow.tag || "select its models first"}.`
+          : unavailableModelNotice(shared, omniroute)
+      );
       return;
     }
 
@@ -2156,6 +2219,11 @@ export default function ChatPage() {
       setNotice(
         `The selected model (${modelKey}) does not accept images. Choose a vision-capable model in API settings.`
       );
+      return;
+    }
+
+    if (selectedRow?.combo && imagePayload.length > 0) {
+      setNotice("Vups Combo AI sends text to your selected models. Remove the images to run this task on Combo.");
       return;
     }
 
@@ -2284,7 +2352,20 @@ export default function ChatPage() {
         },
       };
       let result;
-      if (useDesktopTools) {
+      if (selectedRow?.combo) {
+        // Combo requests are text-only, so an attached file is inlined into the
+        // prompt rather than quietly dropped by the orchestrator.
+        const comboMessages = history.map((entry, index) => ({
+          role: entry.role,
+          content: index === history.length - 1 ? requestText || entry.content : entry.content
+        }));
+        startComboRun();
+        try {
+          result = await runComboTurn({ ...requestOptions, messages: comboMessages, onRunEvent: reportComboEvent });
+        } finally {
+          endComboRun();
+        }
+      } else if (useDesktopTools) {
         try {
           result = await runDesktopToolChat(requestOptions);
         } catch (error) {
@@ -2413,13 +2494,24 @@ export default function ChatPage() {
       return;
     }
     if (!canChat) {
-      setNotice(unavailableModelNotice(shared, omniroute));
+      setNotice(
+        activeRow?.combo
+          ? `Vups Combo AI cannot run yet - ${activeRow.tag || "select its models first"}.`
+          : unavailableModelNotice(shared, omniroute)
+      );
       return;
     }
     const reference = chatReference(activeRow);
     const modelKey = reference.model;
     if (!modelKey) {
       setNotice("Choose a model in API settings before chatting.");
+      return;
+    }
+    // Continuing writes into a saved artifact through the single-model route. A
+    // Combo run has no such writer yet, so it says so instead of sending a
+    // request its own orchestrator would reject.
+    if (activeRow?.combo) {
+      setNotice("Vups Combo AI answers each message in full. Ask a follow-up in the composer to extend this response.");
       return;
     }
 
@@ -2573,7 +2665,7 @@ export default function ChatPage() {
           <span className="vr-chat-header__label">Chatting with</span>
           <strong className="vr-chat-header__model">{activeRow?.name || "No model selected"}</strong>
           {activeRow && !activeRow.shared && !activeRow.vups ? (
-            <span className="vr-chat-header__provider">{activeRow.provider}</span>
+            <span className="vr-chat-header__provider">{activeRow.combo ? "Apex" : activeRow.provider}</span>
           ) : null}
           {chatWorkspace ? (
             <span className="vr-header-workspace" title={chatWorkspace.path}>
@@ -2743,16 +2835,20 @@ export default function ChatPage() {
             <PromptBar
               placeholder={
                 !canChat
-                  ? shared === null && omniroute === null
-                    ? "Checking for an available AI model..."
-                    : "No AI model available - connect a provider in API settings..."
-                  : activeIsVups
-                    ? `Ask ${activeRow?.name || "Vups v3 Galax"} anything...`
-                    : activeIsShared
-                      ? "Ask anything - using the shared model..."
-                      : activeIsGateway
-                        ? "Ask anything - using the OmniRoute gateway..."
-                        : "Ask anything - your provider, your key, your model..."
+                  ? activeIsCombo
+                    ? activeRow?.tag || "Vups Combo AI is not ready"
+                    : shared === null && omniroute === null
+                      ? "Checking for an available AI model..."
+                      : "No AI model available - connect a provider in API settings..."
+                  : activeIsCombo
+                    ? "Message Vups Combo AI..."
+                    : activeIsVups
+                      ? `Ask ${activeRow?.name || "Vups v3 Galax"} anything...`
+                      : activeIsShared
+                        ? "Ask anything - using the shared model..."
+                        : activeIsGateway
+                          ? "Ask anything - using the OmniRoute gateway..."
+                          : "Ask anything - your provider, your key, your model..."
               }
               models={catalog}
               defaultModel={activeModelKey}
@@ -2798,10 +2894,10 @@ export default function ChatPage() {
               externalFilesSignal={workspaceAttachment?.key}
               draftValue={draftInsertion?.text}
               draftSignal={draftInsertion?.key}
-              background="#0d1524"
-              color="#e9eef7"
-              menuBackground="#111c2e"
-              sparkColor="#6c9bff"
+              background="var(--bg)"
+              color="var(--text)"
+              menuBackground="var(--bg)"
+              sparkColor="var(--accent)"
               width="100%"
               radius={16}
               maxRows={6}

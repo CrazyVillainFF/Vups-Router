@@ -13,12 +13,24 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVENjY5NjA0M0EwOTU0NTEKUldSUlZBazZCSlptWGMxQ1pMNjQ4SHdhbXNuNGVSUktDckRmMy81bDB4bVBNTy9FVUZoMDdUUnIK",
+      "endpoints": [
+        "https://github.com/CrazyVillainFF/Vups-Router/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": [
       "nsis",
       "msi"
     ],
+    "createUpdaterArtifacts": false,
     "icon": [
       "icons/icon.png",
       "icons/icon.ico"

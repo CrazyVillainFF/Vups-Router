@@ -4,6 +4,7 @@ import { Sidebar as SidebarIcon } from "@phosphor-icons/react";
 import { useAuth } from "../context/AuthContext.jsx";
 import { detectNativeShell } from "../native/shell.js";
 import DesktopSidebar from "./DesktopSidebar.jsx";
+import WorkspacePanel from "./panel/WorkspacePanel.jsx";
 import { usePreferences } from "./PreferencesContext.jsx";
 
 export default function DesktopLayout() {
@@ -90,6 +91,8 @@ export default function DesktopLayout() {
       <div className="vr-app-main" inert={mobileOpen || undefined}>
         <Outlet />
       </div>
+
+      <WorkspacePanel />
     </div>
   );
 }

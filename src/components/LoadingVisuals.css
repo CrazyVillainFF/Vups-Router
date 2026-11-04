@@ -1,11 +1,11 @@
 .vr-loader {
-  --vr-loader-color: var(--accent, #6c9bff);
+  --vr-loader-color: var(--accent);
 }
 
 /* The embedded light panels still use the bright accent for text; the loader
    switches to the stronger shade so it keeps contrast on a pale surface. */
 [data-theme="light"] .vr-loader {
-  --vr-loader-color: var(--accent-strong, #3f6fe8);
+  --vr-loader-color: var(--accent-strong, var(--accent));
 }
 
 .vr-loader--quantum {

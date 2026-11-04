@@ -1,0 +1,264 @@
+/* ── VupsRouter design tokens ──────────────────────────────────────────────────
+   The only file in the product that may contain a raw colour literal. Every
+   screen, panel and 3D material resolves colour through one of these names, so
+   re-tinting the app is a one-file edit and a stray blue hex cannot survive the
+   guard tests (qa/guard-no-hex.mjs fails the build on any hex outside here).
+
+   Two themes are first-class: dark is the default, light is its own warm paper
+   palette rather than an inverted dark one. The switch is the html[data-theme]
+   attribute written by src/home/homeTheme.js before first paint. */
+
+/* Dark. Values are the fixed brand palette: charcoal-brown surfaces, bone text,
+   one orange accent. --faint is decorative only (rules, disabled glyphs); it
+   never carries text, because it cannot clear AA on --bg. */
+:root,
+html[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0f0e0c;
+  --surface: #171613;
+  --surface-2: #1f1d19;
+  --border: #2a2824;
+  --border-strong: #3a3732;
+  --text: #edeae3;
+  --muted: #8f8b82;
+  --faint: #5c5851;
+  --accent: #ff5b1f;
+  --accent-press: #e04a12;
+  --on-accent: #171613;
+  --ok: #9bd770;
+  --warn: #e8b04a;
+  --error: #e5584a;
+
+  /* The button's hard 2px under-shadow — the "key press" depth. A darker cut of
+     the accent, not a black: a black slab reads as a border, not as travel. */
+  --accent-shadow: #8a2f0a;
+
+  /* Neutral slabs, used by shadows and scrims so no component invents its own. */
+  --slab: #000000;
+  --hairline-on-dark: #ffffff;
+}
+
+/* Light. Same accent hue, darkened for text use; surfaces separate by tint. */
+html[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #f4f1ea;
+  --surface: #fbf9f4;
+  --surface-2: #f0ece2;
+  --border: #ddd8cc;
+  --border-strong: #c9c3b4;
+  --text: #171613;
+  --muted: #6b665c;
+  --faint: #b4ae9f;
+  --accent: #ff5b1f;
+  --accent-press: #d94a13;
+  /* The button label on orange is dark in *both* themes. A near-white ink on the
+     light accent lands at 3.1:1, which is under AA for body text; the charcoal
+     cut reaches 5.8:1 and matches the dark theme's own label. */
+  --on-accent: #171613;
+  /* Status colours double as text on paper, so each one is a deepened cut of its
+     dark-theme hue rather than the same hue at the same lightness. */
+  --ok: #3f7a1e;
+  --warn: #8a5a00;
+  --error: #b3261e;
+
+  /* Orange at full saturation is a fill colour, not a text colour: on paper it
+     lands under 4.5:1. Anything that paints accent *as* text uses this cut. */
+  --accent-text: #c73e0a;
+
+  --accent-shadow: #a33809;
+  --slab: #2a2015;
+  --hairline-on-dark: #171613;
+}
+
+:root {
+  --accent-text: var(--accent);
+
+  /* Tints are derived from the primitives, so a theme swap re-derives them and
+     nothing here introduces a second source of colour truth. */
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 34%, transparent);
+  --ok-soft: color-mix(in srgb, var(--ok) 12%, transparent);
+  --ok-line: color-mix(in srgb, var(--ok) 34%, transparent);
+  --warn-soft: color-mix(in srgb, var(--warn) 14%, transparent);
+  --warn-line: color-mix(in srgb, var(--warn) 36%, transparent);
+  --error-soft: color-mix(in srgb, var(--error) 12%, transparent);
+  --error-line: color-mix(in srgb, var(--error) 36%, transparent);
+  --surface-hover: color-mix(in srgb, var(--text) 5%, transparent);
+  --surface-press: color-mix(in srgb, var(--text) 9%, transparent);
+  --line-subtle: color-mix(in srgb, var(--text) 9%, transparent);
+
+  /* ── Legacy names ────────────────────────────────────────────────────────────
+     Sixteen stylesheets were written against the old navy API. Re-pointing the
+     names here migrates every one of them at once, which is why the migration is
+     a token edit and not four thousand find-and-replaces. New code uses the
+     canonical names above. */
+  --ink: var(--text);
+  --muted-soft: var(--muted);
+  --surface-3: var(--surface-2);
+  --line: var(--border);
+  --line-strong: var(--border-strong);
+  --accent-strong: var(--accent-press);
+  --danger: var(--error);
+  --warning: var(--warn);
+  --success: var(--ok);
+  --text-primary: var(--text);
+  --text-secondary: var(--muted);
+  --text-tertiary: var(--muted);
+  --text-disabled: var(--muted);
+  --surface-raised: var(--surface-2);
+  --success-soft: var(--ok-soft);
+  --success-line: var(--ok-line);
+  --warning-soft: var(--warn-soft);
+  --warning-line: var(--warn-line);
+  --danger-soft: var(--error-soft);
+  --danger-line: var(--error-line);
+
+  /* Blocks/3D mirrors these; src/tokens.js reads them back off the document so
+     the WebGL scene and the stylesheet can never disagree. */
+  --blocks-bg: var(--bg);
+  --blocks-surface: var(--surface);
+  --blocks-raised: var(--surface-2);
+  --blocks-line: var(--border);
+  --blocks-line-strong: var(--border-strong);
+  --blocks-ink: var(--text);
+  --blocks-muted: var(--muted);
+  --blocks-faint: var(--faint);
+  --blocks-accent: var(--accent);
+  --blocks-accent-press: var(--accent-press);
+  --blocks-accent-ink: var(--on-accent);
+  --blocks-success: var(--ok);
+  --blocks-warning: var(--warn);
+  --blocks-danger: var(--error);
+  --blocks-display: var(--font-display);
+  --blocks-ui: var(--font-sans);
+  --blocks-mono: var(--font-mono);
+
+  /* Film grain for the chat shell. A texture, not a colour: it desaturates
+     itself, so one asset serves both themes. */
+  --blocks-grain: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='160'%20height='160'%3E%3Cfilter%20id='g'%3E%3CfeTurbulence%20type='fractalNoise'%20baseFrequency='0.82'%20numOctaves='3'%20stitchTiles='stitch'/%3E%3CfeColorMatrix%20type='saturate'%20values='0'/%3E%3C/filter%3E%3Crect%20width='160'%20height='160'%20filter='url(%23g)'/%3E%3C/svg%3E");
+
+  /* ── Type ──────────────────────────────────────────────────────────────────
+     Faces are self-hosted (Fontsource, imported from main.jsx). font-synthesis
+     is off in the shell so a missing 600 weight never gets faked by the engine. */
+  --font-display: "Instrument Serif", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-sans: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --mono: var(--font-mono);
+  --font-ui: var(--font-sans);
+
+  --text-2xs: 10.5px;
+  --text-xs: 11.5px;
+  --text-sm: 12.5px;
+  --text-base: 13.5px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 24px;
+  --text-2xl: clamp(2rem, 3.6vw, 2.9rem);
+  --text-3xl: clamp(2.5rem, 5vw, 3.6rem);
+  --text-h1: clamp(2.6rem, 4.2vw, 3rem);
+  --text-hero: clamp(3.4rem, 8vw, 6rem);
+  --leading-tight: 1.12;
+  --leading-snug: 1.45;
+  --leading-relaxed: 1.75;
+  --leading-body: 1.6;
+  /* Tracking floor: -0.02em is the tightest the product ever goes. Every value
+     below it made adjacent glyphs touch at display sizes. */
+  --tracking-tight: -0.02em;
+  --tracking-display: -0.01em;
+  --tracking-caps: 0em;
+
+  /* ── Space / radius / elevation ────────────────────────────────────────────
+     8px scale, 6/10px radii, and shadows that only ever offset (0 blur). */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 10px;
+  --radius-xl: 10px;
+  --radius-pill: 999px;
+
+  --shadow-tick: 0 2px 0 var(--accent-shadow);
+  --shadow-pop: 0 8px 0 color-mix(in srgb, var(--slab) 35%, transparent);
+  --shadow-modal: 0 16px 0 color-mix(in srgb, var(--slab) 30%, transparent);
+  --scrim: color-mix(in srgb, var(--bg) 72%, transparent);
+  --shadow-sm: 0 1px 0 color-mix(in srgb, var(--slab) 40%, transparent);
+  --shadow-md: 0 2px 0 color-mix(in srgb, var(--slab) 45%, transparent);
+  --shadow-lg: var(--shadow-pop);
+
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasis: cubic-bezier(0.22, 0.8, 0.28, 1);
+
+  /* ── Shell geometry ──────────────────────────────────────────────────────── */
+  --sidebar-width: 288px;
+  --sidebar-width-collapsed: 64px;
+  --page-max-width: 1120px;
+  --page-max-wide: 1440px;
+  --page-gutter: 40px;
+  --header-height: 56px;
+
+  --control-height: 36px;
+  --control-height-lg: 44px;
+  --field-height: 40px;
+
+  --z-sticky: 20;
+  --z-dialog: 60;
+  --z-toast: 80;
+}
+
+html[data-theme="light"] {
+  --surface-hover: color-mix(in srgb, var(--text) 4%, transparent);
+  --surface-press: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+/* ── Product-wide surfaces ────────────────────────────────────────────────────
+   Declared once, in the token file, so no page restyles the scrollbars, the
+   selection or the native control accent and drifts from the rest. */
+::selection {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--text);
+}
+
+html {
+  accent-color: var(--accent);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+@supports selector(::-webkit-scrollbar) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 0;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--border-strong);
+  }
+}

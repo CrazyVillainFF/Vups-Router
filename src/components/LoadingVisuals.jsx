@@ -16,7 +16,7 @@ export function QuantumLoader({ label = "Loading", decorative = false, className
         ? { "aria-hidden": "true" }
         : { role: "status", "aria-label": label })}
     >
-      <Quantum size="30" speed="1.75" color="var(--vr-loader-color, var(--accent, #6c9bff))" />
+      <Quantum size="30" speed="1.75" color="var(--vr-loader-color)" />
     </div>
   );
 }
@@ -27,7 +27,7 @@ export function ThinkingBouncy({ className = "" }) {
       className={`vr-loader vr-loader--bouncy${className ? ` ${className}` : ""}`}
       aria-hidden="true"
     >
-      <Bouncy size="22" speed="1.75" color="var(--vr-loader-color, var(--accent, #6c9bff))" />
+      <Bouncy size={22} speed="1.75" color="var(--vr-loader-color)" />
     </span>
   );
 }

@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  TERMS_CONSENT_ERROR,
   authFormError,
   buildAuthPayload,
+  consentError,
+  consentPolicyVersion,
   confirmPasswordError,
   initialPasswordVisibility,
   togglePasswordVisibility,
@@ -32,10 +35,11 @@ test("sign-up password and confirm-password toggles are independent", () => {
 });
 
 test("matching passwords allow registration and empty confirmations block it", () => {
-  const form = { name: "Alex", email: "alex@example.com", password: "correct-horse", confirmPassword: "correct-horse" };
+  const form = { name: "Alex", email: "alex@example.com", password: "correct-horse", confirmPassword: "correct-horse", acceptTerms: true };
   assert.equal(authFormError("signup", form), "");
   assert.equal(authFormError("signup", { ...form, confirmPassword: "" }), "Confirm your password.");
   assert.equal(confirmPasswordError("correct-horse", ""), "Confirm your password.");
+  assert.equal(authFormError("signup", { ...form, acceptTerms: false }), TERMS_CONSENT_ERROR);
 });
 
 test("mismatched passwords prevent registration until both fields match again", () => {
@@ -59,12 +63,15 @@ test("registration payload sends only the password, never confirm-password", () 
     name: "  Alex  ",
     email: "  alex@example.com  ",
     password: "  correct horse  ",
-    confirmPassword: "  correct horse  "
+    confirmPassword: "  correct horse  ",
+    acceptTerms: true
   });
   assert.deepEqual(payload, {
     name: "Alex",
     email: "alex@example.com",
-    password: "  correct horse  "
+    password: "  correct horse  ",
+    acceptTerms: true,
+    termsVersion: consentPolicyVersion()
   });
   assert.equal("confirmPassword" in payload, false);
   assert.equal("confirm" in payload, false);

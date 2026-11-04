@@ -3,8 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
-    <meta name="theme-color" content="#070b14" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="" />
+    <meta name="color-scheme" content="dark light" />
+    <script>
+      /* Pre-first-paint theme bootstrap.
+         The preference itself still belongs to src/home/homeTheme.js — this runs
+         the same rule (stored setting → resolved theme, "system" follows the OS)
+         because a module script cannot execute before the browser has painted the
+         document background. It names no colour: it sets data-theme and
+         color-scheme, and tokens.css plus the browser's own canvas colour do the
+         rest, so there is no second palette to drift.
+         test/theme-bootstrap.test.js pins the storage key and the rule here. */
+      (function () {
+        try {
+          var stored = window.localStorage.getItem("vupsrouter.home.theme.v1");
+          var setting = stored === "dark" || stored === "light" ? stored : "system";
+          /* Three outcomes, same as prefersDarkScheme(): a host with no matchMedia
+             cannot report a preference, and System must then resolve to dark, which
+             is what tokens.css paints when no attribute has landed yet. */
+          var media =
+            typeof window.matchMedia === "function"
+              ? window.matchMedia("(prefers-color-scheme: dark)")
+              : null;
+          var osPrefersLight = Boolean(media) && media.matches === false;
+          var theme = setting === "system" ? (osPrefersLight ? "light" : "dark") : setting;
+          var root = document.documentElement;
+          root.setAttribute("data-theme", theme);
+          root.setAttribute("data-theme-setting", setting);
+          root.style.colorScheme = theme;
+        } catch (error) {
+          /* Storage blocked: :root already resolves to the dark shell. */
+        }
+      })();
+    </script>
     <meta name="application-name" content="VupsRouter" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />

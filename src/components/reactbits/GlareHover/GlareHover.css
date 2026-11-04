@@ -18,7 +18,6 @@
   z-index: 2;
   border-radius: inherit;
   opacity: 0;
-  mix-blend-mode: var(--gh-blend);
   pointer-events: none;
 }
 
@@ -26,7 +25,12 @@
   position: absolute;
   top: 50%;
   left: 50%;
-  background: var(--gh-glare);
+  /* One flat token colour, clipped by a moving alpha mask. Blend modes and painted
+     gradients both wash the surface underneath; a mask only decides how much of
+     this band is there to see. */
+  background: var(--gh-color);
+  -webkit-mask-image: var(--gh-sweep);
+  mask-image: var(--gh-sweep);
   will-change: transform;
 }
 
@@ -35,14 +39,15 @@
   inset: 0;
   padding: 1px;
   border-radius: inherit;
-  -webkit-mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+  -webkit-mask-image: linear-gradient(black 0 0), linear-gradient(black 0 0);
   -webkit-mask-clip: content-box, border-box;
   -webkit-mask-composite: xor;
-  mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+  mask-image: linear-gradient(black 0 0), linear-gradient(black 0 0);
   mask-clip: content-box, border-box;
   mask-composite: exclude;
 }
 
 .glare-hover__band--rim {
-  background: var(--gh-rim);
+  -webkit-mask-image: var(--gh-rim-sweep);
+  mask-image: var(--gh-rim-sweep);
 }

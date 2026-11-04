@@ -1,5 +1,6 @@
 'use client';
 
+import { token, mix } from "../../../tokens.js";
 import { useEffect, useRef, useState } from 'react';
 import './ElectricBorder.css';
 
@@ -255,25 +256,40 @@ void main() {
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-const parseColor = value => {
-  const text = String(value || '').trim();
+const hexTuple = text => {
   const hex = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(text);
-  if (hex) {
-    const full = hex[1].length === 3 ? hex[1].replace(/./g, digit => digit + digit) : hex[1];
-    return [0, 2, 4].map(index => parseInt(full.slice(index, index + 2), 16) / 255);
-  }
+  if (!hex) return null;
+  const full = hex[1].length === 3 ? hex[1].replace(/./g, digit => digit + digit) : hex[1];
+  return [0, 2, 4].map(index => parseInt(full.slice(index, index + 2), 16) / 255);
+};
+
+const rgbTuple = text => {
   const rgb = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(text);
-  if (rgb) return [rgb[1], rgb[2], rgb[3]].map(channel => clamp(parseFloat(channel) / 255, 0, 1));
-  if (typeof document !== 'undefined') {
-    const context = document.createElement('canvas').getContext('2d');
-    if (context) {
-      context.fillStyle = '#000000';
-      context.fillStyle = text;
-      const normal = String(context.fillStyle);
-      if (normal !== '#000000' || /^(#0{3}|#0{6}|black)$/i.test(text)) return parseColor(normal);
-    }
-  }
-  return [0.49, 0.98, 1];
+  return rgb ? [rgb[1], rgb[2], rgb[3]].map(channel => clamp(parseFloat(channel) / 255, 0, 1)) : null;
+};
+
+let probe = null;
+
+/* A canvas cannot resolve `var(--accent)`, but a node in the document can, so a
+   borrowed element is styled, read through computed style and put back. Named
+   colours arrive here too, which is why there is no keyword table to keep in sync. */
+const readComputedColor = value => {
+  if (typeof document === 'undefined') return null;
+  probe = probe ?? document.createElement('span');
+  const host = document.body ?? document.head;
+  host?.append(probe);
+  probe.style.color = value;
+  const read = getComputedStyle(probe).color;
+  probe.remove();
+  return read;
+};
+
+const parseColor = value => {
+  const text = String(value ?? '').trim();
+  const direct = hexTuple(text) ?? rgbTuple(text);
+  /* Anything the app cannot name falls back to the product highlight, which is a
+     token, so the shader never carries a colour of its own invention. */
+  return direct ?? rgbTuple(readComputedColor(text) ?? '') ?? hexTuple(token('accent'));
 };
 
 const compile = (gl, type, source) => {
@@ -387,7 +403,7 @@ const nearestOn = (path, x, y) => {
 
 const ElectricBorder = ({
   children,
-  color = '#7df9ff',
+  color = token("ok"),
   glowColor,
   speed = 1,
   chaos = 0.5,

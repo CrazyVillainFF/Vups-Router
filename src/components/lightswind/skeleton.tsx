@@ -11,7 +11,7 @@ interface SkeletonProps extends React.HTMLAttributes<HTMLDivElement> {
   height?: string | number;
   /** Animation type for the skeleton */
   animation?: "pulse" | "wave" | "none";
-  /** Whether to show a shimmer effect */
+  /** Accepted for call-site compatibility, never painted — a loading block pulses. */
   shimmer?: boolean;
   /** Number of skeleton items to display */
   count?: number;
@@ -35,13 +35,6 @@ function Skeleton({
     square: "rounded-none"
   };
 
-  // Animation classes
-  const animationClasses = {
-    pulse: "animate-pulse",
-    wave: "",
-    none: ""
-  };
-
   // Style object for width and height
   const style: React.CSSProperties = {
     width: width !== undefined ? (typeof width === "number" ? `${width}px` : width) : undefined,
@@ -49,7 +42,9 @@ function Skeleton({
     ...props.style
   };
 
-  const hasShimmer = shimmer || animation === "wave";
+  /* `pulse`, `wave` and a `shimmer` request all mean "this is still loading",
+     and the only motion the design system allows here is an opacity pulse. */
+  const pulsing = animation !== "none" || Boolean(shimmer);
 
   // Render multiple skeleton items if count > 1
   if (count > 1) {
@@ -60,13 +55,9 @@ function Skeleton({
             key={index}
             className={cn(
               "bg-muted relative overflow-hidden",
-              "transition-all duration-300",
-              "[.lw-3d_&]:shadow-[inset_0_1.5px_3px_0_rgba(0,0,0,0.15),0_1px_1px_0_rgba(255,255,255,0.05)]",
-              "dark:[.lw-3d_&]:shadow-[inset_0_2px_4px_0_rgba(0,0,0,0.3)]",
-              "[.lw-3d_&]:border [.lw-3d_&]:border-black/5 dark:[.lw-3d_&]:border-white/5",
+              "transition-opacity duration-300",
               variantClasses[variant],
-              animationClasses[animation],
-              hasShimmer && "before:absolute before:inset-0 before:-translate-x-full before:animate-[shimmer_2s_infinite] before:bg-gradient-to-r before:from-transparent before:via-white/20 dark:before:via-white/10 before:to-transparent"
+              pulsing ? "animate-pulse" : ""
             )}
             style={style}
           />
@@ -78,14 +69,10 @@ function Skeleton({
   return (
     <div
       className={cn(
-        "bg-primary/20 relative overflow-hidden",
-        "transition-all duration-300",
-        "[.lw-3d_&]:shadow-[inset_0_1.5px_3px_0_rgba(0,0,0,0.15),0_1px_1px_0_rgba(255,255,255,0.05)]",
-        "dark:[.lw-3d_&]:shadow-[inset_0_2px_4px_0_rgba(0,0,0,0.3)]",
-        "[.lw-3d_&]:border [.lw-3d_&]:border-black/5 dark:[.lw-3d_&]:border-white/5",
+        "bg-muted relative overflow-hidden",
+        "transition-opacity duration-300",
         variantClasses[variant],
-        animationClasses[animation],
-        hasShimmer && "before:absolute before:inset-0 before:-translate-x-full before:animate-[shimmer_2s_infinite] before:bg-gradient-to-r before:from-transparent before:via-white/20 dark:before:via-white/10 before:to-transparent",
+        pulsing ? "animate-pulse" : "",
         className
       )}
       style={style}
@@ -97,7 +84,7 @@ function Skeleton({
 // Template Card Skeleton component for reuse
 function TemplateCardSkeleton() {
   return (
-    <div className="rounded-lg border   bg-card overflow-hidden shadow-sm">
+    <div className="rounded-lg border border-border bg-card overflow-hidden">
       <div className="space-y-3">
         {/* Image placeholder */}
         <Skeleton className="h-48 w-full rounded-t-lg rounded-b-none" shimmer />

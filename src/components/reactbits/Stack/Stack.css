@@ -45,6 +45,6 @@
 .stack-card-shade {
   position: absolute;
   inset: 0;
-  background: #000;
+  background: var(--slab);
   pointer-events: none;
 }

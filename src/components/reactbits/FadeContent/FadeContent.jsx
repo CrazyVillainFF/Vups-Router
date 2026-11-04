@@ -72,7 +72,7 @@ const createNoiseMask = (target, kind, floor, extraBlur) => {
       { in: 'noise', type: 'matrix', values: '1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 1', result: 'gray' },
       filter
     );
-    node('feFlood', { x: dot, y: dot, width: 2, height: 2, 'flood-color': '#000', result: 'dot' }, filter);
+    node('feFlood', { x: dot, y: dot, width: 2, height: 2, 'flood-color': 'var(--slab)', result: 'dot' }, filter);
     node('feComposite', { in: 'dot', in2: 'dot', width: block, height: block, result: 'cell' }, filter);
     node('feTile', { in: 'cell', result: 'grid' }, filter);
     node('feComposite', { in: 'gray', in2: 'grid', operator: 'in', result: 'samples' }, filter);

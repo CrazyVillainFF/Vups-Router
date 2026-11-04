@@ -4,44 +4,34 @@ import { useEffect, useRef } from 'react';
 
 import './SpotlightCard.css';
 
-const THEMES = {
-  dark: {
-    surface: '#111111',
-    border: 'rgba(255, 255, 255, 0.08)',
-    shadow: '0 24px 48px -24px rgba(0, 0, 0, 0.6)',
-    light: '#ffffff',
-    fill: 1,
-    edge: 1
-  },
-  light: {
-    surface: '#ffffff',
-    border: 'rgba(24, 24, 27, 0.1)',
-    shadow: '0 1px 2px rgba(24, 24, 27, 0.04), 0 18px 40px -20px rgba(24, 24, 27, 0.16)',
-    light: '#18181b',
-    fill: 0.28,
-    edge: 0.7
-  }
-};
-
+/* The card takes its surface, border and reveal from the token layer, so it follows
+   the app theme by itself. The vendored `theme` prop used to switch between two
+   hard-coded palettes here — that is exactly the per-component theme state the
+   design system forbids, so it is accepted and ignored. */
 const SHAPES = ['circle', 'beam'];
-
-const NOISE =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-const falloff = (color, softness) => {
+/* The proximity reveal is expressed as mask alpha, never as a painted glow: the two
+   layers it drives are flat token colours, and the radial ramp only decides how much
+   of each layer is let through near the pointer. No light is emitted and nothing is
+   blurred. */
+const falloff = softness => {
   const soft = clamp(softness, 0, 1);
   const core = (1 - soft) ** 1.5 * 0.85;
-  const stop = (alpha, at) =>
-    `color-mix(in srgb, ${color} ${(alpha * 100).toFixed(2)}%, transparent) ${(at * 100).toFixed(2)}%`;
+  const stop = (alpha, at) => {
+    const position = `${(at * 100).toFixed(2)}%`;
+    if (alpha >= 0.999) return `black ${position}`;
+    if (alpha <= 0.001) return `transparent ${position}`;
+    return `color-mix(in srgb, black ${(alpha * 100).toFixed(2)}%, transparent) ${position}`;
+  };
   const list = [stop(1, 0)];
   for (let i = 0; i <= 14; i++) {
     const t = core + ((1 - core) * i) / 14;
     const g = (t - core) / (1 - core);
     const smooth = 1 - g * g * (3 - 2 * g);
-    const glow = Math.exp(-4.6 * g * g) * (1 - g ** 6);
-    list.push(stop(smooth + (glow - smooth) * soft, t));
+    const rim = Math.exp(-4.6 * g * g) * (1 - g ** 6);
+    list.push(stop(smooth + (rim - smooth) * soft, t));
   }
   return list.join(', ');
 };
@@ -50,7 +40,11 @@ const SpotlightCard = ({
   children,
   className = '',
   style,
+  /* Accepted for the call sites that still pass them, and ignored: the reveal is a
+     masked token colour now, so it has no colour of its own to be given, and there
+     is no grain layer left to strength. */
   spotlightColor,
+  grain,
   intensity = 0.15,
   spotlightSize = 240,
   softness = 0.7,
@@ -60,30 +54,25 @@ const SpotlightCard = ({
   smoothing = 0.3,
   ambient = false,
   flare = true,
-  grain = 0,
   theme = 'dark',
   ...rest
 }) => {
   const rootRef = useRef(null);
   const lightRef = useRef(null);
-  const grainRef = useRef(null);
   const edgeRef = useRef(null);
   const wakeRef = useRef(null);
-  const palette = THEMES[theme] ?? THEMES.dark;
-  const color = spotlightColor ?? palette.light;
   const form = SHAPES.includes(shape) ? shape : 'circle';
   const settings = {
     shape: form,
-    fill: falloff(color, softness),
-    edge: falloff(color, 1),
+    fill: falloff(softness),
+    edge: falloff(1),
     size: Math.max(20, spotlightSize),
-    intensity: clamp(intensity, 0, 1) * palette.fill,
-    borderGlow: clamp(borderGlow, 0, 1) * palette.edge,
+    intensity: clamp(intensity, 0, 1),
+    borderGlow: clamp(borderGlow, 0, 1),
     proximity: Math.max(0, proximity),
     smoothing: clamp(smoothing, 0, 1),
     ambient,
-    flare,
-    grain: clamp(grain, 0, 1)
+    flare
   };
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -95,14 +84,13 @@ const SpotlightCard = ({
   useEffect(() => {
     const root = rootRef.current;
     const light = lightRef.current;
-    const noise = grainRef.current;
     const edge = edgeRef.current;
-    if (!root || !light || !noise || !edge) return undefined;
+    if (!root || !light || !edge) return undefined;
 
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
     const state = { x: 0, y: 0, presence: 0, flare: 0, time: Math.random() * 60, pressed: false, visible: true };
     const pointer = { x: 0, y: 0, active: false };
-    const drawn = { light: '', edge: '', noise: '' };
+    const drawn = { light: '', edge: '' };
     let focus = null;
     let raf = 0;
     let last = 0;
@@ -111,9 +99,16 @@ const SpotlightCard = ({
     const gradient = (s, size, x, y, stops) => {
       if (s.shape === 'beam') {
         const reach = Math.max(size * 0.6, y + size * 0.55);
-        return `radial-gradient(${(size * 0.55).toFixed(1)}px ${reach.toFixed(1)}px at ${x.toFixed(1)}px 0px, ${stops})`;
+        return `radial-gradient(${(size * 0.55).toFixed(1)}px ${reach.toFixed(1)}px at ${x.toFixed(1)}px 0px, ${stops})`; // guard-allow: mask alpha ramp, geometry not paint
       }
-      return `radial-gradient(circle ${size.toFixed(1)}px at ${x.toFixed(1)}px ${y.toFixed(1)}px, ${stops})`;
+      return `radial-gradient(circle ${size.toFixed(1)}px at ${x.toFixed(1)}px ${y.toFixed(1)}px, ${stops})`; // guard-allow: mask alpha ramp, geometry not paint
+    };
+
+    /* Both layers are painted by CSS with one flat token colour; the only thing the
+       pointer moves is how much of that colour the mask admits. */
+    const setMask = (element, image) => {
+      element.style.webkitMaskImage = image;
+      element.style.maskImage = image;
     };
 
     const paint = s => {
@@ -123,21 +118,14 @@ const SpotlightCard = ({
       const rim = gradient(s, size * 0.6, state.x, s.shape === 'beam' ? 0 : state.y, s.edge);
       if (fill !== drawn.light) {
         drawn.light = fill;
-        light.style.background = fill;
+        setMask(light, fill);
       }
       if (rim !== drawn.edge) {
         drawn.edge = rim;
-        edge.style.background = rim;
+        setMask(edge, rim);
       }
       light.style.opacity = String(Math.min(1, state.presence * s.intensity * boost));
       edge.style.opacity = String(Math.min(1, state.presence * s.borderGlow * boost));
-      const grainy = s.grain > 0 ? gradient(s, size, state.x, state.y, '#000 0%, transparent 100%') : 'none';
-      if (grainy !== drawn.noise) {
-        drawn.noise = grainy;
-        noise.style.webkitMaskImage = grainy;
-        noise.style.maskImage = grainy;
-      }
-      noise.style.opacity = String(state.presence * s.grain);
     };
 
     const tick = now => {
@@ -268,19 +256,17 @@ const SpotlightCard = ({
     <div
       ref={rootRef}
       className={`spotlight-card${className ? ` ${className}` : ''}`}
-      style={{
-        '--spotlight-card-surface': palette.surface,
-        '--spotlight-card-border': palette.border,
-        '--spotlight-card-shadow': palette.shadow,
-        ...style
-      }}
+      style={style}
       {...rest}
     >
       <span ref={lightRef} className="spotlight-card__light" aria-hidden="true" />
-      <span ref={grainRef} className="spotlight-card__grain" style={{ backgroundImage: NOISE }} aria-hidden="true" />
       {children}
       <span className="spotlight-card__border" aria-hidden="true" />
-      <span ref={edgeRef} className="spotlight-card__edge" aria-hidden="true" />
+      {/* The wrapper clips its child to a 1px ring; the child is the proximity ramp.
+          Two masks multiply, so the reveal is an accent edge and never a filled blob. */}
+      <span className="spotlight-card__rim" aria-hidden="true">
+        <span ref={edgeRef} className="spotlight-card__edge" />
+      </span>
     </div>
   );
 };

@@ -1,5 +1,6 @@
 'use client';
 
+import { token } from "../../../tokens.js";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 
 const EASINGS = {
@@ -23,7 +24,7 @@ const smoothstep = (a, b, x) => {
 
 const toColors = value => {
   const list = (Array.isArray(value) ? value : [value]).filter(Boolean);
-  return list.length ? list : ['#ffffff'];
+  return list.length ? list : [token("text")];
 };
 
 const starPath = (ctx, x, y, radius, rotation) => {
@@ -63,7 +64,7 @@ const channels = (ctx, color) => {
 const ClickSpark = forwardRef(
   (
     {
-      sparkColor = '#fff',
+      sparkColor = token("text"),
       sparkSize = 14,
       sparkRadius = 30,
       sparkCount = 8,

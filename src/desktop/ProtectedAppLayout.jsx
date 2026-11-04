@@ -4,6 +4,7 @@ import DesktopLayout from "./DesktopLayout.jsx";
 import { PreferencesProvider } from "./PreferencesContext.jsx";
 import { TaskProvider } from "./TaskContext.jsx";
 import { WorkspaceProvider } from "./WorkspaceContext.jsx";
+import { PanelProvider } from "./panel/PanelContext.jsx";
 import "./desktop.css";
 
 export default function ProtectedAppLayout() {
@@ -12,7 +13,9 @@ export default function ProtectedAppLayout() {
       <PreferencesProvider>
         <WorkspaceProvider>
           <TaskProvider>
-            <DesktopLayout />
+            <PanelProvider>
+              <DesktopLayout />
+            </PanelProvider>
           </TaskProvider>
         </WorkspaceProvider>
       </PreferencesProvider>

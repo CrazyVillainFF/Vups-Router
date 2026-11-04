@@ -25,6 +25,13 @@ import {
   isAndroidApp
 } from "../native/appInfo.js";
 import {
+  checkWindowsUpdate,
+  createUpdaterProgress,
+  isWindowsUpdaterAvailable,
+  restartWindowsApp,
+  updaterErrorMessage
+} from "../native/windowsUpdater.js";
+import {
   androidDownloadsPlugin,
   cancelAndroidDownload,
   enqueueAndroidDownload,
@@ -98,11 +105,16 @@ export default function ApplicationUpdates() {
   const [installState, setInstallState] = useState("idle");
   const [installError, setInstallError] = useState("");
   const [actionError, setActionError] = useState("");
+  const [windowsUpdate, setWindowsUpdate] = useState(null);
+  const [windowsPhase, setWindowsPhase] = useState("idle");
+  const [windowsPercent, setWindowsPercent] = useState(null);
+  const [windowsError, setWindowsError] = useState("");
 
   const checkingRef = useRef(false);
   const downloadingRef = useRef("");
   const downloadStartingRef = useRef(false);
   const installingRef = useRef(false);
+  const windowsBusyRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -157,6 +169,29 @@ export default function ApplicationUpdates() {
     try {
       const current = await installedAppInfo();
       setInfo(current);
+      if (current.platform === "windows" && isWindowsUpdaterAvailable()) {
+        setRelease(null);
+        setWindowsUpdate(null);
+        setWindowsPhase("idle");
+        setWindowsPercent(null);
+        setWindowsError("");
+        try {
+          const update = await checkWindowsUpdate();
+          if (update) {
+            setAvailability({ status: "available", latestVersion: update.version });
+            setWindowsUpdate(update);
+          } else {
+            setAvailability({ status: "current", latestVersion: current.version });
+          }
+        } catch (error) {
+          setAvailability({
+            status: "error",
+            latestVersion: "",
+            message: updaterErrorMessage(error)
+          });
+        }
+        return;
+      }
       const result = await checkLatestRelease();
       if (!result.release) {
         setRelease(null);
@@ -275,10 +310,44 @@ export default function ApplicationUpdates() {
     }
   }, [download]);
 
+  const runWindowsUpdate = useCallback(async () => {
+    if (!windowsUpdate || windowsBusyRef.current) return;
+    windowsBusyRef.current = true;
+    setWindowsError("");
+    setWindowsPhase("downloading");
+    setWindowsPercent(null);
+    const progress = createUpdaterProgress();
+    try {
+      await windowsUpdate.downloadAndInstall(event => {
+        const state = progress(event);
+        if (state.percent != null) setWindowsPercent(state.percent);
+        if (event?.event === "Started" && state.percent == null) setWindowsPercent(null);
+      });
+      setWindowsPercent(100);
+      setWindowsPhase("installed");
+    } catch (error) {
+      setWindowsPhase("error");
+      setWindowsError(updaterErrorMessage(error));
+    } finally {
+      windowsBusyRef.current = false;
+    }
+  }, [windowsUpdate]);
+
+  const restartApp = useCallback(async () => {
+    setWindowsError("");
+    try {
+      await restartWindowsApp();
+    } catch {
+      setWindowsError(
+        "The app could not be restarted automatically. Close and reopen VupsRouter to finish the update."
+      );
+    }
+  }, []);
+
   const platform = info?.platform || (android ? "android" : "web");
   const latestVersion = displayVersion(availability?.latestVersion || "");
-  const released = formatDate(releaseDate(release));
-  const notes = releaseNotes(release);
+  const released = formatDate(releaseDate(release) || windowsUpdate?.date || "");
+  const notes = release ? releaseNotes(release) : windowsUpdate?.notes || "";
   const installed = info?.version
     ? `Version ${displayVersion(info.version)}${info.build ? ` · build ${info.build}` : ""}`
     : platform === "web"
@@ -289,17 +358,20 @@ export default function ApplicationUpdates() {
   let statusText = "Not checked yet.";
   if (checking) {
     statusTone = "pending";
-    statusText = "Checking the official release feed…";
+    statusText =
+      platform === "windows" ? "Checking for updates…" : "Checking the official release feed…";
   } else if (availability?.status === "current") {
     statusTone = "ok";
     statusText = `Up to date — ${latestVersion || "this release"} is the newest published version.`;
   } else if (availability?.status === "available") {
-    statusTone = availability.asset ? "ready" : "pending";
+    statusTone = availability.asset || windowsUpdate ? "ready" : "pending";
     statusText =
       availability.message ||
-      (availability.asset
-        ? `Update available — ${latestVersion} is ready to ${platform === "android" ? "download" : "get"}.`
-        : `Update available — ${latestVersion} is published without a package for this platform.`);
+      (platform === "windows"
+        ? `Update available — ${latestVersion} can be installed now.`
+        : availability.asset
+          ? `Update available — ${latestVersion} is ready to ${platform === "android" ? "download" : "get"}.`
+          : `Update available — ${latestVersion} is published without a package for this platform.`);
   } else if (availability?.status === "info") {
     statusTone = "muted";
     statusText =
@@ -473,16 +545,64 @@ export default function ApplicationUpdates() {
         </p>
       ) : null}
 
-      {platform === "windows" && availability?.status === "available" ? (
-        <div className="vr-updates__action">
-          <button type="button" className="vr-primary-small" onClick={openReleases}>
-            <ArrowSquareOut size={14} aria-hidden="true" />
-            Open release page
-          </button>
-          <span className="vr-setting-hint">
-            Automatic installation is not configured in this Windows build: it needs the Tauri updater plugin with a
-            signed update manifest. Use the official installer; saved models and preferences stay in place.
-          </span>
+      {platform === "windows" && windowsUpdate ? (
+        <div className="vr-updates__windows">
+          {windowsPhase === "downloading" ? (
+            <div className="vr-updates__download">
+              <div className="vr-updates__download-head">
+                <span>Downloading and installing {latestVersion}…</span>
+              </div>
+              <div
+                className="vr-updates__bar"
+                role="progressbar"
+                aria-label="Downloading the Windows update"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={windowsPercent == null ? undefined : windowsPercent}
+              >
+                <span
+                  className={windowsPercent == null ? "is-indeterminate" : ""}
+                  style={windowsPercent == null ? undefined : { width: `${windowsPercent}%` }}
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {windowsPhase === "installed" ? (
+            <p className="vr-updates__success" role="status">
+              <CheckCircle size={14} weight="fill" aria-hidden="true" />
+              Version {latestVersion} is installed. Restart VupsRouter to finish.
+            </p>
+          ) : null}
+
+          {windowsError ? (
+            <p className="vr-updates__error" role="alert">
+              <WarningCircle size={14} weight="fill" aria-hidden="true" />
+              {windowsError}
+            </p>
+          ) : null}
+
+          {windowsPhase === "idle" || windowsPhase === "error" ? (
+            <div className="vr-updates__action">
+              <button type="button" className="vr-primary-small" onClick={runWindowsUpdate}>
+                <DownloadSimple size={14} aria-hidden="true" />
+                Update to {latestVersion}
+              </button>
+              <span className="vr-setting-hint">
+                VupsRouter downloads and verifies the signed update itself. The app keeps running until you restart it,
+                and saved models and preferences stay in place.
+              </span>
+            </div>
+          ) : null}
+
+          {windowsPhase === "installed" ? (
+            <div className="vr-updates__action">
+              <button type="button" className="vr-primary-small" onClick={restartApp}>
+                <ArrowClockwise size={14} aria-hidden="true" />
+                Restart now
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
