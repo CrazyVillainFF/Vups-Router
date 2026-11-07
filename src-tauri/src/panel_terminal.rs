@@ -1,4 +1,5 @@
 use serde_json::{json, Value};
+use crate::desktop_exec::{display_path, os_detail, strip_verbatim};
 use std::{
     collections::HashMap,
     io::{Read, Write},
@@ -16,7 +17,10 @@ const MAX_INPUT_CHARS: usize = 4_000;
 const MAX_PATH_CHARS: usize = 1_024;
 const TAIL_CHARS: usize = 6_000;
 const TRANSCRIPT_LIMIT: usize = 256 * 1024;
-const GRACEFUL_EXIT: Duration = Duration::from_millis(1_500);
+// Polled every 50ms, so a cooperative shell is released immediately; the full
+// window only elapses for one that ignores EOF, and a force-kill mid-exit can
+// drop its buffered output and orphan children.
+const GRACEFUL_EXIT: Duration = Duration::from_secs(3);
 const GRACEFUL_KILL: Duration = Duration::from_millis(300);
 const KILL_VERIFY: Duration = Duration::from_secs(3);
 const OUTPUT_EVENT: &str = "panel-terminal:output";
@@ -60,23 +64,44 @@ fn session_key(raw: Option<&str>) -> Result<String, String> {
 }
 
 /// A terminal starts inside a folder that really exists; with no folder given
-/// it uses the user's home rather than the app's working directory.
+/// it uses the user's home rather than the app's working directory. The folder
+/// is resolved the way Windows resolves it, so the path the pane shows is the
+/// folder the shell actually entered.
 fn resolve_cwd(raw: Option<&str>) -> Result<PathBuf, String> {
     let requested = raw.unwrap_or("").trim();
     if requested.chars().count() > MAX_PATH_CHARS {
         return Err("That folder path is too long.".into());
     }
-    let candidate: PathBuf = if requested.is_empty() {
-        dirs::home_dir().ok_or("Windows could not find your home folder.")?
-    } else {
-        Path::new(requested).to_path_buf()
-    };
-    let metadata = std::fs::metadata(&candidate)
-        .map_err(|_| "That folder does not exist on this machine.".to_string())?;
-    if !metadata.is_dir() {
-        return Err("That path is not a folder.".into());
+    if requested.is_empty() {
+        return dirs::home_dir().ok_or("Windows could not report your home folder.".to_string());
     }
-    Ok(candidate)
+    let candidate = Path::new(requested);
+    // A relative name would be looked up in the app's own working directory, so
+    // the shell would start in a folder nobody chose.
+    if !candidate.is_absolute() {
+        return Err(format!(
+            "\"{}\" is not a full folder path. Give a path that starts with a drive letter.",
+            truncate_chars(requested, 120)
+        ));
+    }
+    let canonical = std::fs::canonicalize(candidate).map_err(|error| {
+        let detail = os_detail(&error);
+        match error.kind() {
+            std::io::ErrorKind::NotFound => {
+                format!("That folder does not exist on this machine. Windows reported: {detail}.")
+            }
+            std::io::ErrorKind::PermissionDenied => format!(
+                "Windows refused to open that folder for this account. No elevation was \
+                 attempted. Windows reported: {detail}."
+            ),
+            _ => format!("That folder could not be read. Windows reported: {detail}."),
+        }
+    })?;
+    let canonical = strip_verbatim(&canonical);
+    if !canonical.is_dir() {
+        return Err(format!("That path is not a folder: {}.", display_path(&canonical)));
+    }
+    Ok(canonical)
 }
 
 #[cfg(windows)]
@@ -910,6 +935,32 @@ mod tests {
             start_session(&state, None, "main", Some(file.to_string_lossy().as_ref()))
                 .expect_err("a file is not a folder");
         assert!(error.contains("not a folder"), "{error}");
+        std::fs::remove_dir_all(&directory).ok();
+    }
+
+    #[test]
+    fn a_starting_folder_is_resolved_to_the_folder_windows_enters() {
+        let relative = resolve_cwd(Some("src")).expect_err("a relative name has no folder to enter");
+        assert!(relative.contains("not a full folder path"), "{relative}");
+        assert!(resolve_cwd(Some("   ")).is_ok(), "no folder means the home folder");
+
+        let missing = resolve_cwd(Some(r"Z:\no\such\folder")).expect_err("a missing folder is refused");
+        assert!(missing.contains("does not exist"), "{missing}");
+
+        let directory = scratch_dir("resolved");
+        let wander = directory
+            .join("..")
+            .join(directory.file_name().expect("scratch folder name"));
+        let cwd = resolve_cwd(Some(wander.to_string_lossy().as_ref())).expect("resolves");
+        assert_eq!(
+            cwd,
+            strip_verbatim(&directory.canonicalize().expect("canonical scratch")),
+            "the pane must show the folder the shell really entered"
+        );
+        assert!(
+            !cwd.to_string_lossy().starts_with(r"\\?\"),
+            "a reader gets a plain Windows path: {cwd:?}"
+        );
         std::fs::remove_dir_all(&directory).ok();
     }
 

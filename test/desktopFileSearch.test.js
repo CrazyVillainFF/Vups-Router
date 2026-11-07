@@ -109,13 +109,13 @@ test("a named folder lookup reaches the real native tools and answers with the a
   const server = stubServer();
   t.after(() => server.restore());
 
-  const activity = [];
+  const rows = [];
   const chunks = [];
   const result = await runDesktopToolChat({
     messages: [{ role: "user", content: "Can you find my Qoder folder and give me that path?" }],
     userText: "Can you find my Qoder folder and give me that path?",
     executeTool: execute,
-    onActivity: (event) => activity.push(event.message),
+    onProgress: batch => rows.push(...batch),
     onChunk: (chunk) => chunks.push(chunk)
   });
 
@@ -126,7 +126,36 @@ test("a named folder lookup reaches the real native tools and answers with the a
   assert.match(result.content, /C:\\Users\\Vishnu\\Documents\\Qoder/);
   assert.doesNotMatch(result.content, /mnt\/data|find ~\/|2>\/dev\/null/);
   assert.deepEqual(chunks, [result.content]);
-  assert.match(activity.join("\n"), /Finding your Qoder folder/);
+
+  // What the reader watched is the list of operations that really ran: one task
+  // line, then each native call opened as running and settled by its own result.
+  assert.deepEqual(rows.filter(row => row.phase === "tool").map(row => `${row.tool}:${row.status}`), [
+    "get_windows_known_folder:running",
+    "get_windows_known_folder:completed",
+    "list_directory:running",
+    "list_directory:completed"
+  ]);
+  assert.deepEqual(rows.filter(row => row.key === "task").map(row => row.status), ["running"]);
+  assert.equal(rows.filter(row => row.callId === "fast_locate_documents").length, 2);
+  assert.ok(
+    rows.every(row => String(row.label || row.message).trim()),
+    "every row has words to draw"
+  );
+  assert.deepEqual(
+    rows.filter(row => row.phase === "tool").map(row => row.label),
+    [
+      "Finding the Windows folder",
+      "Finding the Windows folder",
+      "Listing a local folder",
+      "Listing a local folder"
+    ],
+    "a local operation is named in the app's own words, never as a raw tool name"
+  );
+  assert.ok(
+    rows.some(row => row.phase === "provider" && row.message === "Asking the model what to do next"),
+    "the round the app opened is on screen while the provider is deciding"
+  );
+  assert.ok(!rows.some(row => /Working\.\.\.|Almost done|Processing/i.test(String(row.message))));
 
   // Only the existing native tools ran, against the resolver-provided folder.
   assert.deepEqual(calls.map((call) => call.tool), ["get_windows_known_folder", "list_directory"]);
@@ -259,11 +288,11 @@ test("the chat page hands only the chat's own workspace folder to the desktop to
   const source = readFileSync(new URL("../src/ChatPage.jsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.match(
     source,
-    /const \{ activeWorkspace, workspaces, owner: workspaceOwner, workspaceForChat, bindChatWorkspace \} = useWorkspaces\(\);/
+    /const \{[\s\S]*?supported: nativeWorkspaces,[\s\S]*?workspaceForChat,[\s\S]*?bindChatWorkspace[\s\S]*?\} = useWorkspaces\(\);/
   );
   assert.match(source, /const boundChatWorkspace = chatScope \? workspaceForChat\(chatScope\) : null;/);
   assert.match(source, /const chatWorkspace = boundChatWorkspace \|\| \(draftChat \? activeWorkspace : null\);/);
-  assert.match(source, /searchRoots: chatWorkspace\?\.path \? \[chatWorkspace\.path\] : \[\]/);
+  assert.match(source, /searchRoots: sendWorkspace\?\.path \? \[sendWorkspace\.path\] : \[\]/);
   assert.doesNotMatch(
     source,
     /searchRoots: workspaces\.map/,

@@ -89,7 +89,7 @@ function reducer(state, action) {
 }
 
 export default function TerminalPane() {
-  const { supported, activeWorkspace } = useWorkspaces();
+  const { supported, activeWorkspace, touchWorkspace } = useWorkspaces();
   const { activeTab, open } = usePanel();
   const active = open && activeTab === "terminal";
 
@@ -105,6 +105,13 @@ export default function TerminalPane() {
   stateRef.current = state;
   const cwdRef = useRef(cwdDraft);
   cwdRef.current = cwdDraft;
+  // A finished command may have written files (an install, a build, a test run
+  // that snapshots), so the exit event is what tells the explorer to re-read
+  // disk. These refs keep the one-shot native subscription from going stale.
+  const workspaceIdRef = useRef("");
+  workspaceIdRef.current = activeWorkspace?.id || "";
+  const touchRef = useRef(null);
+  touchRef.current = touchWorkspace;
 
   // The native session name is only valid once, so the workspace folder is
   // resolved lazily and remembered per session.
@@ -136,6 +143,7 @@ export default function TerminalPane() {
           type: "snapshot",
           snapshot: { sessionId: payload.sessionId, status: payload.status, exitCode: payload.exitCode, running: false }
         });
+        if (payload.status === "exited") touchRef.current?.(workspaceIdRef.current);
       }
     });
     return () => {

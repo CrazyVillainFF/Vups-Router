@@ -169,3 +169,60 @@ test("cancelling during a tool round stops the loop without a fabricated final a
     apiClient.post = original;
   }
 });
+
+// A completed native write is the only thing that makes the open Files pane
+// re-read the folder, so the signal has to come from this loop and nowhere else.
+async function runOneToolCall(tool, args, executeTool) {
+  const original = apiClient.post;
+  const calls = [];
+  apiClient.post = async (url, body) => {
+    calls.push(body);
+    if (calls.length === 1) {
+      return {
+        data: {
+          type: "tool_calls",
+          toolCalls: [toolCall(`call_${tool}`, tool, args)],
+          assistantMessage: { role: "assistant", content: null }
+        }
+      };
+    }
+    return {
+      data: { type: "final", content: "Done.", conversationId: "conv-signal", message: { messageId: "m-signal" } }
+    };
+  };
+  const mutations = [];
+  try {
+    await runDesktopToolChat({
+      messages: [{ role: "user", content: `Run ${tool}.` }],
+      executeTool,
+      onWorkspaceMutation: event => mutations.push(event)
+    });
+  } finally {
+    apiClient.post = original;
+  }
+  return mutations;
+}
+
+test("a write the model actually performed is announced to the workspace", async () => {
+  const mutations = await runOneToolCall("write_file", { path: "src/app.jsx" }, async (tool, args) => ({
+    ok: true,
+    data: { path: args.path, bytesWritten: 12 }
+  }));
+  assert.deepEqual(mutations, [{ tool: "write_file", path: "src/app.jsx" }]);
+});
+
+test("a read sends no workspace change", async () => {
+  const mutations = await runOneToolCall("read_file", { path: "src/app.jsx" }, async () => ({
+    ok: true,
+    data: { path: "src/app.jsx", content: "export default 1;" }
+  }));
+  assert.deepEqual(mutations, [], "listing or reading did not change the folder");
+});
+
+test("a denied or failed write is not reported as a change", async () => {
+  const mutations = await runOneToolCall("delete_path", { path: "src/old.jsx" }, async () => ({
+    ok: false,
+    error: { code: "permission_denied", message: "You did not allow this." }
+  }));
+  assert.deepEqual(mutations, [], "nothing on disk changed, so the explorer must not reload");
+});

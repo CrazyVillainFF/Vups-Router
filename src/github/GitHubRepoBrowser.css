@@ -1,0 +1,865 @@
+/* GitHub repository browser. Colours come from tokens.css only, shadows are
+   hard-offset or absent, and the dialog reuses the vr-modal geometry so it reads
+   as the same class of surface as every other app dialog. */
+
+.vr-ghb-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: var(--scrim);
+  animation: vr-ghb-fade 0.16s ease;
+}
+
+@keyframes vr-ghb-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.vr-ghb {
+  display: flex;
+  flex-direction: column;
+  width: min(980px, calc(100vw - 32px));
+  max-height: min(88dvh, 820px);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--bg);
+  box-shadow: none;
+  color: var(--text);
+  font-family: var(--font-sans);
+}
+
+/* ── Head ─────────────────────────────────────────────────────────────────── */
+.vr-ghb__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.vr-ghb__title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.vr-ghb__kicker {
+  color: var(--accent-text);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vr-ghb__title {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  overflow-wrap: anywhere;
+}
+
+.vr-ghb__head-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+.vr-ghb__conn {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-hover);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.vr-ghb__conn--token,
+.vr-ghb__conn--oauth {
+  border-color: var(--ok-line);
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.vr-ghb__conn--attention {
+  border-color: var(--error-line);
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.vr-ghb__conn--public_only {
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.vr-ghb__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color var(--duration-fast), border-color var(--duration-fast);
+}
+
+.vr-ghb__close:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* ── Path bar ─────────────────────────────────────────────────────────────── */
+.vr-ghb__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.vr-ghb__nav {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.vr-ghb__navbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color var(--duration-fast), border-color var(--duration-fast);
+}
+
+.vr-ghb__navbtn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.vr-ghb__navbtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.vr-ghb__crumbs {
+  display: flex;
+  align-items: center;
+  flex: 1 1 180px;
+  min-width: 0;
+  gap: 2px;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+}
+
+.vr-ghb__crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.vr-ghb__crumb > span[aria-hidden="true"] {
+  color: var(--faint);
+}
+
+.vr-ghb__crumb button {
+  padding: 2px 4px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.vr-ghb__crumb button:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+.vr-ghb__crumb [aria-current="page"] {
+  padding: 2px 4px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.vr-ghb__search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.vr-ghb__search-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: var(--control-height);
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--faint);
+}
+
+.vr-ghb__search-label:focus-within {
+  border-color: var(--accent-line);
+}
+
+.vr-ghb__search-label input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: var(--text-sm) var(--font-sans);
+  outline: none;
+}
+
+.vr-ghb__search-label input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+.vr-ghb__search-label input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.vr-ghb__tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  margin-left: auto;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.vr-ghb__ghost,
+.vr-ghb__primary,
+.vr-ghb__danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 11px;
+  border-radius: var(--radius-sm);
+  font: 500 var(--text-sm) var(--font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--duration-fast), border-color var(--duration-fast), color var(--duration-fast);
+}
+
+.vr-ghb__ghost {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+}
+
+.vr-ghb__ghost:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.vr-ghb__primary {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  box-shadow: var(--shadow-tick);
+  color: var(--on-accent);
+}
+
+.vr-ghb__primary:hover:not(:disabled) {
+  border-color: var(--accent-press);
+  background: var(--accent-press);
+}
+
+.vr-ghb__danger {
+  border: 1px solid var(--error-line);
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.vr-ghb__danger:hover:not(:disabled) {
+  border-color: var(--error);
+  background: color-mix(in srgb, var(--error) 20%, transparent);
+}
+
+.vr-ghb__ghost:disabled,
+.vr-ghb__primary:disabled,
+.vr-ghb__danger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.vr-ghb__ghost:focus-visible,
+.vr-ghb__primary:focus-visible,
+.vr-ghb__danger:focus-visible,
+.vr-ghb__navbtn:focus-visible,
+.vr-ghb__close:focus-visible,
+.vr-ghb__row:focus-visible,
+.vr-ghb__branch:focus-visible,
+.vr-ghb__crumb button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Branches ─────────────────────────────────────────────────────────────── */
+.vr-ghb__branches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.vr-ghb__branch {
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  font: var(--text-2xs) var(--mono);
+  cursor: pointer;
+  transition: color var(--duration-fast), border-color var(--duration-fast);
+}
+
+.vr-ghb__branch:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.vr-ghb__branch[data-on] {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* ── Disconnect confirm ───────────────────────────────────────────────────── */
+.vr-ghb__confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--error-line);
+  background: var(--error-soft);
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.vr-ghb__confirm > span {
+  flex: 1 1 240px;
+}
+
+/* ── Body ─────────────────────────────────────────────────────────────────── */
+.vr-ghb__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 6px 20px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.vr-ghb__loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 2px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.vr-ghb__spin {
+  animation: vr-ghb-spin 0.9s linear infinite;
+}
+
+@keyframes vr-ghb-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Notices ──────────────────────────────────────────────────────────────── */
+.vr-ghb__notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid var(--error-line);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+}
+
+.vr-ghb__notice-icon {
+  flex: none;
+  color: var(--error);
+}
+
+.vr-ghb__notice-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.vr-ghb__notice-body h3 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.vr-ghb__notice-body p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+.vr-ghb__notice-body .vr-ghb__notice-detail {
+  margin-top: 6px;
+  color: var(--muted);
+  font: var(--text-2xs)/1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.vr-ghb__notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+/* ── Lists ────────────────────────────────────────────────────────────────── */
+.vr-ghb__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.vr-ghb__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast);
+}
+
+.vr-ghb__row:hover {
+  background: var(--surface-hover);
+}
+
+.vr-ghb__row-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+
+.vr-ghb__row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.vr-ghb__row-label {
+  font: 500 var(--text-sm) var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.vr-ghb__row-hint {
+  color: var(--muted);
+  font-size: var(--text-2xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vr-ghb__row-caret {
+  flex: none;
+  color: var(--faint);
+}
+
+.vr-ghb__row:hover .vr-ghb__row-caret {
+  color: var(--text);
+}
+
+.vr-ghb__empty {
+  padding: 20px 4px;
+  max-width: 60ch;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.vr-ghb__empty p {
+  margin: 0;
+}
+
+.vr-ghb__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.vr-ghb__none {
+  margin: 0;
+  padding: 18px 10px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.vr-ghb__note {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 2px solid var(--warn-line);
+  background: var(--surface-hover);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+/* ── README ───────────────────────────────────────────────────────────────── */
+.vr-ghb__readme {
+  margin: 16px 0 4px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--text) 2%, transparent);
+}
+
+.vr-ghb__readme-title {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font: 600 var(--text-2xs) var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.vr-ghb__markdown {
+  color: var(--text);
+  font-size: var(--text-md);
+  line-height: var(--leading-relaxed);
+  overflow-wrap: anywhere;
+}
+
+.vr-ghb__markdown > :first-child {
+  margin-top: 0;
+}
+
+.vr-ghb__markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.vr-ghb__markdown p {
+  margin: 0 0 12px;
+}
+
+.vr-ghb__markdown h1,
+.vr-ghb__markdown h2,
+.vr-ghb__markdown h3,
+.vr-ghb__markdown h4,
+.vr-ghb__markdown h5,
+.vr-ghb__markdown h6 {
+  margin: 20px 0 8px;
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-snug);
+}
+
+.vr-ghb__markdown h1 { font-size: 1.4em; }
+.vr-ghb__markdown h2 { font-size: 1.2em; }
+.vr-ghb__markdown h3 { font-size: 1.05em; }
+.vr-ghb__markdown h4,
+.vr-ghb__markdown h5,
+.vr-ghb__markdown h6 { font-size: 1em; }
+
+.vr-ghb__markdown ul,
+.vr-ghb__markdown ol {
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+
+.vr-ghb__markdown li {
+  margin-bottom: 4px;
+}
+
+.vr-ghb__markdown a {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+.vr-ghb__markdown blockquote {
+  margin: 12px 0;
+  padding: 4px 14px;
+  border-left: 3px solid var(--accent-line);
+  color: var(--muted);
+}
+
+.vr-ghb__markdown hr {
+  margin: 16px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.vr-ghb__markdown img {
+  max-width: 100%;
+}
+
+.vr-ghb__markdown code {
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-press);
+  font: 0.9em var(--mono);
+}
+
+.vr-ghb__markdown pre {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.vr-ghb__markdown pre code {
+  padding: 0;
+  background: transparent;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  white-space: pre;
+}
+
+/* react-markdown emits a bare table, so the table itself owns the horizontal
+   scroll; a wrapper div cannot be added without changing the renderer. */
+.vr-ghb__markdown table {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 12px 0;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.vr-ghb__markdown th,
+.vr-ghb__markdown td {
+  min-width: 90px;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.vr-ghb__markdown th {
+  background: var(--surface-hover);
+  font-weight: 600;
+}
+
+.vr-ghb__markdown .hljs-comment,
+.vr-ghb__markdown .hljs-quote {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.vr-ghb__markdown .hljs-keyword,
+.vr-ghb__markdown .hljs-selector-tag,
+.vr-ghb__markdown .hljs-built_in,
+.vr-ghb__markdown .hljs-doctag {
+  color: var(--accent-text);
+}
+
+.vr-ghb__markdown .hljs-string,
+.vr-ghb__markdown .hljs-attr,
+.vr-ghb__markdown .hljs-regexp {
+  color: var(--ok);
+}
+
+.vr-ghb__markdown .hljs-number,
+.vr-ghb__markdown .hljs-literal,
+.vr-ghb__markdown .hljs-variable,
+.vr-ghb__markdown .hljs-template-variable {
+  color: var(--warn);
+}
+
+.vr-ghb__markdown .hljs-title,
+.vr-ghb__markdown .hljs-section,
+.vr-ghb__markdown .hljs-name {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ── File view ────────────────────────────────────────────────────────────── */
+.vr-ghb__file {
+  padding: 10px 0 4px;
+}
+
+.vr-ghb__code {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font: var(--text-xs)/1.65 var(--mono);
+  overflow: auto;
+  overscroll-behavior: contain;
+  tab-size: 2;
+  white-space: pre;
+}
+
+/* ── Foot ─────────────────────────────────────────────────────────────────── */
+.vr-ghb__foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.vr-ghb__foot-note {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+/* ── Narrow shells (Android, small windows) ───────────────────────────────── */
+@media (max-width: 650px) {
+  .vr-ghb-backdrop {
+    padding: 8px;
+  }
+
+  .vr-ghb {
+    width: 100%;
+    max-height: calc(100dvh - 16px);
+  }
+
+  .vr-ghb__head,
+  .vr-ghb__bar,
+  .vr-ghb__branches,
+  .vr-ghb__confirm,
+  .vr-ghb__body,
+  .vr-ghb__foot {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .vr-ghb__search {
+    flex: 1 1 100%;
+    order: 3;
+  }
+
+  .vr-ghb__tools {
+    margin-left: 0;
+  }
+
+  .vr-ghb__notice {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .vr-ghb__notice-actions .vr-ghb__ghost,
+  .vr-ghb__notice-actions .vr-ghb__primary {
+    height: var(--control-height);
+  }
+
+  .vr-ghb__foot {
+    flex-wrap: wrap;
+  }
+
+  .vr-ghb__foot-note {
+    flex: 1 1 100%;
+    order: 2;
+  }
+
+  .vr-ghb__ghost,
+  .vr-ghb__primary,
+  .vr-ghb__danger {
+    height: var(--control-height);
+  }
+}
+
+@media (pointer: coarse) {
+  .vr-ghb__close,
+  .vr-ghb__navbtn {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vr-ghb-backdrop {
+    animation: none;
+  }
+
+  .vr-ghb__spin {
+    animation: none;
+  }
+
+  .vr-ghb__ghost,
+  .vr-ghb__primary,
+  .vr-ghb__danger,
+  .vr-ghb__close,
+  .vr-ghb__navbtn,
+  .vr-ghb__row,
+  .vr-ghb__branch {
+    transition: none;
+  }
+}
+
+[data-theme="light"] .vr-ghb__row:hover {
+  background: var(--surface-2);
+}
+
+[data-theme="light"] .vr-ghb__notice {
+  background: color-mix(in srgb, var(--error) 6%, transparent);
+}
+
+[data-theme="light"] .vr-ghb__readme {
+  background: var(--surface);
+}
+
+[data-theme="light"] .vr-ghb__note {
+  background: var(--surface-2);
+}

@@ -123,12 +123,32 @@ test("the chat page only ever reads the chat's own folder", () => {
   );
   assert.match(
     source,
-    /if \(draftChat && chatWorkspace\?\.id && chatScopeId\) \{\s*bindChatWorkspace\(chatScopeId, chatWorkspace\.id\);/,
+    /const sendWorkspace = carriedWorkspace \|\| chatWorkspace;/,
+    "the folder chosen mid-send is carried into the same turn"
+  );
+  assert.match(
+    source,
+    /if \(draftChat && sendWorkspace\?\.id && chatScopeId\) \{\s*bindChatWorkspace\(chatScopeId, sendWorkspace\.id\);/,
     "a draft claims its folder only when the user sends"
   );
-  assert.match(source, /const warnAboutSkippedTools = Boolean\(chatWorkspace\?\.id\);/);
+  assert.match(source, /const warnAboutSkippedTools = Boolean\(sendWorkspace\?\.id\);/);
   assert.match(source, /workspaceId: permissionMode === "workspace" \? chatWorkspace\?\.id \|\| null : null/);
   assert.doesNotMatch(source, /workspaceId: permissionMode === "workspace" \? activeWorkspace/);
-  assert.match(source, /searchRoots: chatWorkspace\?\.path \? \[chatWorkspace\.path\] : \[\]/);
+  assert.match(source, /searchRoots: sendWorkspace\?\.path \? \[sendWorkspace\.path\] : \[\]/);
   assert.doesNotMatch(source, /searchRoots: workspaces\.map/);
+  assert.match(
+    source,
+    /<WorkspaceFilesDialog[\s\S]{0,160}?workspace=\{chatWorkspace\}/,
+    "the file picker is handed this chat's folder, not whichever folder is globally active"
+  );
+  assert.doesNotMatch(
+    readFileSync(new URL("../src/desktop/WorkspaceFilesDialog.jsx", import.meta.url), "utf8").replace(/\r\n/g, "\n"),
+    /const \{[^}]*activeWorkspace[^}]*\} = useWorkspaces\(\);/,
+    "the dialog cannot read the global active folder out of context"
+  );
+  assert.doesNotMatch(
+    source,
+    /searchRoots: activeWorkspace\?\.path/,
+    "a chat never falls back to the globally selected folder"
+  );
 });

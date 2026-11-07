@@ -7,6 +7,8 @@ export const ACTIVITY_STATUS = Object.freeze({
   CANCELLED: "cancelled"
 });
 
+const PROGRESS_STATUSES = new Set(Object.values(ACTIVITY_STATUS));
+
 const PHASE_LABELS = {
   request: "Waiting for model",
   waiting: "Waiting for model",
@@ -75,7 +77,7 @@ export function progressLabel(phase, message = "") {
     const name = path.split("/").pop();
     return name ? `Writing ${name}` : "Writing files";
   }
-  return cleanProgress(message).replace(/Generating your code.*$/i, "Generating code").slice(0, 80) || "Working";
+  return cleanProgress(message).replace(/Generating your code.*$/i, "Generating code").slice(0, 80) || "Generating response";
 }
 
 function eventKey(phase, path, label) {
@@ -135,6 +137,100 @@ export function settleActivity(events = [], status = ACTIVITY_STATUS.COMPLETED, 
     return { ...event, status, endedAt: at };
   });
   return changed ? next : events;
+}
+
+/**
+ * The stable identity of one progress row. A row the server keyed to a tool
+ * call keeps that key for its whole life, so the line that said "running" is
+ * the same line that later says "completed" instead of becoming a second entry.
+ */
+export function progressRowKey(event, runId = "run") {
+  const key = String(event?.key || "").trim();
+  if (key) return `${runId}:k:${key}`;
+  const callId = String(event?.callId || "").trim();
+  if (callId) {
+    // One call can be two facts: what the tool returned, and the skill whose
+    // instruction file that return carried. Tool rows keep the bare call id so
+    // the line the app raised and the server's authoritative line stay one
+    // line; any other phase sharing that id is a different statement.
+    const phase = String(event?.phase || "").trim();
+    return phase && phase !== "tool"
+      ? `${runId}:call:${phase}:${callId}`
+      : `${runId}:call:${callId}`;
+  }
+  return Number.isFinite(event?.seq) ? `${runId}:seq:${event.seq}` : `${runId}:row`;
+}
+
+/**
+ * One row of the durable task log the server keeps. Every field comes from an
+ * event the server derived from a payload it actually received — nothing here
+ * is timed, estimated or phrased by the client.
+ */
+export function activityRowFromProgress(event, { runId = "run", at = null } = {}) {
+  if (!event || typeof event !== "object") return null;
+  const message = cleanProgress(event.message);
+  if (!message) return null;
+  const status = PROGRESS_STATUSES.has(event.status)
+    ? event.status
+    : ACTIVITY_STATUS.COMPLETED;
+  const stamp = Number.isFinite(Date.parse(event.at)) ? Date.parse(event.at) : at;
+  const running = status === ACTIVITY_STATUS.RUNNING;
+  return {
+    id: progressRowKey(event, runId),
+    seq: Number.isFinite(event.seq) ? event.seq : null,
+    phase: String(event.phase || "progress"),
+    // The app owns the wording of a local operation ("Writing a local file");
+    // the server's machine sentence stays the fallback for everything else.
+    label: cleanProgress(event.label).slice(0, 80) || message.slice(0, 80),
+    summary: status === ACTIVITY_STATUS.FAILED && event.code ? `Failed: ${cleanProgress(event.code)}` : "",
+    status,
+    startedAt: stamp,
+    endedAt: running ? null : stamp,
+    filePath: cleanProgress(event.path)
+  };
+}
+
+/**
+ * Merge incoming progress rows into the visible list by identity. A row only
+ * ever moves forward: a settled operation is never reopened by a replayed
+ * "running" line, and an unchanged line leaves the list untouched so the
+ * transcript does not re-render on every round.
+ */
+export function applyProgressRows(events = [], incoming = [], options = {}) {
+  const list = Array.isArray(events) ? events : [];
+  let next = list;
+  for (const event of Array.isArray(incoming) ? incoming : []) {
+    const row = activityRowFromProgress(event, options);
+    if (!row) continue;
+    const index = next.findIndex(item => item.id === row.id);
+    if (index < 0) {
+      next = [...next, row];
+      continue;
+    }
+    const existing = next[index];
+    if (existing.status !== ACTIVITY_STATUS.RUNNING && row.status === ACTIVITY_STATUS.RUNNING) {
+      continue;
+    }
+    const merged = {
+      ...existing,
+      ...row,
+      startedAt: existing.startedAt ?? row.startedAt,
+      endedAt: row.status === ACTIVITY_STATUS.RUNNING ? existing.endedAt : row.endedAt,
+      seq: existing.seq ?? row.seq
+    };
+    // Clocks differ between the app and the server by milliseconds; a line the
+    // reader already has is not repainted because its stamp moved.
+    if (
+      merged.status === existing.status &&
+      merged.label === existing.label &&
+      merged.summary === existing.summary &&
+      merged.filePath === existing.filePath
+    ) {
+      continue;
+    }
+    next = next.map((item, position) => (position === index ? merged : item));
+  }
+  return next;
 }
 
 /** Completed turns restored from history expose their real generated files. */

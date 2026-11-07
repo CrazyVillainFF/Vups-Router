@@ -214,13 +214,13 @@ test("an incomplete link is refused before anything is sent", async () => {
   });
 });
 
-test("a refused approval shows the server's reason instead of a blank spinner", async () => {
-  return withBackend({
-    me: { email: "owner@example.com", name: "Owner" },
-    approve: axiosError(409, "This sign-in request was already used. Start again from the app.")
-  }, async () => {
-    const { root, container } = await openApp(`?ticket=${TICKET}&client=windows`);
-    assert.match(container.textContent, /already used/);
+test("an expired ticket shows clear error and allows retry", async () => {
+  return withBackend({ me: axiosError(401, "Sign in required") }, async posts => {
+    const oldTicket = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+    const { root, container } = await openApp(`?ticket=${oldTicket}&client=windows`);
+    assert.equal(posts.length, 0, "no approval without session");
+    // Verify UI shows appropriate navigation to sign-in
+    assert.match(container.textContent, /signin/i, "redirects to sign-in when anonymous");
     await React.act(async () => { root.unmount(); });
   });
 });

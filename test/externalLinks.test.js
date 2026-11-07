@@ -305,10 +305,31 @@ test("provider guide URLs are real https destinations with honest labels", () =>
   assert.match(read("src/SettingsPage.jsx"), /entry\.keysLabel \|\| "Create a key"/);
 });
 
-test("the Windows shell allows any secure link and mail, nothing else", () => {
+test("the Windows shell opens secure links, mail and its own loopback handoff, nothing else", () => {
   const capability = JSON.parse(read("src-tauri/capabilities/desktop-local.json"));
   const opener = capability.permissions.find(entry => entry?.identifier === "opener:allow-open-url");
-  assert.deepEqual(opener.allow.map(entry => entry.url).sort(), ["https://*", "mailto:*"]);
+  const urls = opener.allow.map(entry => entry.url).sort();
+  assert.deepEqual(urls, ["http://127.0.0.1:*", "http://localhost:*", "https://*", "mailto:*"]);
+
+  // Cleartext is allowed only on the two hostnames that can mean "this machine".
+  // The debug handoff has to open the app's own approval page, whose origin is
+  // the loopback server (approvalBaseUrl keeps it there when the API is loopback
+  // too), so an unscoped http entry would be a real hole: any local port on any
+  // hostname would be openable.
+  for (const url of urls.filter(value => value.startsWith("http://"))) {
+    assert.match(url, /^http:\/\/(?:127\.0\.0\.1|localhost):\*$/, `${url} is cleartext on a routable host`);
+  }
+  // The window is granted IPC only from the loopback server it is served from.
   assert.deepEqual(capability.remote.urls, ["http://127.0.0.1:*"]);
   assert.equal(capability.local, false);
+
+  // The capability scope and the shared opener must agree, or one of them is
+  // dead weight and the other is the only thing standing in front of the shell.
+  const source = read("src/native/externalLinks.js");
+  assert.match(source, /LOOPBACK_HOSTS = new Set\(\["localhost", "127\.0\.0\.1", "\[::1\]"\]\)/);
+  assert.match(
+    source,
+    /url\.protocol === "https:" \|\|\s*\(url\.protocol === "mailto:" && allowMailto\)\s*\|\|\s*isLoopbackUrl\(url\);/,
+    "the opener admits https, mailto and loopback http and nothing else"
+  );
 });

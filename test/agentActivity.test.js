@@ -7,6 +7,7 @@ import {
   ACTIVITY_STATUS,
   activityFromArtifact,
   applyActivityProgress,
+  applyProgressRows,
   formatElapsed,
   mergeActivityFiles,
   progressEvent,
@@ -22,7 +23,8 @@ import {
   createAssistantTurn,
   failTurn,
   interruptTurn,
-  recordTurnActivity
+  recordTurnActivity,
+  recordTurnProgress
 } from "../src/chat/turnLifecycle.js";
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -264,4 +266,131 @@ test("chat forwards real activity into the assistant turn that produced it", () 
   assert.doesNotMatch(page, /pinned/);
   assert.doesNotMatch(page, /progressTurn|progressFiles|showProgress/);
   assert.doesNotMatch(page, /initialSteps|appendTurnStep/);
+});
+
+// ─── Continuous progress from real execution events (PART 2) ────────────────
+
+const writeCall = {
+  callId: "call-9",
+  phase: "tool",
+  status: "running",
+  tool: "write_file",
+  path: "C:\\work\\index.html",
+  label: "Writing a local file",
+  message: "write_file C:\\work\\index.html"
+};
+const writeResult = {
+  seq: 4,
+  callId: "call-9",
+  phase: "tool",
+  status: "completed",
+  tool: "write_file",
+  path: "C:\\work\\index.html",
+  label: "Writing a local file",
+  message: "write_file completed (C:\\work\\index.html)",
+  at: "2026-11-04T10:00:02.000Z"
+};
+
+test("the line the app opened is the line the server settles", () => {
+  const raised = applyProgressRows([], [writeCall], { runId: "run-9", at: 1000 });
+  assert.equal(raised.length, 1);
+  assert.equal(raised[0].id, "run-9:call:call-9");
+  assert.equal(raised[0].status, ACTIVITY_STATUS.RUNNING);
+
+  const reported = applyProgressRows(raised, [writeResult], { runId: "run-9", at: 2000 });
+  assert.equal(reported.length, 1, "the authoritative result settles the line, it is not a second one");
+  assert.equal(reported[0].status, ACTIVITY_STATUS.COMPLETED);
+  assert.equal(reported[0].label, "Writing a local file", "the wording does not change when the result lands");
+  assert.equal(reported[0].startedAt, 1000, "the line keeps the moment the operation really started");
+  assert.equal(reported[0].seq, 4, "the position in the stored log survives the merge");
+
+  const replayed = applyProgressRows(reported, [writeCall], { runId: "run-9", at: 3000 });
+  assert.equal(replayed, reported, "a replayed running notice cannot reopen finished work");
+});
+
+test("a named run row is one line per round and a new run opens its own", () => {
+  const open = {
+    key: "task",
+    phase: "task",
+    status: "running",
+    path: "C:\\work",
+    label: "Working folder",
+    message: "Working in C:\\work"
+  };
+  const rows = applyProgressRows([], [open], { runId: "r1", at: 100 });
+  const settled = applyProgressRows(rows, [{ ...open, status: "completed", message: "task completed" }], {
+    runId: "r1",
+    at: 900
+  });
+  assert.equal(settled.length, 1);
+  assert.equal(settled[0].status, ACTIVITY_STATUS.COMPLETED);
+  const continuation = applyProgressRows(settled, [open], { runId: "r2", at: 1000 });
+  assert.equal(continuation.length, 2, "a second run of the same task gets its own lines");
+});
+
+test("progress lands on the turn that is producing it, not on another message", () => {
+  let messages = recordTurnProgress(
+    [createAssistantTurn({ id: "a1", at: 1000 })],
+    "a1",
+    [{ key: "task", phase: "task", status: "running", path: "C:\\work", label: "Working folder", message: "Working in C:\\work" }],
+    { runId: "r1", at: 1000 }
+  );
+  assert.equal(messages[0].status, TURN_STATUS.STREAMING);
+  assert.equal(messages[0].activity.length, 1);
+
+  messages = recordTurnProgress(messages, "a1", [writeCall, writeResult], { runId: "r1", at: 1400 });
+  assert.equal(messages[0].activity.length, 2, "a notice and its result in one batch stay one line");
+  assert.equal(messages[0].activity[1].status, ACTIVITY_STATUS.COMPLETED);
+
+  const untouched = recordTurnProgress(messages, "no-such-turn", [writeCall], { runId: "r1", at: 1500 });
+  assert.equal(untouched, messages, "an unknown turn id adds nothing");
+
+  const done = completeTurn(messages, "a1", { content: "<h1>Hi</h1>", at: 2000 });
+  assert.equal(done[0].activity.every(row => row.status === ACTIVITY_STATUS.COMPLETED), true);
+  const afterClose = recordTurnProgress(done, "a1", [writeCall], { runId: "r1", at: 2100 });
+  assert.equal(afterClose, done, "a settled turn is not reopened by a late event");
+});
+
+test("progress comes from execution events, never from a timer", () => {
+  const service = read("src/services/desktopChat.js");
+  const page = read("src/ChatPage.jsx");
+  assert.doesNotMatch(service, /setInterval|requestAnimationFrame/);
+  assert.match(service, /emitProgress\(onProgress, taskProgressRow\(workspacePath\)\)/);
+  assert.match(service, /emitProgress\(onProgress, providerProgressRow\(providerStep\)\)/);
+  assert.match(service, /emitProgress\(onProgress, toolProgressRow\(\{ callId: id, tool, path, status: "running" \}\)\)/);
+  assert.match(service, /forwardProgress\(onProgress, data\?\.events\)/);
+  assert.match(
+    service,
+    /const label = progressRowLabel\(event\);\s*return label \? \{ \.\.\.event, label \} : event;/
+  );
+  assert.match(page, /onProgress: \(events\) => \{/);
+  assert.match(page, /recordTurnProgress\(prev, assistantId, events, \{ runId: activityRunId \}\)/);
+});
+
+test("an approval shows as a real wait and settles on the real decision", () => {
+  const page = read("src/ChatPage.jsx");
+  assert.match(page, /key: `approval:\$\{prompt\.requestId\}`/);
+  assert.match(page, /key: `approval:\$\{request\.requestId\}`/);
+  assert.match(page, /label: "Waiting for approval"/);
+  assert.match(page, /status: decision === "deny" \? "cancelled" : "completed"/);
+  // The waiting line quotes the native request, so a write or a command is
+  // never presented as a read, and no text implies the grant already happened.
+  assert.match(page, /message: `Waiting for approval: \$\{prompt\.summary/);
+  assert.doesNotMatch(page, /Waiting for approval to read/);
+});
+
+test("a reloaded turn shows the steps it really ran", () => {
+  const page = read("src/ChatPage.jsx");
+  assert.match(page, /function storedActivity\(message\) \{/);
+  assert.match(page, /if \(message\.role !== "assistant" \|\| !Array\.isArray\(message\.progress\)\) return null;/);
+  assert.match(page, /applyProgressRows\(\[\], message\.progress, \{/);
+  assert.match(page, /runId: `stored:\$\{message\.messageId \|\| ""\}`/);
+  assert.match(page, /const storedProgress = storedActivity\(message\);/);
+  assert.match(page, /\.\.\.\(storedProgress \? \{ activity: storedProgress \} : \{\}\)/);
+
+  // The stored log settles a run's open lines; a row the server left running
+  // reloads as running rather than being silently marked done.
+  const rows = applyProgressRows([], [writeCall], { runId: "stored:m-1", at: 1000 });
+  assert.equal(rows[0].id, "stored:m-1:call:call-9");
+  assert.equal(rows[0].status, ACTIVITY_STATUS.RUNNING);
 });

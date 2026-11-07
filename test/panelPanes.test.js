@@ -49,6 +49,12 @@ export function renameWorkspace(owner, id, title) { return record("rename", { ow
 export function removeWorkspace(owner, id) { return record("remove", { owner, id }); }
 export function scanWorkspace(owner, id) { return record("scan", { owner, id }); }
 export function readWorkspaceFile(owner, id, path) { return record("readFile", { owner, id, path }); }
+export function createWorkspaceFile(owner, id, path, content) { return record("createFile", { owner, id, path, content }); }
+export function writeWorkspaceFile(owner, id, path, content) { return record("writeFile", { owner, id, path, content }); }
+export function makeWorkspaceDirectory(owner, id, path) { return record("makeDirectory", { owner, id, path }); }
+export function renameWorkspacePath(owner, id, path, newName) { return record("renamePath", { owner, id, path, newName }); }
+export function moveWorkspacePath(owner, id, path, directory) { return record("movePath", { owner, id, path, directory }); }
+export function deleteWorkspacePath(owner, id, path) { return record("deletePath", { owner, id, path }); }
 `;
 
 const BROWSER_BRIDGE_STUB = `
@@ -173,6 +179,12 @@ ${exports.join("\n")}
       .replace(/from "\.\.\/WorkspaceContext\.jsx"/g, 'from "./workspaceStub.mjs"')
       .replace(/from "\.\.\/workspaceBridge\.js"/g, 'from "./workspaceBridgeStub.mjs"')
       .replace(/from "\.\.\/\.\.\/chat\/attachments\.js"/g, 'from "./attachmentsStub.mjs"')
+      // Name rules are the real ones: a pane that accepted a name Rust would reject
+      // would offer a button that always fails, so the module is imported in place.
+      .replace(
+        /from "\.\.\/workspaceRequest\.js"/g,
+        `from ${JSON.stringify(pathToFileURL(path.join(root, "src", "desktop", "workspaceRequest.js")).href)}`
+      )
       .replace(/from "\.\.\/\.\.\/native\/shell\.js"/g, 'from "./shellStub.mjs"');
 
   FilesPane = (await compile("FilesPane.jsx", code => filesystem(shared(code), "files"))).default;
@@ -221,13 +233,22 @@ const TREE = {
 };
 
 function workspaceStub(overrides = {}) {
-  return {
+  const stub = {
     supported: true,
     owner: "user-1",
     activeWorkspace: { id: "ws-1", title: "demo", path: "C:\\project\\demo" },
     addWorkspace: () => Promise.resolve(),
+    // The real context holds a per-workspace revision counter that only a finished
+    // native write bumps; the panes never poll for changes.
+    revisions: {},
+    touched: [],
+    touchWorkspace(id) {
+      stub.touched.push(id);
+      stub.revisions = { ...stub.revisions, [id]: (stub.revisions[id] || 0) + 1 };
+    },
     ...overrides
   };
+  return stub;
 }
 
 function recorder(responses = {}) {
@@ -274,7 +295,19 @@ async function setup(Pane, options = {}) {
     container,
     workspace: globalThis.__workspaceBridgeStub,
     browser: globalThis.__browserBridgeStub,
-    selectTab: id => clickTab(id)
+    state: globalThis.__workspaceStub,
+    selectTab: id => clickTab(id),
+    // A completed native write lands in the shared context as a higher revision,
+    // which re-renders the pane. This reproduces that signal with no click, no
+    // poll and no remount, so a reload can only come from the revision effect.
+    refresh: async () => {
+      await React.act(async () => {
+        rootHandle.render(
+          React.createElement(PanelProvider, null, React.createElement(Pane), React.createElement(TabSwitch))
+        );
+      });
+      await flush();
+    }
   };
 
   async function clickTab(id) {
@@ -314,8 +347,10 @@ function click(node) {
 }
 
 function setValue(input, value) {
-  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set;
-  setter.call(input, value);
+  // React tracks the value it last rendered, so assigning `input.value` directly is
+  // invisible to onChange; the prototype setter has to be called.
+  const proto = input.tagName === "TEXTAREA" ? dom.window.HTMLTextAreaElement : dom.window.HTMLInputElement;
+  Object.getOwnPropertyDescriptor(proto.prototype, "value").set.call(input, value);
 }
 
 async function fill(container, inputSelector, value) {
@@ -343,6 +378,24 @@ async function fillAndSubmit(container, formSelector, inputSelector, value) {
 
 function names(stub) {
   return stub.calls.map(call => call.name);
+}
+
+function calls(stub, name) {
+  return stub.calls.filter(call => call.name === name);
+}
+
+function rowFor(container, name) {
+  return [...container.querySelectorAll(".vr-pane-row")].find(
+    row => row.querySelector(".vr-pane-row__name")?.textContent === name
+  );
+}
+
+function rowAction(container, label) {
+  return container.querySelector(`button[aria-label="${label}"]`);
+}
+
+function inlineFormButton(container) {
+  return container.querySelector(".vr-pane-inline-form .vr-panel-action");
 }
 
 /* ------------------------------------------------------------------ files */
@@ -382,7 +435,12 @@ test("the files pane lists the workspace with folders first and flags what it wi
     ["restricted", "", "not previewable", ""]
   );
   assert.equal(rows[3].querySelector(".vr-pane-row__path").textContent, "120 B");
-  assert.equal(rows[2].disabled, true, "an unreadable file cannot be opened");
+  assert.equal(
+    rowFor(container, "big.bin").querySelector(".vr-pane-row__main").disabled,
+    true,
+    "an unreadable file cannot be opened"
+  );
+  assert.equal(rowFor(container, "src/").querySelector(".vr-pane-row__main").disabled, false);
 });
 
 test("the files pane navigates into a folder and back out", async () => {
@@ -456,6 +514,303 @@ test("the files pane surfaces the native refusal instead of an empty list", asyn
     })
   });
   assert.match(container.querySelector(".vr-inline-error").textContent, /outside the selected workspace/);
+});
+
+test("the files pane creates a real folder inside the one being browsed", async () => {
+  const { container, workspace, state } = await setup(FilesPane, {
+    tab: "files",
+    workspaceBridge: recorder({
+      tree: () => TREE,
+      makeDirectory: () => ({ path: "src/docs", kind: "directory", size: 0 })
+    })
+  });
+  await click(findButton(container, "src/"));
+  await click(findButton(container, "New folder in this location"));
+  await fillAndSubmit(container, ".vr-pane-inline-form", 'input[aria-label="New folder name"]', "docs");
+
+  assert.deepEqual(calls(workspace, "makeDirectory"), [
+    { name: "makeDirectory", owner: "user-1", id: "ws-1", path: "src/docs" }
+  ]);
+  assert.match(container.textContent, /src\/docs was created on disk/);
+  assert.deepEqual(state.touched, ["ws-1"], "a folder that now exists tells the explorer to re-read disk");
+});
+
+test("a new file is created empty at the browsed location", async () => {
+  const { container, workspace, state } = await setup(FilesPane, {
+    tab: "files",
+    workspaceBridge: recorder({
+      tree: () => TREE,
+      createFile: () => ({ path: "index.html", kind: "file", size: 0 })
+    })
+  });
+  await click(findButton(container, "New file in this location"));
+  await fillAndSubmit(container, ".vr-pane-inline-form", 'input[aria-label="New file name"]', "index.html");
+
+  assert.deepEqual(calls(workspace, "createFile"), [
+    { name: "createFile", owner: "user-1", id: "ws-1", path: "index.html", content: "" }
+  ]);
+  assert.equal(state.touched.length, 1);
+  assert.equal(container.querySelector(".vr-pane-inline-form"), null, "the form closes once the file exists");
+});
+
+test("a name Windows would reject is stopped before anything reaches the disk", async () => {
+  const { container, workspace, state } = await setup(FilesPane, {
+    tab: "files",
+    workspaceBridge: recorder({ tree: () => TREE })
+  });
+  await click(findButton(container, "New folder in this location"));
+  const name = 'input[aria-label="New folder name"]';
+
+  await fillAndSubmit(container, ".vr-pane-inline-form", name, "con");
+  assert.match(container.querySelector(".vr-inline-error").textContent, /Windows reserves that name/);
+
+  await fillAndSubmit(container, ".vr-pane-inline-form", name, "src/../../Windows");
+  assert.match(container.querySelector(".vr-inline-error").textContent, /cannot contain/);
+
+  assert.equal(calls(workspace, "makeDirectory").length, 0, "an illegal name must not be sent to the native layer");
+  assert.deepEqual(state.touched, [], "nothing was created, so nothing reloads");
+  assert.ok(container.querySelector(".vr-pane-inline-form"), "the form stays open so the name can be fixed");
+});
+
+test("rename sends only the new single segment for the chosen entry", async () => {
+  const { container, workspace, state } = await setup(FilesPane, {
+    tab: "files",
+    workspaceBridge: recorder({
+      tree: () => TREE,
+      renamePath: () => ({ path: "NOTES.md", kind: "file", size: 120 })
+    })
+  });
+  await click(rowAction(container, "Rename README.md"));
+  assert.equal(container.querySelector('input[aria-label="New name"]').value, "README.md");
+
+  await fill(container, 'input[aria-label="New name"]', "NOTES.md");
+  await click(inlineFormButton(container));
+
+  assert.deepEqual(calls(workspace, "renamePath"), [
+    { name: "renamePath", owner: "user-1", id: "ws-1", path: "README.md", newName: "NOTES.md" }
+  ]);
+  assert.match(container.textContent, /README.md is now named NOTES.md/);
+  assert.equal(state.touched.length, 1);
+});
+
+test("move normalises the destination and refuses a folder outside the project", async () => {
+  const { container, workspace, state } = await setup(FilesPane, {
+    tab: "files",
+    workspaceBridge: recorder({
+      tree: () => TREE,
+      movePath: () => ({ path: "src/README.md", kind: "file", size: 120 })
+    })
+  });
+  await click(rowAction(container, "Move README.md"));
+  await fill(container, 'input[aria-label="Destination folder"]', "src\\");
+  await click(inlineFormButton(container));
+
+  assert.deepEqual(calls(workspace, "movePath"), [
+    { name: "movePath", owner: "user-1", id: "ws-1", path: "README.md", directory: "src" }
+  ]);
+
+  await click(rowAction(container, "Move README.md"));
+  await fill(container, 'input[aria-label="Destination folder"]', "C:\\Windows");
+  await click(inlineFormButton(container));
+
+  assert.match(container.querySelector(".vr-inline-error").textContent, /Choose a folder inside this project/);
+  assert.equal(calls(workspace, "movePath").length, 1, "a destination outside the project is never sent");
+  assert.equal(state.touched.length, 1, "the refused move reports no change");
+});
+
+test("delete is confirmed first and only then removes the real path", async () => {
+  const { container, workspace, state } = await setup(FilesPane, {
+    tab: "files",
+    workspaceBridge: recorder({
+      tree: () => TREE,
+      deletePath: () => ({ path: "src", kind: "directory", removed: true })
+    })
+  });
+  await click(rowAction(container, "Delete src"));
+  const confirm = container.querySelector(".vr-pane-confirm");
+  assert.ok(confirm, "a destructive action asks before it acts");
+  assert.match(confirm.textContent, /Delete src and everything inside it from disk/);
+  assert.deepEqual(calls(workspace, "deletePath"), []);
+
+  await click(confirm.querySelector(".vr-link-btn"));
+  assert.equal(container.querySelector(".vr-pane-confirm"), null);
+  assert.deepEqual(calls(workspace, "deletePath"), [], "keeping the folder must send nothing");
+
+  await click(rowAction(container, "Delete src"));
+  await click(container.querySelector(".vr-pane-confirm__danger"));
+
+  assert.deepEqual(calls(workspace, "deletePath"), [
+    { name: "deletePath", owner: "user-1", id: "ws-1", path: "src" }
+  ]);
+  assert.match(container.textContent, /src was deleted from disk/);
+  assert.deepEqual(state.touched, ["ws-1"]);
+});
+
+test("editing a file writes the typed text back to the same path", async () => {
+  const { container, workspace, state } = await setup(FilesPane, {
+    tab: "files",
+    workspaceBridge: recorder({
+      tree: () => TREE,
+      readText: () => ({ path: "README.md", content: "# Demo\n", size: 8, truncated: false }),
+      writeFile: () => ({ path: "README.md", size: 40 })
+    })
+  });
+  await click(findButton(container, "README.md"));
+  await click(findButton(container, "Edit this file"));
+  await fill(container, "textarea.vr-file-editor", "# Notes\n\nWritten in the panel.\n");
+  await click(findButton(container, "Save"));
+
+  assert.deepEqual(calls(workspace, "writeFile"), [
+    { name: "writeFile", owner: "user-1", id: "ws-1", path: "README.md", content: "# Notes\n\nWritten in the panel.\n" }
+  ]);
+  assert.match(container.textContent, /README.md saved to disk/);
+  assert.equal(container.querySelector("textarea.vr-file-editor"), null, "the editor closes once the write is done");
+  assert.equal(state.touched.length, 1);
+});
+
+test("discarding keeps the file exactly as disk had it", async () => {
+  const { container, workspace, state } = await setup(FilesPane, {
+    tab: "files",
+    workspaceBridge: recorder({
+      tree: () => TREE,
+      readText: () => ({ path: "README.md", content: "# Demo\n", size: 8, truncated: false })
+    })
+  });
+  await click(findButton(container, "README.md"));
+  await click(findButton(container, "Edit this file"));
+  await fill(container, "textarea.vr-file-editor", "throwaway");
+  await click(findButton(container, "Discard edits"));
+
+  assert.equal(container.querySelector(".vr-file-preview__body").textContent, "# Demo\n");
+  assert.deepEqual(calls(workspace, "writeFile"), []);
+  assert.deepEqual(state.touched, []);
+});
+
+test("a truncated preview cannot be edited because saving would drop the tail", async () => {
+  const { container, workspace } = await setup(FilesPane, {
+    tab: "files",
+    workspaceBridge: recorder({
+      tree: () => TREE,
+      readText: () => ({ path: "README.md", content: "# only the first part", size: 4_000_000, truncated: true })
+    })
+  });
+  await click(findButton(container, "README.md"));
+  const edit = findButton(container, "Edit");
+  assert.equal(edit.disabled, true, "saving a partial read would overwrite the rest of the file");
+  assert.match(edit.getAttribute("title"), /Too large to edit safely/);
+  assert.equal(container.querySelector("textarea.vr-file-editor"), null);
+  assert.deepEqual(calls(workspace, "writeFile"), []);
+});
+
+test("an agent write re-reads the folder the pane is actually showing", async () => {
+  const nested = { ...TREE, path: "src", entries: [fileEntry("app.js", "src/app.js", "file", 10)] };
+  const { container, workspace, state, refresh } = await setup(FilesPane, {
+    tab: "files",
+    workspaceBridge: recorder({ tree: args => (args.path === "src" ? nested : TREE) })
+  });
+  await click(findButton(container, "src/"));
+  const before = calls(workspace, "tree").length;
+
+  // Exactly what the chat page does when a native write finishes.
+  state.touchWorkspace("ws-1");
+  await refresh();
+
+  assert.ok(calls(workspace, "tree").length > before, "the listing must be read again from disk");
+  assert.deepEqual(calls(workspace, "tree").at(-1).path, "src", "the current folder is re-read, not the root");
+});
+
+test("a file already open in the preview is re-read when it changes on disk", async () => {
+  let reads = 0;
+  const { container, workspace, state, refresh } = await setup(FilesPane, {
+    tab: "files",
+    workspaceBridge: recorder({
+      tree: () => TREE,
+      readText: () => {
+        reads += 1;
+        return { path: "README.md", content: reads === 1 ? "# Demo\n" : "# Changed by the agent\n", size: 8, truncated: false };
+      }
+    })
+  });
+  await click(findButton(container, "README.md"));
+  assert.match(container.querySelector(".vr-file-preview__body").textContent, /# Demo/);
+
+  state.touchWorkspace("ws-1");
+  await refresh();
+
+  assert.deepEqual(calls(workspace, "readText").map(call => call.path), ["README.md", "README.md"]);
+  assert.match(container.querySelector(".vr-file-preview__body").textContent, /Changed by the agent/);
+});
+
+test("a background reload never overwrites text the user has not saved", async () => {
+  const { container, workspace, state, refresh } = await setup(FilesPane, {
+    tab: "files",
+    workspaceBridge: recorder({
+      tree: () => TREE,
+      readText: () => ({ path: "README.md", content: "# Demo\n", size: 8, truncated: false })
+    })
+  });
+  await click(findButton(container, "README.md"));
+  await click(findButton(container, "Edit this file"));
+  await fill(container, "textarea.vr-file-editor", "# half written by me");
+
+  state.touchWorkspace("ws-1");
+  await refresh();
+
+  assert.equal(calls(workspace, "readText").length, 1, "an unsaved edit must not be replaced by the disk copy");
+  assert.equal(container.querySelector("textarea.vr-file-editor").value, "# half written by me");
+});
+
+test("a change to a different workspace does not reload this folder", async () => {
+  const { workspace, state, refresh } = await setup(FilesPane, {
+    tab: "files",
+    workspaceBridge: recorder({ tree: () => TREE })
+  });
+  const before = calls(workspace, "tree").length;
+
+  state.touchWorkspace("ws-9");
+  await refresh();
+
+  assert.equal(calls(workspace, "tree").length, before, "another project's files must not disturb this pane");
+});
+
+test("a refused write is reported as a refusal, not as a change", async () => {
+  const { container, workspace, state } = await setup(FilesPane, {
+    tab: "files",
+    workspaceBridge: recorder({
+      tree: () => TREE,
+      makeDirectory: () => Promise.reject(new Error("A file named docs already exists here."))
+    })
+  });
+  await click(findButton(container, "New folder in this location"));
+  await fillAndSubmit(container, ".vr-pane-inline-form", 'input[aria-label="New folder name"]', "docs");
+
+  assert.match(container.querySelector(".vr-inline-error").textContent, /A file named docs already exists here/);
+  assert.equal(calls(workspace, "makeDirectory").length, 1, "the attempt was really made");
+  assert.equal(container.textContent.includes("was created on disk"), false, "a failure must not claim a file exists");
+  assert.deepEqual(state.touched, [], "nothing changed on disk, so the explorer must not pretend it did");
+  assert.ok(container.querySelector(".vr-pane-inline-form"), "the form stays open to be corrected");
+});
+
+test("the refresh button re-reads disk without waiting for a change", async () => {
+  const { container, workspace } = await setup(FilesPane, {
+    tab: "files",
+    workspaceBridge: recorder({ tree: () => TREE })
+  });
+  const before = calls(workspace, "tree").length;
+  await click(findButton(container, "Refresh files"));
+  assert.equal(calls(workspace, "tree").length, before + 1);
+});
+
+test("row operations stay reachable without a mouse", () => {
+  const css = readFileSync(path.join(panelDir, "workspacePanel.css"), "utf8");
+  assert.match(
+    css,
+    /\.vr-pane-row:focus-within\s+\.vr-pane-row__actions\s*\{[^}]*opacity:\s*1/,
+    "Rename, Move and Delete must appear on keyboard focus, not only on hover"
+  );
+  for (const selector of [".vr-pane-row__main", ".vr-pane-inline-form", ".vr-pane-confirm", ".vr-file-editor"]) {
+    assert.ok(css.includes(selector), `missing ${selector}`);
+  }
 });
 
 /* ----------------------------------------------------------------- review */

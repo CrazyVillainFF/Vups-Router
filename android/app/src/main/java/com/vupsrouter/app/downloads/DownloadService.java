@@ -449,7 +449,6 @@ public class DownloadService extends Service {
         String title;
         String text;
         String subText = null;
-        int smallIcon = android.R.drawable.stat_sys_download;
 
         if (DownloadRecord.STATUS_QUEUED.equals(record.status)) {
             title = "Downloading file";
@@ -467,20 +466,17 @@ public class DownloadService extends Service {
             title = "Download complete";
             text = record.filename;
             subText = "Tap to open";
-            smallIcon = android.R.drawable.stat_sys_download_done;
         } else if (DownloadRecord.STATUS_CANCELLED.equals(record.status)) {
             title = "Download cancelled";
             text = record.filename;
-            smallIcon = android.R.drawable.stat_notify_error;
         } else {
             title = "Download failed";
             text = record.filename;
             subText = record.error == null ? "Tap to retry" : record.error + " Tap to retry.";
-            smallIcon = android.R.drawable.stat_notify_error;
         }
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(smallIcon)
+                .setSmallIcon(com.vupsrouter.app.R.drawable.ic_stat_vupsrouter)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(subText == null ? text : text + "\n" + subText))

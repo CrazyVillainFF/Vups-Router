@@ -29,6 +29,22 @@ import {
 } from "./automations.js";
 import { usePreferences } from "./PreferencesContext.jsx";
 import { useTasks } from "./TaskContext.jsx";
+import {
+  ensureStorageRoot,
+  openStorageRoot,
+  readStorageStatus,
+  revealStorageRoot
+} from "./workspaceBridge.js";
+import { storageView } from "./workspaceStorage.js";
+import {
+  installSkill,
+  pickSkillSource,
+  readSkills,
+  rescanSkills,
+  setSkillEnabled,
+  uninstallSkill
+} from "./skillsBridge.js";
+import { skillsView } from "./skillsView.js";
 
 function storage() {
   if (typeof window === "undefined") return null;
@@ -39,7 +55,7 @@ function storage() {
   }
 }
 
-function DesktopPage({ kicker, title, description, actions, children }) {
+export function DesktopPage({ kicker, title, description, actions, children }) {
   return (
     <main className="vr-page" id="main-content">
       <div className="vr-page-shell">
@@ -196,6 +212,403 @@ function FolderAccessSection() {
   );
 }
 
+export function WorkspaceStorageSection() {
+  const [status, setStatus] = useState(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
+  const native = isTauriRuntime();
+
+  const refresh = useCallback(async () => {
+    if (!native) return;
+    setBusy("read");
+    setError("");
+    try {
+      setStatus(await readStorageStatus());
+    } catch (readError) {
+      setError(readError.message);
+    } finally {
+      setBusy("");
+    }
+  }, [native]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  // One action per button: the command that performs it runs natively, then the
+  // status is read again so the panel shows what Windows reported after the
+  // action rather than what it reported before.
+  async function act(button, action) {
+    setBusy(button);
+    setError("");
+    try {
+      await action();
+      setStatus(await readStorageStatus());
+    } catch (actionError) {
+      setError(actionError.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  if (!native) {
+    return (
+      <section className="vr-settings-group">
+        <h2>Workspace storage</h2>
+        <div className="vr-setting-row">
+          <span className="vr-setting-copy">
+            <strong>VupsRouter folder</strong>
+            <span>
+              The Windows app keeps projects, skills, plugins and logs in the Documents folder that
+              Windows reports for this account. A website session has no folder of its own.
+            </span>
+          </span>
+          <span className="vr-setting-badge">Windows app only</span>
+        </div>
+      </section>
+    );
+  }
+
+  const view = storageView(status);
+
+  return (
+    <section className="vr-settings-group">
+      <h2>Workspace storage</h2>
+      {[...new Set([error, view.error].filter(Boolean))].map(problem => (
+        <p key={problem} className="vr-inline-error">
+          {problem}
+        </p>
+      ))}
+      <div className="vr-setting-row">
+        <span className="vr-setting-copy">
+          <strong>VupsRouter folder</strong>
+          <span title={view.path}>{view.path || "Windows has not reported a Documents folder yet."}</span>
+          <span>{view.detail}</span>
+          {view.otherLayout ? (
+            <span title={view.otherLayout}>
+              An older VupsRouter folder is still at {view.otherLayout}. VupsRouter follows the
+              Documents folder Windows reports and never moves that work.
+            </span>
+          ) : null}
+          {view.note ? <span>{view.note}</span> : null}
+        </span>
+        <span className="vr-setting-badge">{view.label}</span>
+      </div>
+
+      <ul className="vr-grant-list">
+        {view.rows.map((row) => (
+          <li key={`${row.name}-${row.path}`}>
+            <span className="vr-setting-copy">
+              <strong>{row.name}</strong>
+              <span title={row.path}>{row.path}</span>
+              <span>{row.state === "folder" ? "Ready" : `Not a usable folder (${row.state})`}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <div className="vr-form-actions">
+        <button
+          type="button"
+          className="vr-secondary-small"
+          disabled={busy !== ""}
+          onClick={() => act("open", () => openStorageRoot())}
+        >
+          {busy === "open" ? "Opening…" : "Open folder"}
+        </button>
+        <button
+          type="button"
+          className="vr-secondary-small"
+          disabled={busy !== "" || !view.canOpen}
+          onClick={() => act("reveal", () => revealStorageRoot())}
+        >
+          {busy === "reveal" ? "Revealing…" : "Reveal in Explorer"}
+        </button>
+        <button
+          type="button"
+          className="vr-primary-small"
+          disabled={busy !== ""}
+          onClick={() => act("ensure", () => ensureStorageRoot())}
+        >
+          {busy === "ensure" ? "Checking…" : "Re-check folders"}
+        </button>
+      </div>
+
+      {view.logs.length > 0 ? (
+        <div className="vr-setting-hint">
+          {view.logs.slice(-20).map((line, index) => (
+            <span key={`${index}-${line}`}>{line}</span>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+export function SkillsSection() {
+  const [status, setStatus] = useState(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
+  // The engine refuses a second package that claims an identifier already
+  // installed. Its answer is the only reason to offer replacing, so the chosen
+  // path is kept here until the user says whether they meant to overwrite.
+  const [replaceSource, setReplaceSource] = useState("");
+  const [removeTarget, setRemoveTarget] = useState(null);
+  const native = isTauriRuntime();
+
+  const refresh = useCallback(async () => {
+    if (!native) return;
+    setBusy("read");
+    setError("");
+    try {
+      setStatus(await readSkills());
+    } catch (readError) {
+      setError(readError.message);
+    } finally {
+      setBusy("");
+    }
+  }, [native]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  async function act(button, action) {
+    setBusy(button);
+    setError("");
+    try {
+      setStatus(await action());
+      setReplaceSource("");
+    } catch (actionError) {
+      setError(actionError.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  // One native folder picker, then one install. Cancelling the picker changes
+  // nothing at all: no command runs, so no half-installed package is left.
+  // It is declared after the website branch below, so no browser session can
+  // reach a command it has no folder to run against.
+
+  if (!native) {
+    return (
+      <section className="vr-settings-group">
+        <h2>Skills</h2>
+        <div className="vr-setting-row">
+          <span className="vr-setting-copy">
+            <strong>Skill packages</strong>
+            <span>
+              A skill is a folder of written instructions VupsRouter reads while it works. The
+              Windows app keeps them in its own Skills folder, validates each one before offering it,
+              and loads a package only when its description matches the task. A website session has
+              no local skills to read.
+            </span>
+          </span>
+          <span className="vr-setting-badge">Windows app only</span>
+        </div>
+      </section>
+    );
+  }
+
+  const view = skillsView(status);
+
+  async function install({ archive }) {
+    setBusy(archive ? "archive" : "folder");
+    setError("");
+    setReplaceSource("");
+    let source = "";
+    try {
+      source = await pickSkillSource({ archive });
+      if (!source) return;
+      setStatus(await installSkill(source, { overwrite: false }));
+      setReplaceSource("");
+    } catch (installError) {
+      setError(installError.message);
+      // The engine only says "Choose replace" in its two duplicate-install
+      // rejections, so the button appears for exactly those and nothing else.
+      // `skill_duplicate_id` is deliberately absent: it means two folders on
+      // disk claim one id, and replacing either one is not the engine's call.
+      if (/skill_already_installed|skill_version_conflict/.test(installError.message)) {
+        setReplaceSource(source);
+      }
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <section className="vr-settings-group">
+      <h2>Skills</h2>
+      {[...new Set([error, view.error].filter(Boolean))].map(problem => (
+        <p key={problem} className="vr-inline-error">
+          {problem}
+        </p>
+      ))}
+      <div className="vr-setting-row">
+        <span className="vr-setting-copy">
+          <strong>Skills folder</strong>
+          <span title={view.rootPath}>
+            {view.rootPath || "Windows has not reported a Skills folder for this user yet."}
+          </span>
+          <span>{view.detail}</span>
+          <span>{view.scanLine}</span>
+          {view.lastScanLine ? <span>{view.lastScanLine}</span> : null}
+          {view.note ? <span>{view.note}</span> : null}
+        </span>
+        <span className="vr-setting-badge">{view.label}</span>
+      </div>
+
+      {view.action ? (
+        <p className="vr-setting-hint" role="status">
+          {view.action}
+        </p>
+      ) : null}
+
+      {view.rows.length === 0 ? (
+        <p className="vr-setting-hint">
+          Nothing is installed here yet. A package folder or a .zip you choose below is validated
+          before it is used, and {view.usable.length} skills are available to the assistant now.
+        </p>
+      ) : (
+        <ul className="vr-grant-list">
+          {view.rows.map((row) => (
+            <li key={`${row.id}-${row.path}`}>
+              <span className="vr-setting-copy">
+                <strong>
+                  {row.name}
+                  {row.version ? ` · ${row.version}` : ""}
+                </strong>
+                {row.description ? <span>{row.description}</span> : null}
+                <span title={row.path}>{row.path}</span>
+                <span>
+                  {row.state === "ready"
+                    ? "Usable by the assistant"
+                    : row.state === "disabled"
+                      ? "Switched off — the assistant cannot load it"
+                      : row.state === "conflict"
+                        ? "Another package already claims this identifier"
+                        : row.state === "invalid"
+                          ? "Rejected by the validator"
+                          : `Unrecognised state (${row.state})`}
+                </span>
+                {row.instructionsPath ? (
+                  <span>
+                    Instruction file {row.instructionsPath} ({row.bytes} bytes)
+                  </span>
+                ) : null}
+                {row.references.length > 0 ? (
+                  <span>Reference files: {row.references.join(", ")}</span>
+                ) : null}
+                {row.integrityLabel ? <span>{row.integrityLabel}</span> : null}
+                <span>
+                  {row.permissions.length > 0
+                    ? `Permissions it declares: ${row.permissions.join(", ")}`
+                    : "This package declares no permissions."}
+                </span>
+                {row.errors.map(problem => (
+                  <span key={problem} className="vr-inline-error">
+                    {problem}
+                  </span>
+                ))}
+                {row.sourceKind ? <span>Installed from {row.sourceKind}.</span> : null}
+              </span>
+              <span className="vr-setting-badge">{row.errorCode || row.state}</span>
+              <span className="vr-form-actions">
+                {row.enabled ? (
+                  <button
+                    type="button"
+                    className="vr-secondary-small"
+                    disabled={busy !== ""}
+                    onClick={() => act(`switch-${row.id}`, () => setSkillEnabled(row.id, false))}
+                  >
+                    {busy === `switch-${row.id}` ? "Switching…" : "Switch off"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="vr-secondary-small"
+                    disabled={busy !== "" || row.status !== "ready"}
+                    onClick={() => act(`switch-${row.id}`, () => setSkillEnabled(row.id, true))}
+                  >
+                    {busy === `switch-${row.id}` ? "Switching…" : "Switch on"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="vr-secondary-small"
+                  disabled={busy !== ""}
+                  onClick={() => setRemoveTarget(row)}
+                >
+                  Remove
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="vr-form-actions">
+        <button
+          type="button"
+          className="vr-secondary-small"
+          disabled={busy !== ""}
+          onClick={() => install({ archive: false })}
+        >
+          {busy === "folder" ? "Validating…" : "Install from a folder"}
+        </button>
+        <button
+          type="button"
+          className="vr-secondary-small"
+          disabled={busy !== ""}
+          onClick={() => install({ archive: true })}
+        >
+          {busy === "archive" ? "Validating…" : "Install a .zip package"}
+        </button>
+        <button
+          type="button"
+          className="vr-secondary-small"
+          disabled={busy !== ""}
+          onClick={() => act("scan", () => rescanSkills())}
+        >
+          {busy === "scan" ? "Reading…" : "Re-scan the folder"}
+        </button>
+        {replaceSource ? (
+          <button
+            type="button"
+            className="vr-primary-small"
+            disabled={busy !== ""}
+            onClick={() => act("replace", () => installSkill(replaceSource, { overwrite: true }))}
+          >
+            {busy === "replace" ? "Replacing…" : "Replace the existing package"}
+          </button>
+        ) : null}
+      </div>
+
+      <p className="vr-setting-hint">
+        VupsRouter only reads the text a package contains. It never runs a script from a skill, and a
+        package cannot grant itself permissions or change what you have to approve — an instruction
+        file is data, not a policy. Skills are loaded into a task only after their own description
+        matches what you asked for.
+      </p>
+
+      <HoldToDeleteDialog
+        open={Boolean(removeTarget)}
+        title="Remove this skill package?"
+        itemName={removeTarget ? `${removeTarget.name} (${removeTarget.id})` : ""}
+        description="VupsRouter deletes only this one package folder from its Skills folder. Other packages, your own files in that folder, and every task already written are left untouched."
+        successMessage="Skill package removed."
+        onCancel={() => setRemoveTarget(null)}
+        onConfirm={async () => {
+          if (!removeTarget) return;
+          setStatus(await uninstallSkill(removeTarget.id));
+          setRemoveTarget(null);
+        }}
+      />
+    </section>
+  );
+}
+
 export function AppSettingsPage() {
   const { preferences, update, reset } = usePreferences();
   return (
@@ -255,6 +668,9 @@ export function AppSettingsPage() {
           onChange={value => update("startSidebarCollapsed", value)}
         />
       </section>
+
+      <WorkspaceStorageSection />
+      <SkillsSection />
 
       <FolderAccessSection />
 

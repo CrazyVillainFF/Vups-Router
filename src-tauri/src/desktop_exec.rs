@@ -50,7 +50,7 @@ fn truncate_chars(value: &str, limit: usize) -> String {
     value.chars().take(limit).collect()
 }
 
-fn strip_verbatim(path: &Path) -> PathBuf {
+pub(crate) fn strip_verbatim(path: &Path) -> PathBuf {
     let raw = path.to_string_lossy();
     if let Some(stripped) = raw.strip_prefix(r"\\?\UNC\") {
         return PathBuf::from(format!(r"\\{stripped}"));
@@ -61,11 +61,11 @@ fn strip_verbatim(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
-fn display_path(path: &Path) -> String {
+pub(crate) fn display_path(path: &Path) -> String {
     strip_verbatim(path).to_string_lossy().to_string()
 }
 
-fn os_detail(error: &std::io::Error) -> String {
+pub(crate) fn os_detail(error: &std::io::Error) -> String {
     truncate_chars(error.to_string().trim(), 220)
 }
 

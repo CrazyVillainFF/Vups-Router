@@ -40,7 +40,7 @@ test("a native result that arrives after Stop is never handed back to the model"
   const original = apiClient.post;
   const calls = [];
   const chunks = [];
-  const activity = [];
+  const rows = [];
   const controller = new AbortController();
   let resolveTool;
 
@@ -59,7 +59,7 @@ test("a native result that arrives after Stop is never handed back to the model"
           resolveTool = resolve;
         }),
       onChunk: chunk => chunks.push(chunk),
-      onActivity: entry => activity.push(entry.message)
+      onProgress: batch => rows.push(...batch)
     });
 
     await waitFor(() => typeof resolveTool === "function");
@@ -73,9 +73,12 @@ test("a native result that arrives after Stop is never handed back to the model"
     });
     assert.equal(calls.length, 1, "no model request follows the stopped tool");
     assert.deepEqual(chunks, [], "nothing is painted as the answer");
-    assert.ok(activity.some(line => /running/.test(line)));
     assert.ok(
-      !activity.some(line => /completed|failed/.test(line)),
+      rows.some(row => row.callId === "call_slow" && row.status === "running"),
+      "the call the app started is on screen as it really is"
+    );
+    assert.ok(
+      !rows.some(row => row.callId === "call_slow" && row.status !== "running"),
       "the abandoned call is never reported as finished work"
     );
   } finally {
@@ -87,7 +90,7 @@ test("Stop between two calls in one tool round runs nothing after the stop", asy
   const original = apiClient.post;
   const calls = [];
   const chunks = [];
-  const activity = [];
+  const rows = [];
   const executed = [];
   const controller = new AbortController();
   let rejectSecond;
@@ -114,7 +117,7 @@ test("Stop between two calls in one tool round runs nothing after the stop", asy
         });
       },
       onChunk: chunk => chunks.push(chunk),
-      onActivity: entry => activity.push(entry.message)
+      onProgress: batch => rows.push(...batch)
     });
 
     await waitFor(() => executed.length === 2);
@@ -128,7 +131,14 @@ test("Stop between two calls in one tool round runs nothing after the stop", asy
     assert.deepEqual(executed, ["C:\\one", "C:\\two"], "the third call never starts");
     assert.equal(calls.length, 1, "the stopped round sends no write-up request");
     assert.deepEqual(chunks, []);
-    assert.ok(activity.some(line => /completed/.test(line)), "the finished call keeps its real status");
+    assert.ok(
+      rows.some(row => row.callId === "call_one" && row.status === "completed"),
+      "the finished call keeps its real status"
+    );
+    assert.ok(
+      !rows.some(row => row.callId === "call_two" && row.status !== "running"),
+      "the call Stop interrupted is not settled as work done"
+    );
   } finally {
     apiClient.post = original;
   }
@@ -156,8 +166,10 @@ test("a Stop during the running notice prevents the announced call from executin
         executed.push(args.path);
         return Promise.resolve({ ok: true, data: { path: args.path, entries: [] } });
       },
-      onActivity: entry => {
-        if (/— running/.test(entry.message)) controller.abort();
+      onProgress: batch => {
+        if (batch.some(row => row.callId === "call_notice" && row.status === "running")) {
+          controller.abort();
+        }
       }
     });
 
@@ -309,7 +321,7 @@ test("the desktop loop rechecks the signal before and after every native call", 
   const checks = body.match(/if \(signal\?\.aborted\) throw abortError\(\);/g) || [];
   assert.equal(checks.length, 3, "before the notice, after the notice, and after the native result");
   assert.ok(
-    body.indexOf("— running") < body.indexOf("await executeTool(tool, args)"),
+    body.indexOf('status: "running"') < body.indexOf("await executeTool(tool, args)"),
     "the pre-execution check sits between the notice and the native call"
   );
 });

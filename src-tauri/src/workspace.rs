@@ -4,6 +4,7 @@ use std::{
     fs,
     path::{Component, Path, PathBuf},
     process::Command,
+    sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Manager};
@@ -13,6 +14,8 @@ const STORE_VERSION: u32 = 1;
 const MAX_OWNER_LEN: usize = 128;
 const MAX_TITLE_CHARS: usize = 60;
 const MAX_PATH_CHARS: usize = 1024;
+const MAX_SEGMENT_CHARS: usize = 120;
+const MAX_WRITE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_SCAN_ENTRIES: usize = 1000;
 const MAX_SCAN_DEPTH: usize = 8;
 const MAX_READ_BYTES: u64 = 128 * 1024;
@@ -96,6 +99,15 @@ pub struct TreeResult {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MutationResult {
+    path: String,
+    kind: String,
+    size: u64,
+    modified_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SearchHit {
     path: String,
     name: String,
@@ -159,7 +171,7 @@ pub(crate) fn normalize_owner(owner: &str) -> Result<String, String> {
     Ok(owner.to_string())
 }
 
-fn normalize_title(title: &str) -> Result<String, String> {
+pub(crate) fn normalize_title(title: &str) -> Result<String, String> {
     let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
     if title.is_empty() {
         return Err("Enter a workspace name.".into());
@@ -184,6 +196,53 @@ fn store_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|_| "Local workspace storage is unavailable.".to_string())
 }
 
+/// Workspace mutations are read-modify-write over one JSON file, so every
+/// load→change→save sequence holds this lock. Without it two commands started
+/// in the same second would each write a whole store from a stale snapshot and
+/// the later one would silently drop the earlier registration.
+static STORE_LOCK: Mutex<()> = Mutex::new(());
+
+fn store_guard() -> std::sync::MutexGuard<'static, ()> {
+    STORE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Canonical Windows paths come back with a verbatim `\\?\` prefix. It is what
+/// makes path comparisons exact, but it must never reach the store or the UI —
+/// users read that as a broken path.
+fn friendly_path(path: &Path) -> String {
+    let raw = path.to_string_lossy();
+    if let Some(unc) = raw.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{unc}");
+    }
+    raw.strip_prefix(r"\\?\")
+        .or_else(|| raw.strip_prefix(r"\\.\"))
+        .unwrap_or(raw.as_ref())
+        .to_string()
+}
+
+fn normalize_stored_path(path: &str) -> String {
+    friendly_path(Path::new(path.trim()))
+}
+
+fn comparable_path(path: &str) -> String {
+    let normalized = normalize_stored_path(path);
+    let trimmed = normalized.trim_end_matches(|character| {
+        character == '/' || character == '\\'
+    });
+    if trimmed.is_empty() {
+        normalized
+    } else {
+        trimmed.to_string()
+    }
+    .to_ascii_lowercase()
+}
+
+fn same_stored_path(left: &str, right: &str) -> bool {
+    comparable_path(left) == comparable_path(right)
+}
+
 fn load_store(app: &AppHandle) -> Result<WorkspaceStore, String> {
     let path = store_path(app)?;
     if !path.exists() {
@@ -195,6 +254,14 @@ fn load_store(app: &AppHandle) -> Result<WorkspaceStore, String> {
         serde_json::from_str(&raw).map_err(|_| "Local workspace data is damaged.".to_string())?;
     if store.version != STORE_VERSION {
         store.version = STORE_VERSION;
+    }
+    // Builds before this change wrote canonical (verbatim) paths. Rewriting them
+    // on load is what lets the case-insensitive de-duplication below work for
+    // folders that are already registered.
+    for workspaces in store.owners.values_mut() {
+        for workspace in workspaces {
+            workspace.path = normalize_stored_path(&workspace.path);
+        }
     }
     Ok(store)
 }
@@ -208,12 +275,19 @@ fn save_store(app: &AppHandle, store: &WorkspaceStore) -> Result<(), String> {
         .map_err(|_| "Could not create local workspace storage.".to_string())?;
     let encoded = serde_json::to_vec_pretty(store)
         .map_err(|_| "Could not encode local workspaces.".to_string())?;
-    let temporary = path.with_extension("json.tmp");
-    fs::write(&temporary, encoded).map_err(|_| "Could not save local workspaces.".to_string())?;
-    if path.exists() {
-        fs::remove_file(&path).map_err(|_| "Could not update local workspaces.".to_string())?;
+    // A unique temporary name, then one rename: the previous fixed name let two
+    // owners collide, and deleting the real file first left a window in which a
+    // crash would cost every registered workspace.
+    let temporary = path.with_file_name(format!("workspaces-v1.{}.json.tmp", Uuid::new_v4()));
+    let result = (|| {
+        fs::write(&temporary, &encoded)
+            .map_err(|_| "Could not save local workspaces.".to_string())?;
+        fs::rename(&temporary, &path).map_err(|_| "Could not save local workspaces.".to_string())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
     }
-    fs::rename(&temporary, &path).map_err(|_| "Could not save local workspaces.".to_string())
+    result
 }
 
 fn find_workspace<'a>(
@@ -262,10 +336,63 @@ fn relative_path(root: &Path, path: &Path) -> Option<String> {
     Some(parts.join("/"))
 }
 
-fn within_root(root: &Path, path: &Path) -> bool {
-    path.canonicalize()
-        .map(|canonical| canonical.starts_with(root))
-        .unwrap_or(false)
+fn component_eq(left: &Component<'_>, right: &Component<'_>) -> bool {
+    match (left, right) {
+        (Component::Prefix(a), Component::Prefix(b)) => component_text(a.as_os_str()) == component_text(b.as_os_str()),
+        (Component::RootDir, Component::RootDir) => true,
+        (Component::CurDir, Component::CurDir) => true,
+        (Component::Normal(a), Component::Normal(b)) => component_text(a) == component_text(b),
+        _ => false,
+    }
+}
+
+fn component_text(value: &std::ffi::OsStr) -> String {
+    value.to_string_lossy().to_ascii_lowercase()
+}
+
+/// `Path::starts_with` compares bytes, so `c:\project` does not contain
+/// `C:\project\src` even though Windows treats those drives as the same letter.
+/// Every containment decision here is component-wise and case-folded.
+fn within_root(root: &Path, candidate: &Path) -> bool {
+    let mut root_parts = root.components();
+    let mut candidate_parts = candidate.components();
+    loop {
+        match (root_parts.next(), candidate_parts.next()) {
+            (None, _) => return true,
+            (Some(_), None) => return false,
+            (Some(left), Some(right)) => {
+                if !component_eq(&left, &right) {
+                    return false;
+                }
+            }
+        }
+    }
+}
+
+fn same_path(left: &Path, right: &Path) -> bool {
+    within_root(left, right) && within_root(right, left)
+}
+
+/// Junctions, mount points and symlinks all report as plain directories until
+/// they are followed, so a path is only inside the workspace while every
+/// existing ancestor is a real directory.
+fn reject_link_ancestors(path: &Path) -> Result<(), String> {
+    let mut cursor = path.to_path_buf();
+    loop {
+        if let Ok(metadata) = fs::symlink_metadata(&cursor) {
+            if metadata.file_type().is_symlink() {
+                return Err("That path passes through a link, which workspaces never follow.".into());
+            }
+        }
+        let Some(parent) = cursor.parent() else {
+            break;
+        };
+        if parent.as_os_str().is_empty() {
+            break;
+        }
+        cursor = parent.to_path_buf();
+    }
+    Ok(())
 }
 
 pub(crate) fn skipped_directory(name: &str) -> bool {
@@ -581,7 +708,7 @@ fn read_workspace_path_with(
     let canonical = candidate
         .canonicalize()
         .map_err(|_| "This file could not be read.".to_string())?;
-    if !canonical.starts_with(root) {
+    if !within_root(root, &canonical) {
         return Err("This file is outside the workspace.".into());
     }
     if metadata.len() > MAX_READ_BYTES {
@@ -637,10 +764,333 @@ fn resolve_workspace_directory(root: &Path, requested: &str) -> Result<PathBuf, 
     let canonical = candidate
         .canonicalize()
         .map_err(|_| "This workspace folder is unavailable.".to_string())?;
-    if !canonical.starts_with(root) {
+    if !within_root(root, &canonical) {
         return Err("That folder is outside the workspace.".into());
     }
     Ok(canonical)
+}
+
+/// A project folder name is the one piece of this flow the user types, so it is
+/// checked against what Windows itself refuses: path separators, the reserved
+/// characters, trailing dots and spaces, and the reserved device names.
+fn validate_segment(name: &str, max_chars: usize) -> Result<String, String> {
+    let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    if name.is_empty() {
+        return Err("Enter a name first.".into());
+    }
+    if name.chars().count() > max_chars {
+        return Err(format!("Keep the name to {max_chars} characters or fewer."));
+    }
+    if name == "." || name == ".." {
+        return Err("That name is reserved.".into());
+    }
+    if name.contains(['\\', '/', ':', '*', '?', '"', '<', '>', '|']) {
+        return Err("A name cannot contain \\ / : * ? \" < > |.".into());
+    }
+    if name.chars().any(|character| (character as u32) < 0x20) {
+        return Err("A name cannot contain control characters.".into());
+    }
+    if name.ends_with('.') || name.ends_with(' ') {
+        return Err("A name cannot end with a dot or a space.".into());
+    }
+    let stem = name.split('.').next().unwrap_or_default().to_ascii_lowercase();
+    if matches!(
+        stem.as_str(),
+        "con" | "prn" | "aux" | "nul"
+            | "com1"
+            | "com2"
+            | "com3"
+            | "com4"
+            | "com5"
+            | "com6"
+            | "com7"
+            | "com8"
+            | "com9"
+            | "lpt1"
+            | "lpt2"
+            | "lpt3"
+            | "lpt4"
+            | "lpt5"
+            | "lpt6"
+            | "lpt7"
+            | "lpt8"
+            | "lpt9"
+    ) {
+        return Err("Windows reserves that name.".into());
+    }
+    Ok(name)
+}
+
+fn mutation_parts(requested: &str) -> Result<Vec<String>, String> {
+    let parts = safe_components(requested)?;
+    if let Some(part) = parts.iter().find(|part| skipped_directory(part)) {
+        return Err(format!(
+            "{part} is managed outside VupsRouter, so it cannot be changed here."
+        ));
+    }
+    if parts.last().is_some_and(|part| sensitive_file(part)) {
+        return Err("Credential and key files are not edited from the workspace panel.".into());
+    }
+    Ok(parts)
+}
+
+fn candidate_under(root: &Path, parts: &[String]) -> PathBuf {
+    parts
+        .iter()
+        .fold(root.to_path_buf(), |path, part| path.join(part))
+}
+
+/// Re-checks the real path immediately before a mutation: the link guard above
+/// reads the path as asked, this one reads it as it exists now.
+fn confirm_inside(root: &Path, path: &Path) -> Result<PathBuf, String> {
+    reject_link_ancestors(path)?;
+    let canonical = path
+        .canonicalize()
+        .map_err(|_| "That path is no longer available.".to_string())?;
+    if !within_root(root, &canonical) {
+        return Err("That path is outside the workspace.".into());
+    }
+    Ok(canonical)
+}
+
+fn guard_text(content: &str) -> Result<(), String> {
+    if content.len() as u64 > MAX_WRITE_BYTES {
+        return Err("Keep saved files under 2 MB.".into());
+    }
+    if content.contains('\0') {
+        return Err("Only UTF-8 text files can be saved.".into());
+    }
+    Ok(())
+}
+
+/// A half-written file is worse than a failed save, so the new text is written
+/// beside the target and renamed over it.
+fn write_text_atomic(path: &Path, content: &str) -> Result<(), String> {
+    let name = path
+        .file_name()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let temporary = path.with_file_name(format!(".{name}.{}.tmp", Uuid::new_v4()));
+    let result = (|| {
+        fs::write(&temporary, content.as_bytes())
+            .map_err(|_| "Windows could not write that file.".to_string())?;
+        fs::rename(&temporary, path).map_err(|_| "Windows could not save that file.".to_string())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+fn mutation_result(root: &Path, canonical: &Path) -> Result<MutationResult, String> {
+    let metadata =
+        fs::symlink_metadata(canonical).map_err(|_| "The change could not be confirmed.".to_string())?;
+    let kind = if metadata.is_dir() {
+        "directory"
+    } else if metadata.is_file() {
+        "file"
+    } else {
+        "other"
+    };
+    Ok(MutationResult {
+        path: relative_display(root, canonical),
+        kind: kind.to_string(),
+        size: metadata.len(),
+        modified_at: modified_at(&metadata),
+    })
+}
+
+pub(crate) fn create_project_directory(parent: &Path, name: &str) -> Result<PathBuf, String> {
+    let folder = validate_segment(name, MAX_TITLE_CHARS)?;
+    let canonical_parent = canonical_directory(parent)
+        .map_err(|_| "That location no longer exists. Choose a folder that exists.".to_string())?;
+    if !canonical_parent
+        .components()
+        .any(|component| matches!(component, Component::Normal(_)))
+    {
+        return Err("Windows does not let a project sit at a drive or network root. Choose a folder inside the drive.".into());
+    }
+    let target = canonical_parent.join(&folder);
+    if fs::symlink_metadata(&target).is_ok() {
+        return Err(
+            "A folder with that name already exists there. Open the existing one instead."
+                .into(),
+        );
+    }
+    fs::create_dir_all(&target)
+        .map_err(|_| "Windows could not create the project folder. Check the location and try again.".to_string())?;
+    let canonical = canonical_directory(&target)
+        .map_err(|_| "The folder was created but Windows will not open it.".to_string())?;
+    if !within_root(&canonical_parent, &canonical) {
+        return Err("Windows redirected that location outside the folder you chose.".into());
+    }
+    Ok(canonical)
+}
+
+fn create_workspace_directory(root: &Path, requested: &str) -> Result<MutationResult, String> {
+    let parts = mutation_parts(requested)?;
+    let candidate = candidate_under(root, &parts);
+    if fs::symlink_metadata(&candidate).is_ok() {
+        return Err("A folder with that name already exists.".into());
+    }
+    reject_link_ancestors(&candidate)?;
+    fs::create_dir_all(&candidate).map_err(|_| "Windows could not create that folder.".to_string())?;
+    let canonical = confirm_inside(root, &candidate)?;
+    mutation_result(root, &canonical)
+}
+
+fn create_workspace_file(
+    root: &Path,
+    requested: &str,
+    content: &str,
+) -> Result<MutationResult, String> {
+    let parts = mutation_parts(requested)?;
+    guard_text(content)?;
+    let candidate = candidate_under(root, &parts);
+    if fs::symlink_metadata(&candidate).is_ok() {
+        return Err("A file with that name already exists — open it instead of replacing it.".into());
+    }
+    reject_link_ancestors(&candidate)?;
+    if let Some(parent) = candidate.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|_| "Windows could not create the folder for that file.".to_string())?;
+    }
+    write_text_atomic(&candidate, content)?;
+    let canonical = confirm_inside(root, &candidate)?;
+    mutation_result(root, &canonical)
+}
+
+fn write_workspace_file(root: &Path, requested: &str, content: &str) -> Result<MutationResult, String> {
+    let parts = mutation_parts(requested)?;
+    guard_text(content)?;
+    let candidate = candidate_under(root, &parts);
+    let metadata =
+        fs::symlink_metadata(&candidate).map_err(|_| "That file no longer exists.".to_string())?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err("Only regular files can be saved from the workspace panel.".into());
+    }
+    let canonical = confirm_inside(root, &candidate)?;
+    write_text_atomic(&canonical, content)?;
+    mutation_result(root, &canonical)
+}
+
+fn rename_workspace_path(root: &Path, requested: &str, new_name: &str) -> Result<MutationResult, String> {
+    let parts = mutation_parts(requested)?;
+    let candidate = candidate_under(root, &parts);
+    let canonical = confirm_inside(root, &candidate)?;
+    if relative_path(root, &canonical).is_none() {
+        return Err("The workspace folder itself cannot be renamed here.".into());
+    }
+    let name = validate_segment(new_name, MAX_SEGMENT_CHARS)?;
+    let parent = canonical
+        .parent()
+        .ok_or_else(|| "That item has no folder to rename inside.".to_string())?;
+    let target = parent.join(&name);
+    if fs::symlink_metadata(&target).is_ok() {
+        return Err("An item with that name already exists here.".into());
+    }
+    fs::rename(&canonical, &target).map_err(|_| "Windows could not rename that item.".to_string())?;
+    let moved = confirm_inside(root, &target)?;
+    mutation_result(root, &moved)
+}
+
+fn move_workspace_path(root: &Path, requested: &str, directory: &str) -> Result<MutationResult, String> {
+    let parts = mutation_parts(requested)?;
+    let candidate = candidate_under(root, &parts);
+    let canonical = confirm_inside(root, &candidate)?;
+    if relative_path(root, &canonical).is_none() {
+        return Err("The workspace folder itself cannot be moved.".into());
+    }
+    let trimmed = directory.trim();
+    let destination = if trimmed.is_empty() || trimmed == "." {
+        root.to_path_buf()
+    } else {
+        let destination_parts = mutation_parts(trimmed)?;
+        confirm_inside(root, &candidate_under(root, &destination_parts))?
+    };
+    if !destination.is_dir() {
+        return Err("Choose a folder to move the item into.".into());
+    }
+    let name = canonical
+        .file_name()
+        .ok_or_else(|| "That item cannot be moved.".to_string())?;
+    let target = destination.join(name);
+    if same_path(&canonical, &target) {
+        return Err("That item is already in this folder.".into());
+    }
+    if canonical.is_dir() && within_root(&canonical, &target) {
+        return Err("A folder cannot be moved inside itself.".into());
+    }
+    if fs::symlink_metadata(&target).is_ok() {
+        return Err("An item with that name already exists in the destination.".into());
+    }
+    reject_link_ancestors(&target)?;
+    fs::rename(&canonical, &target).map_err(|_| "Windows could not move that item.".to_string())?;
+    let moved = confirm_inside(root, &target)?;
+    mutation_result(root, &moved)
+}
+
+fn delete_workspace_path(root: &Path, requested: &str) -> Result<String, String> {
+    let parts = mutation_parts(requested)?;
+    let candidate = candidate_under(root, &parts);
+    let canonical = confirm_inside(root, &candidate)?;
+    let relative =
+        relative_path(root, &canonical).ok_or_else(|| "The workspace folder itself cannot be deleted here.".to_string())?;
+    let metadata =
+        fs::symlink_metadata(&canonical).map_err(|_| "That item no longer exists.".to_string())?;
+    let result = if metadata.is_dir() {
+        fs::remove_dir_all(&canonical)
+    } else {
+        fs::remove_file(&canonical)
+    };
+    result.map_err(|_| "Windows could not delete that item.".to_string())?;
+    if fs::symlink_metadata(&canonical).is_ok() {
+        return Err("Windows reports the item is still there.".into());
+    }
+    Ok(relative)
+}
+
+pub(crate) fn register_directory(
+    app: &AppHandle,
+    owner: &str,
+    directory: &Path,
+    title: Option<&str>,
+) -> Result<Workspace, String> {
+    let canonical = canonical_directory(directory)?;
+    let display = friendly_path(&canonical);
+    let now = now_millis();
+    let _guard = store_guard();
+    let mut store = load_store(app)?;
+    let workspaces = store.owners.entry(owner.to_string()).or_default();
+    if let Some(existing) = workspaces
+        .iter_mut()
+        .find(|workspace| same_stored_path(&workspace.path, &display))
+    {
+        existing.last_opened_at = now;
+        let updated = existing.clone();
+        save_store(app, &store)?;
+        return Ok(updated);
+    }
+    let workspace = Workspace {
+        id: Uuid::new_v4().to_string(),
+        title: match title {
+            Some(title) => normalize_title(title)?,
+            None => title_from_path(&canonical),
+        },
+        path: display,
+        added_at: now,
+        last_opened_at: now,
+    };
+    workspaces.push(workspace.clone());
+    save_store(app, &store)?;
+    Ok(workspace)
+}
+
+fn workspace_root(app: &AppHandle, owner: &str, id: &str) -> Result<PathBuf, String> {
+    let owner = normalize_owner(owner)?;
+    let store = load_store(app)?;
+    let workspace = find_workspace(&store, &owner, id)?.clone();
+    canonical_directory(Path::new(&workspace.path))
 }
 
 fn list_workspace_directory(root: &Path, directory: &Path) -> Result<TreeResult, String> {
@@ -1017,6 +1467,33 @@ pub async fn workspace_list(app: AppHandle, owner: String) -> Result<Vec<Workspa
     Ok(workspaces)
 }
 
+/// Marks a registered folder as the most recently opened one. The list is
+/// already sorted by `last_opened_at`; updating it on selection is what lets
+/// the next launch restore the folder the user was actually working in, even
+/// when browser storage is unavailable or the desktop origin changed.
+#[tauri::command]
+pub async fn workspace_touch(app: AppHandle, owner: String, id: String) -> Result<Workspace, String> {
+    let owner = normalize_owner(&owner)?;
+    let id = id.trim();
+    if id.is_empty() {
+        return Err("Choose a workspace.".into());
+    }
+    let _guard = store_guard();
+    let mut store = load_store(&app)?;
+    let workspaces = store
+        .owners
+        .get_mut(&owner)
+        .ok_or_else(|| "That workspace is not registered.".to_string())?;
+    let workspace = workspaces
+        .iter_mut()
+        .find(|workspace| workspace.id == id)
+        .ok_or_else(|| "That workspace is not registered.".to_string())?;
+    workspace.last_opened_at = now_millis();
+    let updated = workspace.clone();
+    save_store(&app, &store)?;
+    Ok(updated)
+}
+
 #[tauri::command]
 pub async fn workspace_pick(app: AppHandle, owner: String) -> Result<Option<Workspace>, String> {
     let owner = normalize_owner(&owner)?;
@@ -1027,32 +1504,152 @@ pub async fn workspace_pick(app: AppHandle, owner: String) -> Result<Option<Work
     else {
         return Ok(None);
     };
-    let path = canonical_directory(folder.path())?;
-    let path_string = path.to_string_lossy().to_string();
-    let now = now_millis();
-    let mut store = load_store(&app)?;
-    let workspaces = store.owners.entry(owner.clone()).or_default();
+    Ok(Some(register_directory(&app, &owner, folder.path(), None)?))
+}
 
-    if let Some(existing) = workspaces
-        .iter_mut()
-        .find(|workspace| workspace.path == path_string)
-    {
-        existing.last_opened_at = now;
-        let workspace = existing.clone();
-        save_store(&app, &store)?;
-        return Ok(Some(workspace));
-    }
-
-    let workspace = Workspace {
-        id: Uuid::new_v4().to_string(),
-        title: title_from_path(&path),
-        path: path_string,
-        added_at: now,
-        last_opened_at: now,
+/// The parent half of "Create New Project Folder": the user chooses where the
+/// project goes and nothing is registered yet, so cancelling leaves no workspace
+/// behind.
+#[tauri::command]
+pub async fn workspace_pick_container() -> Result<Option<String>, String> {
+    let Some(folder) = rfd::AsyncFileDialog::new()
+        .set_title("Choose where to create the project")
+        .pick_folder()
+        .await
+    else {
+        return Ok(None);
     };
-    workspaces.push(workspace.clone());
-    save_store(&app, &store)?;
-    Ok(Some(workspace))
+    let path = canonical_directory(folder.path())?;
+    Ok(Some(friendly_path(&path)))
+}
+
+#[tauri::command]
+pub async fn workspace_create(
+    app: AppHandle,
+    owner: String,
+    parent: String,
+    name: String,
+) -> Result<Workspace, String> {
+    let owner = normalize_owner(&owner)?;
+    let requested = parent.trim().to_string();
+    if requested.is_empty() {
+        return Err("Choose the folder to create the project inside.".into());
+    }
+    let created = tauri::async_runtime::spawn_blocking(move || {
+        create_project_directory(Path::new(&requested), &name)
+    })
+    .await
+    .map_err(|_| "Could not create the project folder.".to_string())??;
+    register_directory(&app, &owner, &created, None)
+}
+
+/// Registers a folder path the user named themselves. A path that does not exist
+/// is refused rather than quietly swapped for a similar one.
+#[tauri::command]
+pub async fn workspace_add_path(
+    app: AppHandle,
+    owner: String,
+    path: String,
+    title: Option<String>,
+) -> Result<Workspace, String> {
+    let owner = normalize_owner(&owner)?;
+    let requested = path.trim().to_string();
+    if requested.is_empty() {
+        return Err("Enter the folder to open.".into());
+    }
+    let canonical =
+        tauri::async_runtime::spawn_blocking(move || canonical_directory(Path::new(&requested)))
+            .await
+            .map_err(|_| "Could not open that folder.".to_string())??;
+    if !canonical
+        .components()
+        .any(|component| matches!(component, Component::Normal(_)))
+    {
+        return Err("VupsRouter does not open a whole drive as a workspace.".into());
+    }
+    register_directory(&app, &owner, &canonical, title.as_deref())
+}
+
+#[tauri::command]
+pub async fn workspace_make_directory(
+    app: AppHandle,
+    owner: String,
+    id: String,
+    path: String,
+) -> Result<MutationResult, String> {
+    let root = workspace_root(&app, &owner, &id)?;
+    tauri::async_runtime::spawn_blocking(move || create_workspace_directory(&root, &path))
+        .await
+        .map_err(|_| "Could not create that folder.".to_string())?
+}
+
+#[tauri::command]
+pub async fn workspace_create_file(
+    app: AppHandle,
+    owner: String,
+    id: String,
+    path: String,
+    content: String,
+) -> Result<MutationResult, String> {
+    let root = workspace_root(&app, &owner, &id)?;
+    tauri::async_runtime::spawn_blocking(move || create_workspace_file(&root, &path, &content))
+        .await
+        .map_err(|_| "Could not create that file.".to_string())?
+}
+
+#[tauri::command]
+pub async fn workspace_write_file(
+    app: AppHandle,
+    owner: String,
+    id: String,
+    path: String,
+    content: String,
+) -> Result<MutationResult, String> {
+    let root = workspace_root(&app, &owner, &id)?;
+    tauri::async_runtime::spawn_blocking(move || write_workspace_file(&root, &path, &content))
+        .await
+        .map_err(|_| "Could not save that file.".to_string())?
+}
+
+#[tauri::command]
+pub async fn workspace_rename_path(
+    app: AppHandle,
+    owner: String,
+    id: String,
+    path: String,
+    new_name: String,
+) -> Result<MutationResult, String> {
+    let root = workspace_root(&app, &owner, &id)?;
+    tauri::async_runtime::spawn_blocking(move || rename_workspace_path(&root, &path, &new_name))
+        .await
+        .map_err(|_| "Could not rename that item.".to_string())?
+}
+
+#[tauri::command]
+pub async fn workspace_move_path(
+    app: AppHandle,
+    owner: String,
+    id: String,
+    path: String,
+    directory: String,
+) -> Result<MutationResult, String> {
+    let root = workspace_root(&app, &owner, &id)?;
+    tauri::async_runtime::spawn_blocking(move || move_workspace_path(&root, &path, &directory))
+        .await
+        .map_err(|_| "Could not move that item.".to_string())?
+}
+
+#[tauri::command]
+pub async fn workspace_delete_path(
+    app: AppHandle,
+    owner: String,
+    id: String,
+    path: String,
+) -> Result<String, String> {
+    let root = workspace_root(&app, &owner, &id)?;
+    tauri::async_runtime::spawn_blocking(move || delete_workspace_path(&root, &path))
+        .await
+        .map_err(|_| "Could not delete that item.".to_string())?
 }
 
 #[tauri::command]
@@ -1064,6 +1661,7 @@ pub async fn workspace_rename(
 ) -> Result<Workspace, String> {
     let owner = normalize_owner(&owner)?;
     let title = normalize_title(&title)?;
+    let _guard = store_guard();
     let mut store = load_store(&app)?;
     let workspace = store
         .owners
@@ -1079,6 +1677,7 @@ pub async fn workspace_rename(
 #[tauri::command]
 pub async fn workspace_remove(app: AppHandle, owner: String, id: String) -> Result<(), String> {
     let owner = normalize_owner(&owner)?;
+    let _guard = store_guard();
     let mut store = load_store(&app)?;
     let Some(workspaces) = store.owners.get_mut(&owner) else {
         return Ok(());
@@ -1446,6 +2045,171 @@ mod tests {
         assert!(text.contains("A  staged.js"));
         assert!(text.contains("?? untracked.js"));
 
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn canonical_paths_are_stored_without_the_verbatim_prefix() {
+        assert_eq!(friendly_path(Path::new(r"\\?\C:\project")), "C:\\project");
+        assert_eq!(friendly_path(Path::new(r"\\?\UNC\server\share")), "\\\\server\\share");
+        assert_eq!(friendly_path(Path::new(r"C:\project\My Site")), "C:\\project\\My Site");
+        // Builds before this change persisted the verbatim form; they must still
+        // de-duplicate against the friendly one.
+        assert!(same_stored_path(r"\\?\C:\Project", r"c:\project"));
+        assert!(same_stored_path(r"C:\project\", "C:\\project"));
+        assert!(!same_stored_path("C:\\project", "C:\\project-two"));
+    }
+
+    #[test]
+    fn project_and_file_names_are_checked_against_what_windows_allows() {
+        assert_eq!(validate_segment("  My   Website  ", MAX_TITLE_CHARS).unwrap(), "My Website");
+        assert!(validate_segment("", MAX_TITLE_CHARS).is_err());
+        assert!(validate_segment("..", MAX_TITLE_CHARS).is_err());
+        assert!(validate_segment("a/b", MAX_TITLE_CHARS).is_err());
+        assert!(validate_segment("a:b", MAX_TITLE_CHARS).is_err());
+        assert!(validate_segment("notes?", MAX_SEGMENT_CHARS).is_err());
+        assert!(validate_segment("trailing.", MAX_SEGMENT_CHARS).is_err());
+        assert!(validate_segment("nul", MAX_SEGMENT_CHARS).is_err());
+        assert!(validate_segment("COM3.log", MAX_SEGMENT_CHARS).is_err());
+        assert!(validate_segment(&"x".repeat(MAX_TITLE_CHARS + 1), MAX_TITLE_CHARS).is_err());
+    }
+
+    #[test]
+    fn containment_compares_components_and_ignores_windows_letter_case() {
+        assert!(within_root(
+            Path::new(r"C:\project"),
+            Path::new(r"c:\project\src\main.rs")
+        ));
+        assert!(!within_root(Path::new(r"C:\project"), Path::new(r"D:\project\src")));
+        // A sibling whose name merely starts with the root's name is not inside it.
+        assert!(!within_root(Path::new(r"C:\project"), Path::new(r"C:\projects\src")));
+        assert!(!within_root(Path::new(r"C:\project"), Path::new(r"C:\")));
+        assert!(same_path(Path::new(r"c:\project"), Path::new(r"C:\PROJECT")));
+    }
+
+    #[test]
+    fn creating_a_project_makes_a_real_folder_and_never_replaces_one() {
+        let parent = test_root();
+        let created = create_project_directory(&parent, "My Website").expect("create project");
+        assert!(created.is_dir());
+        assert_eq!(friendly_path(&created), format!("{}\\My Website", friendly_path(&parent)));
+        // The same name must be opened, not overwritten.
+        let again = create_project_directory(&parent, "My Website");
+        assert!(again.is_err());
+        assert!(create_project_directory(&parent, "../escape").is_err());
+        assert!(create_project_directory(&parent, "  ").is_err());
+        let missing = parent.join("gone");
+        assert!(create_project_directory(&missing, "inside").is_err());
+        // Nested names are created as one project folder, not silently as a tree.
+        assert!(create_project_directory(&parent, "a\\b").is_err());
+        fs::remove_dir_all(parent).expect("remove test root");
+    }
+
+    #[test]
+    fn explorer_mutations_create_read_rename_move_and_delete_for_real() {
+        let root = test_root();
+        let directory = create_workspace_directory(&root, "src/components").expect("mkdir");
+        assert_eq!(directory.path, "src/components");
+        assert_eq!(directory.kind, "directory");
+        assert!(root.join("src").join("components").is_dir());
+        assert!(create_workspace_directory(&root, "src/components").is_err());
+
+        let file = create_workspace_file(&root, "src/components/App.jsx", "export default 1;\n")
+            .expect("create file");
+        assert_eq!(file.path, "src/components/App.jsx");
+        assert_eq!(file.kind, "file");
+        assert_eq!(file.size, 18);
+        assert!(create_workspace_file(&root, "src/components/App.jsx", "x").is_err());
+        let saved = write_workspace_file(&root, "src/components/App.jsx", "export default 2;\n")
+            .expect("save file");
+        assert_eq!(saved.size, 18);
+        assert_eq!(
+            fs::read_to_string(root.join("src").join("components").join("App.jsx")).unwrap(),
+            "export default 2;\n"
+        );
+        // A save must not leave its scratch file behind.
+        let leftovers: Vec<_> = fs::read_dir(root.join("src").join("components"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .ends_with(".tmp")
+            })
+            .collect();
+        assert!(leftovers.is_empty(), "temporary files left behind");
+        assert!(write_workspace_file(&root, "src/missing.jsx", "x").is_err());
+
+        let renamed = rename_workspace_path(&root, "src/components/App.jsx", "View.jsx").expect("rename");
+        assert_eq!(renamed.path, "src/components/View.jsx");
+        assert!(!root.join("src").join("components").join("App.jsx").exists());
+        assert!(rename_workspace_path(&root, "src/components/View.jsx", "bad/name").is_err());
+        assert!(rename_workspace_path(&root, "", "whatever").is_err());
+
+        create_workspace_directory(&root, "pages").expect("mkdir pages");
+        let moved = move_workspace_path(&root, "src/components/View.jsx", "pages").expect("move");
+        assert_eq!(moved.path, "pages/View.jsx");
+        assert!(root.join("pages").join("View.jsx").is_file());
+        assert!(move_workspace_path(&root, "pages", "pages/src").is_err());
+        assert!(move_workspace_path(&root, "src", "src/components").is_err());
+        assert!(move_workspace_path(&root, "src", "").is_err());
+
+        let deleted = delete_workspace_path(&root, "pages/View.jsx").expect("delete");
+        assert_eq!(deleted, "pages/View.jsx");
+        assert!(!root.join("pages").join("View.jsx").exists());
+        assert!(delete_workspace_path(&root, "src").is_ok());
+        assert!(!root.join("src").exists());
+        assert!(root.is_dir(), "the workspace root itself survives");
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn explorer_mutations_cannot_leave_the_workspace_or_touch_protected_files() {
+        let outside = test_root();
+        let root = outside.join("project");
+        fs::create_dir_all(&root).expect("create project");
+        let root = fs::canonicalize(&root).expect("canonical project");
+
+        for attempted in [
+            "../escape",
+            "src/../../escape",
+            "C:\\Windows\\win.ini",
+            "/etc/passwd",
+            "\\\\server\\share\\x",
+            "",
+            ".",
+        ] {
+            assert!(
+                create_workspace_directory(&root, attempted).is_err(),
+                "{attempted} must not create anything outside the workspace"
+            );
+            assert!(create_workspace_file(&root, attempted, "x").is_err());
+            assert!(write_workspace_file(&root, attempted, "x").is_err());
+            assert!(rename_workspace_path(&root, attempted, "x").is_err());
+            assert!(delete_workspace_path(&root, attempted).is_err());
+        }
+        assert!(!outside.join("escape").exists());
+
+        // Excluded folders and credential files are refused even when the path is
+        // inside the workspace, so a click cannot bypass the read guard.
+        assert!(create_workspace_file(&root, "node_modules/pkg/index.js", "x").is_err());
+        assert!(create_workspace_file(&root, ".env", "TOKEN=1").is_err());
+        assert!(write_workspace_file(&root, ".env", "TOKEN=1").is_err());
+        assert!(create_workspace_file(&root, "id_rsa", "key").is_err());
+        assert!(delete_workspace_path(&root, ".git/config").is_err());
+        assert!(delete_workspace_path(&root, "").is_err());
+
+        fs::remove_dir_all(outside).expect("remove test root");
+    }
+
+    #[test]
+    fn saved_files_are_bounded_and_text_only() {
+        let root = test_root();
+        create_workspace_directory(&root, "src").expect("mkdir");
+        assert!(create_workspace_file(&root, "src/blob.bin", "has a NUL \0 here").is_err());
+        assert!(create_workspace_file(&root, "src/huge.js", &"a".repeat(MAX_WRITE_BYTES as usize + 1))
+            .is_err());
         fs::remove_dir_all(root).expect("remove test root");
     }
 }

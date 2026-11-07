@@ -29,10 +29,35 @@ export const DESKTOP_TOOL_LABELS = Object.freeze({
   run_command: "Running a command",
   start_command: "Starting a background command",
   command_output: "Reading command output",
-  stop_command: "Stopping a background command"
+  stop_command: "Stopping a background command",
+  list_skills: "Listing installed skills",
+  use_skill: "Reading a skill's instructions",
+  read_skill_reference: "Reading a skill reference"
 });
 
 const ACCESS_VALUES = new Set(["read", "contents", "write", "delete", "launch", "execute", "app", "system"]);
+
+// The tools that can leave a different filesystem behind them. The explorer
+// reloads on the completion of one of these — and only on completion, so a
+// denied or failed call does not pretend something changed.
+export const WORKSPACE_MUTATING_TOOLS = Object.freeze(
+  new Set([
+    "create_directory",
+    "write_file",
+    "append_file",
+    "edit_file",
+    "rename_path",
+    "move_path",
+    "copy_path",
+    "delete_path",
+    "run_command",
+    "start_command"
+  ])
+);
+
+export function isWorkspaceMutatingTool(name) {
+  return WORKSPACE_MUTATING_TOOLS.has(name);
+}
 
 export const DESKTOP_TOOL_PERMISSION_EVENT = "desktop-tool:approval";
 export const DESKTOP_TOOL_PERMISSION_TTL_MS = 120_000;

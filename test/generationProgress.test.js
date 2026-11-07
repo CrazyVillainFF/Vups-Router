@@ -5,9 +5,15 @@ import { readFileSync } from "node:fs";
 import {
   ACTIVITY_STATUS,
   applyActivityProgress,
+  applyProgressRows,
   settleActivity
 } from "../src/chat/activity.js";
-import { generationProgress, PROGRESS_FALLBACK_LABEL } from "../src/chat/progress.js";
+import {
+  generationProgress,
+  pathBaseName,
+  progressBrief,
+  PROGRESS_FALLBACK_LABEL
+} from "../src/chat/progress.js";
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -171,3 +177,125 @@ test("downloads stay hidden until a complete artifact is committed", () => {
 function agentSource() {
   return read("src/components/AgentActivity.jsx");
 }
+
+// ─── The continuous 3-4 line brief (PART 2) ─────────────────────────────────
+
+function liveRows(events) {
+  return applyProgressRows([], events, { runId: "run-1", at: 1000 });
+}
+
+test("the brief states the request, the bound folder, the real access and the open step", () => {
+  const rows = liveRows([
+    {
+      key: "task",
+      phase: "task",
+      status: "running",
+      path: "C:\\project\\demo",
+      label: "Working folder",
+      message: "Working in C:\\project\\demo"
+    },
+    {
+      callId: "call-1",
+      phase: "tool",
+      status: "running",
+      tool: "write_file",
+      path: "C:\\project\\demo\\index.html",
+      label: "Writing a local file",
+      message: "write_file C:\\project\\demo\\index.html"
+    }
+  ]);
+  assert.deepEqual(
+    progressBrief({
+      requestText: "Create   a landing\npage for my shop",
+      workspacePath: "C:\\project\\demo",
+      permissionLabel: "Ask every time",
+      events: rows
+    }).map(line => line.text),
+    [
+      "You asked: Create a landing page for my shop",
+      "Working folder: C:\\project\\demo",
+      "Local access: Ask every time",
+      "Now: Writing a local file — index.html"
+    ]
+  );
+});
+
+test("a missing source drops its line instead of guessing one", () => {
+  // No folder is bound, so the brief says that out loud rather than naming one.
+  assert.deepEqual(progressBrief({ events: [] }).map(line => line.text), [
+    "Working folder: none bound for this chat"
+  ]);
+  // A browser session has no local access to report, so no access line appears.
+  assert.equal(
+    progressBrief({ workspacePath: "C:\\project\\demo", events: [] }).some(line =>
+      /Local access/i.test(line.text)
+    ),
+    false
+  );
+  // With nothing running, the line names the last thing that really finished.
+  const settled = settleActivity(
+    liveRows([
+      {
+        callId: "c",
+        phase: "tool",
+        status: "running",
+        tool: "read_file",
+        label: "Reading a local file",
+        message: "read_file"
+      }
+    ]),
+    ACTIVITY_STATUS.FAILED,
+    2000
+  );
+  assert.match(progressBrief({ events: settled }).at(-1).text, /^Last step failed: Reading a local file$/);
+});
+
+test("the brief quotes the request short and reads either path separator", () => {
+  const brief = progressBrief({ requestText: "x".repeat(200), events: [] });
+  assert.equal(brief[0].text.length, "You asked: ".length + 110);
+  assert.match(brief[0].text, /…$/);
+  assert.equal(pathBaseName("C:\\project\\Vups Router\\client\\src\\ChatPage.jsx"), "ChatPage.jsx");
+  assert.equal(pathBaseName("src/components/AgentActivity.jsx"), "AgentActivity.jsx");
+  assert.equal(pathBaseName(""), "");
+});
+
+test("no brief line is filler, a percentage or an estimate", () => {
+  const rows = liveRows([
+    { key: "task", phase: "task", status: "running", label: "Starting the task", message: "Starting the task" },
+    { key: "provider:0", phase: "provider", status: "running", message: "Asking the model what to do next" }
+  ]);
+  const text = progressBrief({
+    requestText: "hi",
+    workspacePath: "C:\\work",
+    permissionLabel: "Read-only",
+    events: rows
+  })
+    .map(line => line.text)
+    .join("\n");
+  assert.doesNotMatch(text, /Working\.\.\.|Almost done|Processing|Please wait|up to you shortly/i);
+  assert.doesNotMatch(text, /\d+ ?%|~\s*\d|estimat/i);
+  assert.match(text, /Now: Asking the model what to do next/);
+});
+
+test("the brief is painted live above the steps and only on a turn in flight", () => {
+  const agent = read("src/components/AgentActivity.jsx");
+  const css = read("src/components/AgentActivity.css");
+  assert.match(
+    agent,
+    /active\s*\?\s*progressBrief\(\{ requestText, workspacePath, permissionLabel, events \}\)/
+  );
+  assert.match(agent, /className="vr-activity__brief" aria-live="polite"/);
+  assert.ok(
+    agent.indexOf("vr-activity__brief") < agent.indexOf("vr-activity__trace"),
+    "the brief sits above the fold of steps"
+  );
+  assert.match(css, /\.vr-activity__brief\s*\{[^}]*list-style:\s*none/s);
+  assert.match(css, /\.vr-activity__brief-line\s*\{[^}]*text-overflow:\s*ellipsis/s);
+  // The three sources are the real ones: the user message that opened the turn,
+  // the folder bound to this chat, and the access mode the app is running under.
+  const page = read("src/ChatPage.jsx");
+  assert.match(page, /requestText=\{prompt\}/);
+  assert.match(page, /workspacePath=\{workspacePath\}/);
+  assert.match(page, /permissionLabel=\{permissionLabel\}/);
+  assert.match(page, /workspacePath=\{chatWorkspace\?\.path \|\| ""\}/);
+});

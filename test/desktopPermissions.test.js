@@ -401,7 +401,11 @@ test("one pending approval produces one card and dedup is not left to the UI alo
   );
   assert.match(dedup, /seenApprovalKeys\.current\.has\(prompt\.approvalKey\)/);
   assert.match(dedup, /entry\.requestId === prompt\.requestId/);
-  assert.match(dedup, /Waiting for approval to read/);
+  // The waiting line quotes the native request's own summary, so a write or a
+  // command is never described as a read, and it says the run is paused.
+  assert.match(dedup, /label: "Waiting for approval"/);
+  assert.match(dedup, /message: `Waiting for approval: \$\{prompt\.summary/);
+  assert.doesNotMatch(dedup, /Waiting for approval to read/);
 
   // Enforcement lives in the native layer: identical concurrent requests join
   // one pending approval instead of opening a second.
@@ -480,12 +484,12 @@ test("the fast path runs the tool before any model call and sends one request", 
     calls.push({ url, body });
     return { data: { type: "final", content: "Here you go.", conversationId: "c-1", message: { messageId: "m-1" } } };
   };
-  const activity = [];
+  const rows = [];
   try {
     const result = await runDesktopToolChat({
       messages: [{ role: "user", content: "find my 5 latest downloaded files" }],
       userText: "find my 5 latest downloaded files",
-      onActivity: event => activity.push(event.message)
+      onProgress: batch => rows.push(...batch)
     });
     assert.equal(result.content, "Here you go.");
     assert.equal(calls.length, 1, "the model is asked once, to phrase results it did not have to fetch");
@@ -496,7 +500,19 @@ test("the fast path runs the tool before any model call and sends one request", 
       /"name":"get_windows_known_folder"/,
       "the folder came from the Windows resolver, not a guessed path"
     );
-    assert.match(activity.join("\n"), /Listing the 5 most recent files in your downloads folder/);
+    // One line per real operation, settled by its own result: the progress list
+    // is the tool log, not a narration written around it. The native bridge does
+    // not exist in a test run, so the honest outcome here is a failure that
+    // keeps the bridge's own code.
+    assert.deepEqual(rows.filter(row => row.phase === "tool").map(row => `${row.tool}:${row.status}`), [
+      "get_windows_known_folder:running",
+      "get_windows_known_folder:failed"
+    ]);
+    const failed = rows.find(row => row.status === "failed");
+    assert.equal(failed.label, "Finding the Windows folder");
+    assert.ok(failed.code, "the stopped call reports why it stopped");
+    assert.match(failed.message, /get_windows_known_folder failed:/);
+    assert.ok(!rows.some(row => /Working\.\.\.|Almost done|Processing/i.test(row.message)));
   } finally {
     apiClient.post = original;
   }
@@ -566,10 +582,12 @@ test("a genuine OS failure is never dressed up as a permission problem", () => {
   // ../../server/src/desktopTools.js, which only exists in a two-repo local
   // checkout and failed every CI run of the client alone.
 
-  // Progress states name the lifecycle instead of implying a grant.
-  assert.match(desktopChat, /— running/);
-  assert.match(desktopChat, /— completed/);
-  assert.match(desktopChat, /— failed \(\$\{code\}\)/);
+  // Progress states are a field on the row, not narration that could drift from
+  // the server's own line for the same call, and no state word implies a grant.
+  assert.match(desktopChat, /status: "running"/);
+  assert.match(desktopChat, /status: "completed"/);
+  assert.match(desktopChat, /status: "failed", code/);
+  assert.doesNotMatch(desktopChat, /permission granted|access approved|approval successful/i);
   assert.match(
     chatPageSource,
     /Access granted — \$\{request\.summary/,

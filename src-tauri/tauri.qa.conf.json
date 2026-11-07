@@ -7,19 +7,6 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "VupsRouter QA",
-        "url": "http://127.0.0.1:4180/chat?native=windows",
-        "width": 1280,
-        "height": 820,
-        "minWidth": 960,
-        "minHeight": 640,
-        "resizable": true,
-        "fullscreen": false
-      }
-    ],
     "security": {
       "csp": null
     }

@@ -9,6 +9,7 @@ import {
   FolderSimple,
   Folders,
   Gear,
+  ListBullets,
   MagnifyingGlass,
   PencilSimple,
   Plus,
@@ -468,6 +469,10 @@ export default function DesktopSidebar({
                 <Link to="/automations" className={navClass("/automations")} title="Automations" onClick={onMobileClose}>
                   <Robot size={16} aria-hidden="true" />
                   {!collapsed && <span>Automations</span>}
+                </Link>
+                <Link to="/tasks" className={navClass("/tasks")} title="Background tasks" onClick={onMobileClose}>
+                  <ListBullets size={16} aria-hidden="true" />
+                  {!collapsed && <span>Tasks</span>}
                 </Link>
                 <Link to="/plugins" className={navClass("/plugins")} title="Plugins" onClick={onMobileClose}>
                   <PuzzlePiece size={16} aria-hidden="true" />

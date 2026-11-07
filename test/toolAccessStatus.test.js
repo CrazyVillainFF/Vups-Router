@@ -27,7 +27,7 @@ test("the diagnostics show the live session, model, mode and folder", () => {
   assert.equal(ready.permission.value, "Ask me every time");
   assert.equal(ready.workspace.value, "demo");
   assert.equal(ready.workspace.hint, "C:\\work\\demo");
-  assert.equal(ready.tools.value, "27 tools");
+  assert.equal(ready.tools.value, "30 tools");
   assert.equal(ready.approvals.value, "None");
   assert.equal(ready.failure.value, "None this session");
   assert.match(ready.model.hint, /every model and provider uses this same registry/i);
@@ -77,7 +77,7 @@ test("the displayed registry matches the native dispatch list exactly", () => {
   const nativeNames = [...block[1].matchAll(/"([a-z0-9_]+)"/g)].map(match => match[1]);
   const shown = toolAccessRows({}).toolNames;
   assert.deepEqual(shown, nativeNames, "the dialog shows exactly the names the native layer dispatches");
-  assert.equal(shown.length, 27);
+  assert.equal(shown.length, 30);
 });
 
 test("diagnostics never include credential or file-body fields", () => {

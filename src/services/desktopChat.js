@@ -6,7 +6,8 @@ import {
   cancelDesktopToolApprovals,
   cancelDesktopToolOperation,
   desktopToolLabel,
-  executeDesktopTool
+  executeDesktopTool,
+  isWorkspaceMutatingTool
 } from "../native/desktopTools.js";
 
 // Development work needs more rounds than a folder question: inspect, read,
@@ -126,8 +127,103 @@ function parseArguments(value) {
   return parsed;
 }
 
-function emit(activity, phase, message) {
-  activity?.({ phase, message });
+// The argument names that say what an operation is aimed at. "content" is
+// deliberately absent: a whole file does not belong in a progress line. This
+// mirrors the server's own list so both sides name the same target.
+const PROGRESS_ARG_KEYS = ["path", "source", "directory", "query", "command", "url"];
+const PROGRESS_RESULT_KEYS = ["path", "source", "directory", "destination"];
+
+function firstTextKey(source, keys) {
+  for (const key of keys) {
+    const value = source?.[key];
+    if (typeof value === "string" && value.trim()) return value.trim().slice(0, 200);
+  }
+  return "";
+}
+
+/**
+ * The words one row is drawn with. A tool line takes the app's friendly name for
+ * the operation; the task line names its state instead of repeating the folder,
+ * because that folder already lives in the row's own path field. Both sides of
+ * the merge compute the label from the same fields, so a line never changes
+ * costume when the server's authoritative row arrives for the same key.
+ */
+function progressRowLabel(event) {
+  // A skill row already names the package whose file was loaded, so it carries
+  // no label and keeps its own sentence. Labelling it by tool name would throw
+  // away the one thing the reader wants to know: which skill.
+  if (event?.phase === "skill") return "";
+  if (event?.tool) return desktopToolLabel(event.tool);
+  if (event?.phase === "task") return event.path ? "Working folder" : "Starting the task";
+  return "";
+}
+
+/**
+ * A progress row in the same shape the server's durable task log uses. The app
+ * raises it the moment it starts an operation and the server later reports the
+ * same row, so one operation is one line that moves from running to its real
+ * outcome instead of becoming two lines that disagree.
+ */
+function toolProgressRow({ callId, tool, path, status, code = "" }) {
+  const message = status === "running"
+    ? (path ? `${tool} ${path}` : tool)
+    : status === "failed"
+      ? `${tool} failed: ${code || "unknown"}`
+      : `${tool} completed${path ? ` (${path})` : ""}`;
+  return {
+    callId,
+    phase: "tool",
+    status,
+    tool,
+    path,
+    code,
+    label: desktopToolLabel(tool),
+    message
+  };
+}
+
+function emitProgress(progress, row) {
+  if (typeof progress === "function" && row) progress([row]);
+}
+
+/**
+ * Rows the app raises before a round is sent, using the exact key and wording
+ * the server uses for the same event. The line a reader watches while the model
+ * thinks is therefore the line that stays in the durable log, not a second one.
+ */
+function taskProgressRow(path) {
+  return {
+    key: "task",
+    phase: "task",
+    status: "running",
+    path,
+    label: progressRowLabel({ phase: "task", path }),
+    message: path ? `Working in ${path}` : "Starting the task"
+  };
+}
+
+function providerProgressRow(step) {
+  return {
+    key: `provider:${step}`,
+    phase: "provider",
+    status: "running",
+    message: "Asking the model what to do next"
+  };
+}
+
+/**
+ * The server's rows are the same rows the app already raised. Their labels are
+ * recomputed here, from the same fields the app used, so a line does not change
+ * costume when its real outcome arrives.
+ */
+function forwardProgress(progress, events) {
+  if (typeof progress !== "function" || !Array.isArray(events) || events.length === 0) return;
+  progress(
+    events.map(event => {
+      const label = progressRowLabel(event);
+      return label ? { ...event, label } : event;
+    })
+  );
 }
 
 function localDate(value) {
@@ -192,11 +288,11 @@ const SEARCH_ROOT_FOLDERS = Object.freeze(["documents", "desktop", "downloads"])
 const FAILURE_REMEDIES = {
   approval_denied: "Nothing was read, written or run; the operation stopped where it was denied.",
   cancelled: "The operation was stopped before it finished, and nothing further runs for this turn.",
-  path_not_found: "Check the path or pick it again — the app never creates a folder for you.",
+  path_not_found: "The folder or file was not there, so the app made no changes and created nothing.",
   access_denied:
     "This is a Windows access decision, not a VupsRouter setting. The app made no permission, ownership or elevation changes.",
   outside_workspace:
-    "That path is outside the authorized workspace. Add the folder as a workspace or switch modes; the app will not widen itself.",
+    "That path sits outside the folder this chat works in. The app stayed inside its authorized folder; a different folder can be attached to the chat.",
   protected_root:
     "That is a protected Windows location. The app did not bypass Windows security or change ownership.",
   not_a_directory: "The path exists but is a file, so it has no entries to list.",
@@ -505,10 +601,16 @@ function abortError() {
  * conversation, so the model sees the same shape whether the call came from its
  * own tool_calls or from the deterministic fast path.
  */
-async function runLocalTool(tool, args, { callId, conversation, steps, onActivity, signal, executeTool, summary = true }) {
+async function runLocalTool(
+  tool,
+  args,
+  { callId, conversation, steps, onProgress, signal, executeTool, onWorkspaceMutation, summary = true }
+) {
   if (signal?.aborted) throw abortError();
   const label = desktopToolLabel(tool);
-  emit(onActivity, "desktop_tool", `${label} — running`);
+  const id = callId || `local_${steps.length + 1}`;
+  const path = firstTextKey(args, PROGRESS_ARG_KEYS);
+  emitProgress(onProgress, toolProgressRow({ callId: id, tool, path, status: "running" }));
   // Stop can land while the progress entry is being painted; an operation that
   // was already announced must still not reach the native layer after that.
   if (signal?.aborted) throw abortError();
@@ -528,14 +630,19 @@ async function runLocalTool(tool, args, { callId, conversation, steps, onActivit
   // back to the model or starting the next call in the same batch.
   if (signal?.aborted) throw abortError();
   if (result?.ok) {
-    emit(onActivity, "desktop_tool", `${label} — completed`);
+    emitProgress(
+      onProgress,
+      toolProgressRow({ callId: id, tool, path: firstTextKey(result?.data, PROGRESS_RESULT_KEYS) || path, status: "completed" })
+    );
+    // The explorer shows the folder as it was when it was listed. A write that
+    // actually happened is the only reason to go back and read it again.
+    if (isWorkspaceMutatingTool(tool)) onWorkspaceMutation?.({ tool, path: result?.data?.path || "" });
   } else {
     // The failure code is what separates "you denied this" from "Windows
     // refused", and the progress list must not blur the two.
     const code = result?.error?.code || "unknown";
-    emit(onActivity, "desktop_tool", `${label} — failed (${code})`);
+    emitProgress(onProgress, toolProgressRow({ callId: id, tool, path, status: "failed", code }));
   }
-  const id = callId || `local_${steps.length + 1}`;
   conversation.push({
     role: "assistant",
     content: null,
@@ -569,16 +676,15 @@ function folderPathFrom(result) {
  * lookup. Nothing here invents a path or a tool.
  */
 async function runFastPath(task, context) {
-  emit(context.onActivity, "desktop_tool", task.intent);
   if (task.kind === "locate_named") return runFolderLocate(task, context);
   if (task.kind === "find") return runFileSearch(task, context);
 
-  const { conversation, steps, onActivity, signal, executeTool } = context;
+  const { conversation, steps, onProgress, signal, executeTool } = context;
   const located = await runLocalTool("get_windows_known_folder", { name: task.folder }, {
     callId: "fast_locate",
     conversation,
     steps,
-    onActivity,
+    onProgress,
     signal,
     executeTool
   });
@@ -591,7 +697,7 @@ async function runFastPath(task, context) {
     callId: "fast_read",
     conversation,
     steps,
-    onActivity,
+    onProgress,
     signal,
     executeTool
   });
@@ -603,7 +709,7 @@ async function resolveKnownFolder(name, context, callId) {
     callId,
     conversation: context.conversation,
     steps: context.steps,
-    onActivity: context.onActivity,
+    onProgress: context.onProgress,
     signal: context.signal,
     executeTool: context.executeTool,
     summary: false
@@ -621,10 +727,10 @@ function folderLocateStep(task, ok, data, error = null) {
   };
 }
 
-async function runFolderLocate(task, { conversation, steps, onActivity, signal, executeTool, searchRoots = [] }) {
+async function runFolderLocate(task, { conversation, steps, onProgress, signal, executeTool, searchRoots = [] }) {
   const query = task.query;
   const needle = query.toLowerCase();
-  const context = { conversation, steps, onActivity, signal, executeTool };
+  const context = { conversation, steps, onProgress, signal, executeTool };
 
   // A configured workspace is already an approved folder. If its own name is
   // the answer, no listing or prompt is needed.
@@ -671,13 +777,12 @@ async function runFolderLocate(task, { conversation, steps, onActivity, signal, 
     if (seen.has(key)) continue;
     seen.add(key);
     searched.push(path);
-    emit(onActivity, "desktop_tool", `${task.intent} — searching ${path}`);
 
     const listed = await runLocalTool("list_directory", { path }, {
       callId: `fast_list_${index}`,
       conversation,
       steps,
-      onActivity,
+      onProgress,
       signal,
       executeTool,
       summary: false
@@ -726,8 +831,8 @@ async function runFolderLocate(task, { conversation, steps, onActivity, signal, 
   return false;
 }
 
-async function runFileSearch(task, { conversation, steps, onActivity, signal, executeTool, searchRoots = [] }) {
-  const context = { conversation, steps, onActivity, signal, executeTool };
+async function runFileSearch(task, { conversation, steps, onProgress, signal, executeTool, searchRoots = [] }) {
+  const context = { conversation, steps, onProgress, signal, executeTool };
   const targets = [];
   if (task.folder) {
     targets.push({ name: task.folder });
@@ -754,7 +859,6 @@ async function runFileSearch(task, { conversation, steps, onActivity, signal, ex
     if (seen.has(key)) continue;
     seen.add(key);
     searched.push(root);
-    emit(onActivity, "desktop_tool", `${task.intent} — searching ${root}`);
     const found = await runLocalTool("search_files", {
       root,
       query: task.query,
@@ -764,7 +868,7 @@ async function runFileSearch(task, { conversation, steps, onActivity, signal, ex
       callId: `fast_search_${index}`,
       conversation,
       steps,
-      onActivity,
+      onProgress,
       signal,
       executeTool,
       summary: false
@@ -840,10 +944,12 @@ export async function runDesktopToolChat({
   chatId,
   userText,
   searchRoots = [],
+  workspacePath = "",
   executeTool,
   onMeta,
   onChunk,
-  onActivity
+  onProgress,
+  onWorkspaceMutation
 } = {}) {
   const runId = operationId || createRunId();
   const conversation = toRequestMessages(messages);
@@ -860,13 +966,15 @@ export async function runDesktopToolChat({
   let step = 0;
 
   try {
+    emitProgress(onProgress, taskProgressRow(workspacePath));
+
     const fastTask = matchLocalFileTask(userText || lastUserText(messages));
     if (fastTask) {
       try {
         await runFastPath(fastTask, {
           conversation,
           steps,
-          onActivity,
+          onProgress,
           signal,
           executeTool: executeForOperation,
           searchRoots
@@ -877,15 +985,26 @@ export async function runDesktopToolChat({
         // A failed fast path is not a reason to lose the turn: the ordinary
         // model-driven loop still runs, and the honest tool error is already in
         // the conversation.
-        emit(onActivity, "desktop_tool", "Local fast path unavailable, asking the model");
+        const code = String(error?.code || error?.name || "unknown").slice(0, 60);
+        emitProgress(onProgress, {
+          key: "fastpath",
+          phase: "local",
+          status: "failed",
+          code,
+          label: "Local file lookup",
+          message: `Local file lookup failed: ${code}`
+        });
       }
     }
 
+    // The server numbers the model rounds of a run from zero and returns its own
+    // count, so the key the app announces matches the row the server writes for
+    // the same round instead of becoming a second line.
+    let providerStep = 0;
+
     while (step <= MAX_STEPS) {
       if (signal?.aborted) throw abortError();
-      if (steps.length > 0) {
-        emit(onActivity, "desktop_tool", "Model is writing up the local results");
-      }
+      emitProgress(onProgress, providerProgressRow(providerStep));
       const body = {
         runId,
         conversationId: conversationId || undefined,
@@ -894,6 +1013,7 @@ export async function runDesktopToolChat({
         mode,
         assistantMessageId
       };
+      if (workspacePath) body.workspacePath = workspacePath;
       if (configId) body.configId = configId;
       if (providerId) body.providerId = providerId;
       if (source) body.source = source;
@@ -938,6 +1058,12 @@ export async function runDesktopToolChat({
         }
         throw attachLocalResults(failure, steps);
       }
+
+      // The rows the server wrote for this round are the authoritative outcomes
+      // of the operations the app just reported, so they reach the transcript the
+      // moment the round answers rather than only on a reload.
+      forwardProgress(onProgress, data?.events);
+      providerStep = Number.isFinite(data?.steps) ? data.steps : providerStep + 1;
 
       if (data?.type === "final") {
         const content = String(data.content ?? data.message?.content ?? "");
@@ -1006,8 +1132,9 @@ export async function runDesktopToolChat({
           callId: call?.id || `desktop_call_${step}`,
           conversation,
           steps,
-          onActivity,
+          onProgress,
           signal,
+          onWorkspaceMutation,
           executeTool: executeForOperation
         });
         if (signal?.aborted) throw abortError();

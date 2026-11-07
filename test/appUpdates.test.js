@@ -308,6 +308,14 @@ test("the Windows updater is wired through config, plugins, capability, and pack
     ),
     "the updater reads the signed manifest published beside the installers"
   );
+  // `tauri signer sign --app-version` binds the version into the signature, but
+  // the app only rejects a manifest that pairs a new version with old bytes if
+  // it demands that binding (the plugin default is false).
+  assert.equal(
+    conf.plugins.updater.requireSignedVersion,
+    true,
+    "the announced version must be vouched for by the signature"
+  );
 
   const cargo = read("src-tauri/Cargo.toml");
   assert.match(cargo, /tauri-plugin-updater\s*=\s*"2"/);
@@ -320,6 +328,26 @@ test("the Windows updater is wired through config, plugins, capability, and pack
   const capability = JSON.parse(read("src-tauri/capabilities/default.json"));
   assert.ok(capability.permissions.includes("updater:default"));
   assert.ok(capability.permissions.includes("process:allow-restart"));
+
+  // The desktop window is opened at http://127.0.0.1:<port>, which Tauri treats
+  // as a *remote* origin, so the local-only capability above never applies at
+  // runtime. The updater and restart commands must also be granted to the
+  // capability that owns that origin, or the packaged app answers
+  // "Command plugin:updater|check not allowed by ACL".
+  const remote = JSON.parse(read("src-tauri/capabilities/desktop-local.json"));
+  assert.equal(remote.local, false, "the loopback capability governs the packaged window");
+  assert.ok(
+    remote.remote.urls.includes("http://127.0.0.1:*"),
+    "the loopback origin the desktop server binds is the one that must carry the updater"
+  );
+  assert.ok(
+    remote.permissions.includes("updater:default"),
+    "the loopback capability must grant the updater workflow"
+  );
+  assert.ok(
+    remote.permissions.includes("process:allow-restart"),
+    "the loopback capability must allow the post-update restart"
+  );
 
   const pkg = JSON.parse(read("package.json"));
   assert.match(pkg.dependencies["@tauri-apps/plugin-updater"], /^\^2/);

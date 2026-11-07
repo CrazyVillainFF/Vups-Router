@@ -14,7 +14,7 @@ import {
   mergeActivityFiles,
   shouldAutoCollapseActivity
 } from "../chat/activity.js";
-import { generationProgress } from "../chat/progress.js";
+import { generationProgress, pathBaseName, progressBrief } from "../chat/progress.js";
 import ThoughtLine from "./reactbits/ThoughtLine.jsx";
 import { ThinkingBouncy } from "./LoadingVisuals.jsx";
 import "./AgentActivity.css";
@@ -23,10 +23,6 @@ const STATUS_TEXT = {
   failed: "Failed",
   cancelled: "Stopped"
 };
-
-function baseName(path) {
-  return String(path || "").split("/").pop() || "file";
-}
 
 function rowIcon(status) {
   if (status === ACTIVITY_STATUS.RUNNING) {
@@ -50,6 +46,9 @@ export default function AgentActivity({
   status = ACTIVITY_STATUS.COMPLETED,
   startedAt = null,
   completedAt = null,
+  requestText = "",
+  workspacePath = "",
+  permissionLabel = "",
   className = ""
 }) {
   const rows = useMemo(() => mergeActivityFiles(events, files), [events, files]);
@@ -106,6 +105,16 @@ export default function AgentActivity({
   const progress = useMemo(
     () => generationProgress({ events, files, active, startedAt, now }),
     [events, files, active, startedAt, now]
+  );
+
+  // Only a turn in flight gets the brief: a saved turn would show the folder or
+  // the access mode as they are now, not as they were when it ran.
+  const brief = useMemo(
+    () =>
+      active
+        ? progressBrief({ requestText, workspacePath, permissionLabel, events })
+        : [],
+    [active, events, permissionLabel, requestText, workspacePath]
   );
 
   const stateLabel = active
@@ -202,6 +211,16 @@ export default function AgentActivity({
         <div className="vr-activity__head">{head}</div>
       )}
 
+      {brief.length > 0 ? (
+        <ul className="vr-activity__brief" aria-live="polite" aria-label="Task progress">
+          {brief.map(line => (
+            <li key={line.id} className="vr-activity__brief-line">
+              {line.text}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
       <div className="vr-activity__trace" data-open={open ? "" : undefined}>
         <div className="vr-activity__fold">
           <div
@@ -227,7 +246,7 @@ export default function AgentActivity({
                       <span className="vr-activity__text">{event.label}</span>
                       {event.filePath ? (
                         <code className="vr-activity__file" title={event.filePath}>
-                          {baseName(event.filePath)}
+                          {pathBaseName(event.filePath) || event.filePath}
                         </code>
                       ) : null}
                       {event.summary ? (

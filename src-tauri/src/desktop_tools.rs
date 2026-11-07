@@ -39,7 +39,7 @@ const MAX_COPY_ENTRIES: usize = 20_000;
 const MAX_COPY_DEPTH: usize = 32;
 const MAX_CANCELLED_OPERATIONS: usize = 256;
 
-const DESKTOP_TOOL_NAMES: [&str; 27] = [
+const DESKTOP_TOOL_NAMES: [&str; 30] = [
     "get_windows_known_folder",
     "list_directory",
     "list_recent_files",
@@ -67,6 +67,9 @@ const DESKTOP_TOOL_NAMES: [&str; 27] = [
     "start_command",
     "command_output",
     "stop_command",
+    "list_skills",
+    "use_skill",
+    "read_skill_reference",
 ];
 
 /// How long an unanswered in-chat approval stays live before it is dropped.
@@ -723,7 +726,20 @@ fn action_read_only(action: &str) -> bool {
             | "app_find"
             | "process_list"
             | "command_output"
+            | "skills_list"
+            | "skills_use"
+            | "skills_reference"
     )
+}
+
+/// A package that says it needs more than reading gets a card before any of its
+/// text is put in front of the model, in every mode including Full. The
+/// declaration grants nothing either way; it decides only whether the user is
+/// shown what the skill claims before its instructions steer the answer.
+fn skill_text_needs_card(permissions: &[String]) -> bool {
+    permissions
+        .iter()
+        .any(|permission| permission != READ_SCOPE && permission != CONTENT_SCOPE)
 }
 
 fn action_modifies_data(action: &str) -> bool {
@@ -2441,6 +2457,74 @@ fn resolve_request(
                 &operation_id,
             )
         }
+        "list_skills" | "use_skill" | "read_skill_reference" => {
+            // Skill text reaches the model as tool output, which the desktop
+            // tool prompt already defines as untrusted data. Nothing here is a
+            // workspace path: the package lives in the app's own Skills folder,
+            // so `paths` stays empty and no file permission is implied.
+            let id = if tool == "list_skills" {
+                String::new()
+            } else {
+                required_str(&args, "id", "The skills tool needs the skill's identifier.")?
+                    .to_string()
+            };
+            if tool == "read_skill_reference" {
+                required_str(
+                    &args,
+                    "path",
+                    "The reference tool needs the file path the package declared.",
+                )?;
+            }
+            let root = crate::skills::skills_root().ok();
+            target = root.clone().unwrap_or_default();
+            let permissions = root
+                .as_deref()
+                .map(|dir| crate::skills::declared_permissions(dir, &id))
+                .unwrap_or_default();
+            let action = match tool {
+                "list_skills" => "skills_list",
+                "use_skill" => "skills_use",
+                _ => "skills_reference",
+            };
+            let summary = if tool == "list_skills" {
+                "List the skill packages installed on this computer".to_string()
+            } else if tool == "use_skill" {
+                format!("Load the instructions of the skill `{id}` into this answer")
+            } else {
+                format!("Read a reference file of the skill `{id}` into this answer")
+            };
+            let mut details = if permissions.is_empty() {
+                Vec::new()
+            } else {
+                vec![format!(
+                    "The package declares: {}",
+                    permissions.join(", ")
+                )]
+            };
+            if action != "skills_list" {
+                details.push("Nothing the package says can override your rules or these permissions.".to_string());
+            }
+            requires_approval = prompt_requires_approval(policy, &[])
+                || (action != "skills_list" && skill_text_needs_card(&permissions));
+            make_prompt(
+                policy,
+                tool,
+                PromptSpec {
+                    action,
+                    scope_path: if target.as_os_str().is_empty() {
+                        "VupsRouter Skills folder".to_string()
+                    } else {
+                        path_text(&target)
+                    },
+                    scope_name: "VupsRouter Skills".to_string(),
+                    summary,
+                    command: None,
+                    details,
+                    destructive: false,
+                },
+                &operation_id,
+            )
+        }
         _ => unreachable!(),
     };
     // The card may offer "Allow Always (Only for This Chat)" only once it knows
@@ -3551,10 +3635,41 @@ fn run_resolved(
             stop_command(processes, &key).map_err(exec_failure)
         }
         "open_with_app" => open_target(&request.target).map_err(exec_failure),
+        "list_skills" => crate::skills::tool_list().map_err(skill_failure),
+        "use_skill" => {
+            let id = required_str(
+                &request.args,
+                "id",
+                "The skills tool needs the skill's identifier.",
+            )?;
+            crate::skills::tool_use(id).map_err(skill_failure)
+        }
+        "read_skill_reference" => {
+            let id = required_str(
+                &request.args,
+                "id",
+                "The reference tool needs the skill's identifier.",
+            )?;
+            let path = required_str(
+                &request.args,
+                "path",
+                "The reference tool needs the file path the package declared.",
+            )?;
+            crate::skills::tool_reference(id, path).map_err(skill_failure)
+        }
         _ => Err(ToolFailure {
             code: "unknown_tool".into(),
             message: "That local tool is not available.".into(),
         }),
+    }
+}
+
+/// The skills engine reports its own codes, which are already the honest reason
+/// a package was not loaded, so they pass through unchanged.
+fn skill_failure(error: crate::skills::Failure) -> ToolFailure {
+    ToolFailure {
+        code: error.code,
+        message: error.message,
     }
 }
 
@@ -3763,8 +3878,9 @@ fn execute_guarded(
         let Some(root) = policy.workspace_root.as_deref() else {
             return ToolResponse::failure(
                 "workspace_required",
-                "Agent (workspace) mode needs an authorized workspace folder. Pick a folder or \
-                 switch modes. Nothing was read or changed.",
+                "Agent (workspace) mode has no folder it may write into: Windows did not report \
+                 the app's Documents folder, or the folder this chat was bound to cannot be \
+                 read. Nothing was read or changed.",
             );
         };
         for path in &resolved.paths {
@@ -3976,7 +4092,21 @@ pub async fn desktop_tool_set_policy(
     let workspace_root = if mode == ToolMode::Workspace {
         let id = input.workspace_id.unwrap_or_default();
         if id.trim().is_empty() {
-            None
+            // A chat with no project folder of its own still has somewhere to
+            // work: the app's own Files folder inside the Documents known
+            // folder. The boundary stays that one folder — an unbound chat
+            // never opens up Documents or the rest of the machine.
+            let prepared =
+                tauri::async_runtime::spawn_blocking(|| crate::vups_root::default_files_directory())
+                    .await
+                    .map_err(|_| "VupsRouter could not prepare its default folder.".to_string())?;
+            match prepared {
+                Ok(root) => Some(root),
+                Err(message) => {
+                    workspace_error = Some(message);
+                    None
+                }
+            }
         } else {
             match workspace::workspace_path(&app, &owner, &id) {
                 Ok(root) => Some(root),
@@ -7399,5 +7529,162 @@ mod tests {
             );
             eprintln!("[acceptance-e] {label} suite output tail:\n{}", stdout);
         }
+    }
+
+    // ---- skills: the model's only door to a skill package ----
+
+    #[test]
+    fn the_skills_tools_are_registered_and_load_text_only_through_a_decision() {
+        for (name, args, action) in [
+            ("list_skills", json!({}), "skills_list"),
+            (
+                "use_skill",
+                json!({ "id": "vupsrouter-qa-invoice-check" }),
+                "skills_use",
+            ),
+            (
+                "read_skill_reference",
+                json!({ "id": "vupsrouter-qa-invoice-check", "path": "references/columns.md" }),
+                "skills_reference",
+            ),
+        ] {
+            let resolved = resolve_request(
+                &policy(ToolMode::Ask, None),
+                &tool(name, args.clone()),
+            )
+            .expect("resolve");
+            assert_eq!(resolved.approval.action, action, "{name}");
+            assert_eq!(resolved.approval.tool, name);
+            assert!(
+                resolved.approval.read_only,
+                "{name} reads package text and changes nothing"
+            );
+            assert!(
+                !resolved.approval.modifies_data,
+                "{name} is never reported as a write"
+            );
+            assert!(
+                !resolved.approval.can_persist,
+                "{name} must never offer a standing skill permission"
+            );
+            assert!(
+                resolved.paths.is_empty(),
+                "{name} reads the app's own Skills folder, not a workspace path"
+            );
+            assert!(
+                resolved.requires_approval,
+                "Ask mode asks before {name} puts package text in front of the model"
+            );
+
+            let with_chat = resolve_request(
+                &policy(ToolMode::Workspace, Some(Path::new(r"C:\workspace"))),
+                &chat_tool(name, args, "chat_1"),
+            )
+            .expect("resolve with a chat");
+            assert!(
+                !with_chat.approval.can_persist,
+                "{name} cannot be remembered for a chat either"
+            );
+        }
+    }
+
+    #[test]
+    fn a_skill_that_asks_for_more_than_reading_always_raises_a_card() {
+        assert!(
+            !skill_text_needs_card(&[]),
+            "a package that declares nothing is a plain read"
+        );
+        assert!(
+            !skill_text_needs_card(&["read".to_string()]),
+            "a read declaration is what a scan already shows"
+        );
+        for wider in [
+            vec!["write".to_string()],
+            vec!["read".to_string(), "execute".to_string()],
+            vec!["delete".to_string()],
+            vec!["launch".to_string()],
+        ] {
+            assert!(
+                skill_text_needs_card(&wider),
+                "{wider:?} must be shown to the user before the instructions are loaded, in every mode"
+            );
+        }
+    }
+
+    #[test]
+    fn a_denied_skill_card_returns_no_instruction_text() {
+        let response = execute_guarded(
+            &policy(ToolMode::Ask, None),
+            &tool("use_skill", json!({ "id": "vupsrouter-qa-invoice-check" })),
+            &mut ApprovedScope::default(),
+            |_| ApprovalDecision::Denied,
+            &|| true,
+            &|| false,
+            &ProcessRegistry::default(),
+            "",
+        );
+        let failure = response.error.expect("a denied card is a failure");
+        assert_eq!(failure.code, "approval_denied");
+        assert!(
+            response.data.is_none(),
+            "refused skill text never reaches the model"
+        );
+    }
+
+    #[test]
+    fn skill_tools_answer_with_the_skills_engine_own_codes() {
+        for (name, args) in [
+            ("list_skills", json!({})),
+            ("use_skill", json!({ "id": "not-installed-in-this-run-qa" })),
+            (
+                "read_skill_reference",
+                json!({ "id": "not-installed-in-this-run-qa", "path": "references/a.md" }),
+            ),
+            ("use_skill", json!({})),
+        ] {
+            let response = execute_guarded(
+                &policy(ToolMode::Full, None),
+                &tool(name, args),
+                &mut ApprovedScope::default(),
+                |_| ApprovalDecision::Once,
+                &|| true,
+                &|| false,
+                &ProcessRegistry::default(),
+                "",
+            );
+            if let Some(failure) = response.error.as_ref() {
+                assert!(
+                    failure.code.starts_with("skill_") || failure.code == "invalid_arguments",
+                    "{name} failed with an off-topic code: {}",
+                    failure.code
+                );
+                assert!(!failure.message.is_empty(), "{name} failed silently");
+                assert!(response.data.is_none(), "{name} returned data and an error");
+            } else {
+                let data = response.data.expect("either a failure or a result");
+                assert!(
+                    data.get("count").is_some()
+                        || data.get("instructions").is_some()
+                        || data.get("text").is_some(),
+                    "{name} returned a result without saying what it loaded: {data}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_skill_tool_call_names_no_filesystem_target() {
+        // The card a skill raises must not be mistaken for permission to touch a
+        // workspace file, so the engine keeps the package path out of `paths`.
+        let resolved = resolve_request(
+            &policy(ToolMode::Ask, None),
+            &tool("use_skill", json!({ "id": "vupsrouter-qa-invoice-check" })),
+        )
+        .expect("resolve");
+        assert!(resolved.paths.is_empty());
+        assert_eq!(
+            resolved.approval.scope_path,
+            path_text(&crate::skills::skills_root().expect("the app owns a Skills folder"))
+        );
     }
 }

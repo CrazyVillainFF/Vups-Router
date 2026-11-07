@@ -6,6 +6,8 @@ mod desktop_server;
 mod desktop_tools;
 mod panel_browser;
 mod panel_terminal;
+mod skills;
+mod vups_root;
 mod workspace;
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
@@ -20,6 +22,11 @@ fn main() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            // Projects, skills, plugins and logs all live under the folder the
+            // app owns in Documents, so it has to exist before the window that
+            // offers to save into it is built.
+            vups_root::bootstrap(app.handle());
+            skills::configure(app.handle());
             let url = desktop_server::start(app.handle().clone()).map_err(std::io::Error::other)?;
             let url = url
                 .parse()
@@ -35,7 +42,11 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             workspace::workspace_list,
+            workspace::workspace_touch,
             workspace::workspace_pick,
+            workspace::workspace_pick_container,
+            workspace::workspace_create,
+            workspace::workspace_add_path,
             workspace::workspace_rename,
             workspace::workspace_remove,
             workspace::workspace_scan,
@@ -43,7 +54,19 @@ fn main() {
             workspace::workspace_read_text,
             workspace::workspace_tree,
             workspace::workspace_search,
+            workspace::workspace_make_directory,
+            workspace::workspace_create_file,
+            workspace::workspace_write_file,
+            workspace::workspace_rename_path,
+            workspace::workspace_move_path,
+            workspace::workspace_delete_path,
             workspace::workspace_git_review,
+            vups_root::vups_root_status,
+            vups_root::vups_root_ensure,
+            vups_root::vups_root_open,
+            vups_root::vups_root_reveal,
+            vups_root::vups_root_project,
+            vups_root::vups_root_default_workspace,
             panel_browser::panel_browser_create,
             panel_browser::panel_browser_set_bounds,
             panel_browser::panel_browser_navigate,
@@ -75,7 +98,13 @@ fn main() {
             desktop_tools::desktop_tool_cancel_operation,
             composer_files::composer_pick_folder,
             composer_files::composer_release_folder,
-            composer_files::composer_read_files
+            composer_files::composer_read_files,
+            skills::skills_status,
+            skills::skills_scan,
+            skills::skills_install,
+            skills::skills_uninstall,
+            skills::skills_set_enabled,
+            skills::skills_pick_source
         ])
         .build(tauri::generate_context!())
         .expect("error while building VupsRouter")

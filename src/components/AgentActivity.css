@@ -112,6 +112,27 @@
   flex: none;
 }
 
+/* The running brief stays visible while a task is in flight; the step trace
+   below it is what folds away. */
+.vr-activity__brief {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0 0 0 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-left: 1px solid var(--border);
+}
+
+.vr-activity__brief-line {
+  min-width: 0;
+  overflow: hidden;
+  font: 400 11.5px/1.45 var(--mono);
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 /* Height is animated with the grid 1fr -> 0fr trick: display:none would skip
    the transition, and a fixed max-height would snap past short step lists. */
 .vr-activity__trace {

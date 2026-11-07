@@ -14,11 +14,16 @@
     "allow-composer-files",
     "allow-panel-browser",
     "allow-panel-terminal",
+    "allow-skills-commands",
+    "updater:default",
+    "process:allow-restart",
     {
       "identifier": "opener:allow-open-url",
       "allow": [
         { "url": "https://*" },
-        { "url": "mailto:*" }
+        { "url": "mailto:*" },
+        { "url": "http://127.0.0.1:*" },
+        { "url": "http://localhost:*" }
       ]
     }
   ]

@@ -763,6 +763,7 @@
 
 .vr-workspace-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 9px;
   max-width: 860px;
@@ -844,6 +845,80 @@
 .vr-workspace-select:disabled {
   opacity: 0.5;
   cursor: wait;
+}
+
+/* The GitHub repository this chat works on. Same shell as the folder bar above
+   the composer, because both name what the assistant is pointed at. */
+.vr-chat-repo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: 860px;
+  margin: 0 auto 8px;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.vr-chat-repo__icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
+
+.vr-chat-repo__copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.35;
+}
+
+.vr-chat-repo__copy strong {
+  color: var(--text);
+  font: 500 11.5px var(--font-mono), monospace;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.vr-chat-repo__copy span {
+  color: var(--muted);
+  font-size: 10px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.vr-chat-repo button {
+  flex-shrink: 0;
+  padding: 5px 9px;
+  border: 1px solid color-mix(in srgb, var(--text) 22%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+  font: 500 10.5px var(--font-sans), sans-serif;
+  cursor: pointer;
+}
+
+.vr-chat-repo button:hover {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.vr-chat-repo button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.vr-chat-repo button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .vr-modal-backdrop {
@@ -1712,6 +1787,447 @@
   line-height: 1.6;
 }
 
+.vr-task-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.95fr);
+  gap: 16px;
+  align-items: start;
+  margin-top: 16px;
+}
+
+.vr-task-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.vr-task-detail {
+  position: sticky;
+  top: 20px;
+}
+
+.vr-task-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.vr-task-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: none;
+  color: var(--muted);
+  font: 500 11.5px var(--font-sans), sans-serif;
+  cursor: pointer;
+}
+
+.vr-task-filter:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.vr-task-filter[data-active="true"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.vr-task-filter-count {
+  color: var(--muted);
+  font: 10px var(--font-mono), monospace;
+}
+
+.vr-task-sync {
+  margin: 0;
+  color: var(--muted);
+  font: 10px var(--font-mono), monospace;
+}
+
+.vr-task-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vr-task-group h2 {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font: 600 10.5px var(--font-sans), sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vr-task-row {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.vr-task-row--selected {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.vr-task-row-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.vr-task-brief {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: 500 13px var(--font-sans), sans-serif;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.vr-task-brief-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.vr-task-time {
+  flex: none;
+  color: var(--muted);
+  font: 10px var(--font-mono), monospace;
+}
+
+.vr-task-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.vr-task-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 99px;
+  background: var(--muted);
+}
+
+.vr-task-dot--live {
+  background: var(--accent);
+}
+
+.vr-task-dot--warn {
+  background: var(--warn);
+}
+
+.vr-task-dot--ok {
+  background: var(--ok);
+}
+
+.vr-task-dot--error {
+  background: var(--error);
+}
+
+.vr-task-dot--muted {
+  background: var(--muted);
+}
+
+.vr-task-dot--unknown {
+  background: var(--border-strong);
+}
+
+.vr-task-offline {
+  padding: 2px 6px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--warn);
+  font: 9.5px var(--font-mono), monospace;
+}
+
+.vr-task-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.vr-task-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.vr-task-result {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.vr-task-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.vr-task-detail h2 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.vr-task-detail h3 {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+.vr-task-log {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vr-task-log li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.vr-task-log li:last-child {
+  border-bottom: 0;
+}
+
+.vr-task-log-label {
+  color: var(--text);
+}
+
+.vr-task-log-path {
+  color: var(--muted);
+  font: 10px var(--font-mono), monospace;
+  overflow-wrap: anywhere;
+}
+
+.vr-task-log-fail {
+  color: var(--error);
+  font: 10px var(--font-mono), monospace;
+}
+
+.vr-task-log li[data-status="running"] .vr-task-log-label {
+  color: var(--accent);
+}
+
+.vr-task-log li[data-status="failed"] .vr-task-log-label {
+  color: var(--error);
+}
+
+.vr-task-log li[data-status="cancelled"] .vr-task-log-label {
+  color: var(--muted);
+}
+
+.vr-task-row[data-section="waiting"] {
+  border-left: 2px solid color-mix(in srgb, var(--warn) 60%, transparent);
+}
+
+.vr-task-times {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+  width: 100%;
+  margin: 0;
+}
+
+.vr-task-times dt {
+  color: var(--muted);
+  font: 9.5px var(--font-mono), monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.vr-task-times dd {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: 11.5px;
+}
+
+.vr-task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.vr-task-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: none;
+  color: var(--muted);
+  font: 500 11px var(--font-sans), sans-serif;
+  cursor: pointer;
+}
+
+.vr-task-action:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.vr-task-action:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.vr-task-action--danger {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 40%, transparent);
+}
+
+/* Mid-task clarification (#312): the question the model stopped on, and the
+   one field that can put the task back in the queue. */
+.vr-task-answer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  border-radius: 7px;
+  background: none;
+  color: var(--warn);
+  font: 500 11px var(--font-sans), sans-serif;
+  cursor: pointer;
+}
+
+.vr-task-answer-link:hover {
+  border-color: var(--warn);
+}
+
+.vr-task-clarification {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warn) 6%, transparent);
+}
+
+.vr-task-question {
+  margin: 0;
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.vr-task-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.vr-task-option {
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: var(--bg);
+  color: var(--muted);
+  font: 500 11px var(--font-sans), sans-serif;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.vr-task-option:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.vr-task-option:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.vr-task-answer-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.vr-task-answer {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  outline: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 12.5px var(--font-sans), sans-serif;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.vr-task-answer:focus {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.vr-task-answer:disabled {
+  opacity: 0.6;
+}
+
+.vr-task-action--answer {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+
+.vr-task-action--answer:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.vr-task-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
 .vr-account-card {
   display: flex;
   align-items: center;
@@ -1798,6 +2314,14 @@ html[data-reduce-motion="true"] *::after {
   .vr-automation-form {
     position: static;
   }
+  .vr-task-layout {
+    grid-template-columns: 1fr;
+  }
+  .vr-task-detail,
+  .vr-task-column > aside,
+  .vr-task-column > div {
+    position: static;
+  }
 }
 
 @media (max-width: 650px) {
@@ -1860,6 +2384,12 @@ html[data-reduce-motion="true"] *::after {
   }
   .vr-workspace-bar__copy span {
     display: none;
+  }
+  .vr-chat-repo {
+    flex-wrap: wrap;
+  }
+  .vr-chat-repo__copy {
+    flex: 1 1 55%;
   }
   .vr-workspace-bar button {
     padding: 5px 7px;

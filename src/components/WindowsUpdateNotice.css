@@ -1,0 +1,133 @@
+.vr-update-notice {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  z-index: 61;
+  width: min(320px, calc(100vw - 28px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 11px 12px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font: 12px var(--font-sans), sans-serif;
+}
+
+.vr-update-notice__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+}
+
+.vr-update-notice__title {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.vr-update-notice__close {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.vr-update-notice__close:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.vr-update-notice__close:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.vr-update-notice__notes {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.vr-update-notice__bar {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  overflow: hidden;
+}
+
+.vr-update-notice__bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+.vr-update-notice__bar > span.is-indeterminate {
+  width: 38%;
+  animation: vr-update-notice-slide 1.3s ease-in-out infinite;
+}
+
+@keyframes vr-update-notice-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(280%);
+  }
+}
+
+.vr-update-notice__done {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--ok);
+  line-height: 1.5;
+}
+
+.vr-update-notice__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  color: var(--error);
+  line-height: 1.5;
+}
+
+.vr-update-notice__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.vr-update-notice__spin {
+  animation: vr-update-notice-rotate 0.9s linear infinite;
+}
+
+@keyframes vr-update-notice-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vr-update-notice__bar > span.is-indeterminate,
+  .vr-update-notice__spin {
+    animation: none;
+  }
+}

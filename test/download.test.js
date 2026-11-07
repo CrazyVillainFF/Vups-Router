@@ -67,7 +67,9 @@ test("PWA manifest exposes real screenshots and keeps install metadata", () => {
   assert.equal(manifest.display, "standalone");
   assert.ok(manifest.display_override.includes("standalone"));
   assert.equal(manifest.start_url, "/");
-  assert.equal(manifest.theme_color, "#070b14");
+  // The install chrome is the dark token background, not the old navy shell.
+  const darkBg = /--bg:\s*(#[0-9a-f]{6})/i.exec(read("src/tokens.css"))[1];
+  assert.equal(manifest.theme_color, darkBg);
   assert.ok(Array.isArray(manifest.screenshots));
   assert.equal(manifest.screenshots.length, 2);
 

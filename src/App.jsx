@@ -19,14 +19,23 @@ import { getApiErrorMessage } from "./services/api.js";
 import { NATIVE_SHELLS, detectNativeShell, isTauriRuntime, usesBrowserAuthHandoff } from "./native/shell.js";
 import { openAuthPage } from "./native/authLinks.js";
 import {
+  backendEnvironmentNotice,
+  logBackendEnvironment,
+  readBackendRuntime
+} from "./native/backendEnvironment.js";
+import {
+  abortPendingPoll,
   beginDesktopSignIn,
   clearPendingSignIn,
+  hasActivePoll,
   readPendingSignIn,
   reopenDesktopSignIn,
   waitForDesktopSignIn
 } from "./native/desktopSignIn.js";
 import LinkErrorToast from "./components/LinkErrorToast.jsx";
+import AppBoundary from "./components/AppBoundary.jsx";
 import AndroidDownloadManager from "./components/AndroidDownloadManager.jsx";
+import WindowsUpdateNotice from "./components/WindowsUpdateNotice.jsx";
 import DesktopAuthPage from "./pages/DesktopAuthPage.jsx";
 import ProtectedAppLayout from "./desktop/ProtectedAppLayout.jsx";
 import {
@@ -36,6 +45,7 @@ import {
   HelpPage
 } from "./desktop/DesktopPages.jsx";
 import PluginsPage from "./plugins/PluginsPage.jsx";
+import TaskCenterPage from "./tasks/TaskCenterPage.jsx";
 import ComboPage from "./combo/ComboPage.jsx";
 import ComboSettingsPage from "./combo/ComboSettingsPage.jsx";
 import {
@@ -89,9 +99,24 @@ function AuthPage({ mode }) {
   const [touched, setTouched] = useState({});
   const [handoff, setHandoff] = useState({ state: "idle", message: "" });
   const [lastAuthKind, setLastAuthKind] = useState("signin");
+  const [backendRuntime, setBackendRuntime] = useState(null);
   const transactionRef = useRef(null);
   const handoffRef = useRef(null);
   const shellLabel = nativeShell === NATIVE_SHELLS.android ? "ANDROID" : "WINDOWS";
+  const backendNotice = backendEnvironmentNotice(backendRuntime);
+
+  useEffect(() => {
+    let ignored = false;
+    readBackendRuntime()
+      .then(runtime => {
+        if (ignored) return;
+        setBackendRuntime(runtime);
+        logBackendEnvironment(runtime);
+      });
+    return () => {
+      ignored = true;
+    };
+  }, []);
 
   useEffect(() => {
     setMessage("");
@@ -106,7 +131,9 @@ function AuthPage({ mode }) {
   useEffect(() => {
     if (!browserAuth) return undefined;
     const pending = readPendingSignIn();
-    if (!pending) return undefined;
+    // Adopt a resumed ticket only while nothing is already polling it. A second
+    // loop would race the first and misreport its success as an expiry.
+    if (!pending || hasActivePoll(pending.ticket)) return undefined;
     watchHandoff(pending);
     return () => {
       handoffRef.current?.abort();
@@ -168,6 +195,8 @@ function AuthPage({ mode }) {
   }
 
   async function watchHandoff(transaction, { reopen = false } = {}) {
+    // Never two loops on one ticket: drop the previous owner before adopting a
+    // transaction, otherwise the loser reports a finished sign-in as a failure.
     handoffRef.current?.abort();
     const controller = new AbortController();
     transactionRef.current = transaction;
@@ -176,8 +205,17 @@ function AuthPage({ mode }) {
     setHandoff({ state: "waiting", message: "" });
     try {
       if (reopen) await reopenDesktopSignIn(transaction);
-      await waitForDesktopSignIn(transaction, { signal: controller.signal });
-      await refreshSession();
+      const result = await waitForDesktopSignIn(transaction, { signal: controller.signal });
+      const current = await refreshSession();
+      if (!current && result?.status === "completed") {
+        // The ticket was already redeemed elsewhere, so this window never
+        // received the cookie. Say so plainly instead of calling it expired.
+        setHandoff({
+          state: "error",
+          message: "That sign-in was already completed in another window. Sign in again to continue here."
+        });
+        return;
+      }
       setHandoff({ state: "done", message: "" });
     } catch (err) {
       if (err?.name === "AbortError") return;
@@ -188,6 +226,8 @@ function AuthPage({ mode }) {
         setHandoff({ state: "done", message: "" });
         return;
       }
+      transactionRef.current = null;
+      clearPendingSignIn();
       setHandoff({
         state: "error",
         message: err?.message || "Could not finish signing in. Try again."
@@ -213,6 +253,15 @@ function AuthPage({ mode }) {
       }
       return;
     }
+    // A leftover ticket cannot be resumed: only its holder can redeem it, and a
+    // fresh attempt must not race the loop that still owns the old ticket.
+    const stale = readPendingSignIn();
+    if (stale) {
+      handoffRef.current?.abort();
+      if (hasActivePoll(stale.ticket)) abortPendingPoll(stale.ticket);
+    }
+    transactionRef.current = null;
+    clearPendingSignIn();
     setExternalBusy(kind);
     try {
       const { transaction } = await beginDesktopSignIn({
@@ -222,6 +271,8 @@ function AuthPage({ mode }) {
       await watchHandoff(transaction);
     } catch (err) {
       setExternalBusy("");
+      transactionRef.current = null;
+      clearPendingSignIn();
       setHandoff({
         state: "error",
         message: err?.message || "Could not start sign-in. Try again."
@@ -231,6 +282,7 @@ function AuthPage({ mode }) {
 
     return <div className={`auth-layout${nativeShell ? " auth-layout--native" : ""}`}><div className="auth-art-panel"><Link to="/" className="brand auth-brand"><span className="brand-mark"><VupsLogo /></span><span>vups<span className="brand-light">router</span></span></Link><div className="auth-art-copy"><div className="eyebrow"><span className="eyebrow-line"/> FREE AI, MADE CLEAR</div><h1>Find your next<br/><span>AI model.</span></h1><p>Compare free access options and open models.</p><div className="auth-logo" aria-hidden="true"><VupsLogo className="auth-logo-image" sizes="220px" /></div><div className="auth-art-lines"><span/><span/><span/><span/><span/></div></div><div className="auth-art-foot"><span>FREE AI / CLEAR CHOICES</span><span>VUPSROUTER / 2026</span></div></div>
     <div className="auth-form-panel"><Link to="/" className="back-home">{"\u2190"} Back to home</Link><div className="auth-form-wrap"><div className="auth-form-heading"><span className="auth-kicker">{nativeShell ? `VUPSROUTER FOR ${shellLabel}` : isSignup ? "JOIN VUPSROUTER" : "GOOD TO HAVE YOU BACK"}</span><h2>{nativeShell ? isSignup ? "Create your account" : "Sign in" : isSignup ? "Create your account" : "Welcome back"}</h2><p>{browserAuth ? "Account access opens securely in your browser." : isSignup ? "Create an account to use your VupsRouter account features." : "Sign in to your VupsRouter account."}</p></div>
+      {backendNotice ? <Alert severity={backendNotice.severity} variant="outlined" sx={{mb:2}}>{backendNotice.message}</Alert> : null}
       {!browserAuth ? <>
       {error && <Alert severity="error" sx={{mb:2}}>{error}</Alert>}{message && <Alert severity="success" sx={{mb:2}}>{message}</Alert>}
       <form className="auth-form" onSubmit={handleSubmit}>
@@ -333,8 +385,16 @@ function AuthPage({ mode }) {
                   size="small"
                   variant="text"
                   onClick={async () => {
+                    const pending = readPendingSignIn();
+                    if (!pending) {
+                      setHandoff({
+                        state: "error",
+                        message: "That sign-in request is no longer available. Start again."
+                      });
+                      return;
+                    }
                     try {
-                      await reopenDesktopSignIn(transactionRef.current);
+                      await reopenDesktopSignIn(pending);
                     } catch (err) {
                       setHandoff({ state: "error", message: err?.message || "Could not reopen the sign-in page." });
                     }
@@ -381,7 +441,7 @@ function ScrollToTop() {
 }
 
 export default function App() {
-  return <AuthProvider><LinkErrorToast /><AndroidDownloadManager /><ScrollToTop /><Routes>
+  return <AuthProvider><LinkErrorToast /><AndroidDownloadManager /><WindowsUpdateNotice /><ScrollToTop /><Routes>
     <Route path="/" element={<LandingPage />} />
     <Route path="/features" element={<FeaturesPage />} />
     <Route path="/about" element={<AboutPage />} />
@@ -406,12 +466,13 @@ export default function App() {
     <Route path="/forgot-password" element={<><PageMeta title="Forgot password — VupsRouter" noIndex /><ForgotPasswordPage /></>} />
     <Route path="/reset-password" element={<Navigate to="/forgot-password" replace />} />
     <Route element={<ProtectedAppLayout />}>
-      <Route path="/chat" element={<><PageMeta title="Chat — VupsRouter" description="Chat with Vups v3 Galax or route requests through your own AI provider." noIndex /><ChatPage /></>} />
+      <Route path="/chat" element={<><PageMeta title="Chat — VupsRouter" description="Chat with Vups v3 Galax or route requests through your own AI provider." noIndex /><AppBoundary><ChatPage /></AppBoundary></>} />
       <Route path="/settings" element={<><PageMeta title="API Settings — VupsRouter" noIndex /><SettingsPage embedded /></>} />
       <Route path="/combo" element={<><PageMeta title="Vups Combo AI — VupsRouter" noIndex /><ComboPage /></>} />
       <Route path="/combo/settings" element={<><PageMeta title="Combo Settings — VupsRouter" noIndex /><ComboSettingsPage /></>} />
       <Route path="/app-settings" element={<><PageMeta title="Application Settings — VupsRouter" noIndex /><AppSettingsPage /></>} />
       <Route path="/automations" element={<><PageMeta title="Automations — VupsRouter" noIndex /><AutomationsPage /></>} />
+      <Route path="/tasks" element={<><PageMeta title="Background tasks — VupsRouter" noIndex /><TaskCenterPage /></>} />
       <Route path="/plugins" element={<><PageMeta title="Plugins — VupsRouter" noIndex /><PluginsPage /></>} />
       <Route path="/extensions" element={<Navigate to="/plugins" replace />} />
       <Route path="/help" element={<><PageMeta title="Help — VupsRouter" noIndex /><HelpPage /></>} />

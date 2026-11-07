@@ -319,6 +319,96 @@
   white-space: nowrap;
 }
 
+.vr-pane-row__main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.vr-pane-row__main:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.vr-pane-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+}
+
+.vr-pane-row:hover .vr-pane-row__actions,
+.vr-pane-row:focus-within .vr-pane-row__actions {
+  opacity: 1;
+}
+
+.vr-pane-inline-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+}
+
+.vr-pane-inline-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.vr-pane-confirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--warn-line);
+  border-radius: var(--radius-xs);
+  background: var(--surface-hover);
+  font-size: var(--text-sm);
+}
+
+.vr-pane-confirm span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.vr-pane-confirm__danger {
+  border-color: var(--danger-line);
+  color: var(--danger);
+}
+
+.vr-file-editor {
+  flex: 1;
+  min-height: 180px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  resize: vertical;
+}
+
 .vr-pane-badge {
   font-size: var(--text-2xs);
   color: var(--warn);

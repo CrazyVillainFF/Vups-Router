@@ -9,11 +9,14 @@ import { apiClient } from "../src/services/api.js";
 import {
   DESKTOP_SIGNIN_STORAGE_KEY,
   DesktopSignInError,
+  abortPendingPoll,
+  approvalBaseUrl,
   approvalUrl,
   beginDesktopSignIn,
   challengeForVerifier,
   clearPendingSignIn,
   createVerifier,
+  hasActivePoll,
   pollDesktopSignIn,
   readPendingSignIn,
   reopenDesktopSignIn,
@@ -95,12 +98,69 @@ async function rejection(run) {
   throw new Error("expected the call to fail");
 }
 
+// axios rejects with a response object; a transport failure has none at all.
+// The polling loop has to tell those two apart, so the fixtures say so too.
+function httpError(status, message = "Request failed") {
+  return Object.assign(new Error(`Request failed with status code ${status}`), {
+    isAxiosError: true,
+    response: { status, data: { message } }
+  });
+}
+
+function offlineError() {
+  return Object.assign(new Error("Network Error"), { isAxiosError: true });
+}
+
+// Lets the loop under test get its request out before the scenario acts on it.
+async function until(predicate, tries = 100) {
+  for (let i = 0; i < tries; i += 1) {
+    if (predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  throw new Error("the condition never became true");
+}
+
+// A promise that rejects while nobody is watching it is a test bug, not a
+// result: capture the outcome instead of attaching a handler after the fact.
+function settled(promise) {
+  return promise.then(value => ({ ok: true, value }), error => ({ ok: false, error }));
+}
+
 test("the sign-in page always lives on the deployed HTTPS site", () => {
   assert.equal(siteBaseUrl({}), new URL(PRODUCTION_SITE_URL).origin);
   assert.equal(siteBaseUrl({ VITE_SITE_URL: "https://preview.example/" }), "https://preview.example");
   assert.equal(siteBaseUrl({ VITE_SITE_URL: "http://localhost:5173" }), "http://localhost:5173");
   assert.equal(siteBaseUrl({ VITE_SITE_URL: "http://evil.example" }), new URL(PRODUCTION_SITE_URL).origin);
   assert.equal(siteBaseUrl({ VITE_SITE_URL: "javascript:alert(1)" }), new URL(PRODUCTION_SITE_URL).origin);
+});
+
+test("the approval page stays on the app origin when the API is loopback", () => {
+  assert.equal(
+    approvalBaseUrl(
+      { VITE_SITE_URL: "https://site.test" },
+      { apiOrigin: "http://127.0.0.1:4190", pageOrigin: "http://127.0.0.1:52123" }
+    ),
+    "http://127.0.0.1:52123"
+  );
+  assert.equal(
+    approvalBaseUrl(
+      { VITE_SITE_URL: "https://site.test" },
+      { apiOrigin: "https://vups-router-be.onrender.com", pageOrigin: "http://127.0.0.1:52123" }
+    ),
+    "https://site.test"
+  );
+  assert.equal(
+    approvalBaseUrl(
+      {},
+      { apiOrigin: "http://127.0.0.1:4190", pageOrigin: "https://vups-router-three.vercel.app" }
+    ),
+    new URL(PRODUCTION_SITE_URL).origin,
+    "a non-loopback page origin never becomes the approval origin"
+  );
+  assert.equal(
+    new URL(approvalUrl(transaction(), {}, "http://127.0.0.1:52123")).origin,
+    "http://127.0.0.1:52123"
+  );
 });
 
 test("the challenge is the SHA-256 of a local verifier", async () => {
@@ -304,6 +364,247 @@ test("reopen sends the browser back to the same pending ticket", async () => {
     assert.equal(new URL(url).searchParams.get("client"), "android");
     assert.equal(new URL(url).searchParams.get("ticket"), TICKET);
   });
+});
+
+test("an abort during an in-flight poll cancels the request, not only the timer", async () => {
+  const store = memoryStorage();
+  savePendingSignIn(transaction(), store);
+  const controller = new AbortController();
+  let polls = 0;
+  let heldSignal = null;
+  let releaseHold;
+  const hold = new Promise(resolve => {
+    releaseHold = resolve;
+  });
+
+  return withGlobals({ localStorage: store }, () =>
+    withApiStub(
+      async (url, body, config) => {
+        polls += 1;
+        if (polls === 1) {
+          heldSignal = config.signal;
+          await hold;
+          // A backend still thinking when the app walked away answers the way
+          // axios does: a cancellation, not a response.
+          if (heldSignal?.aborted) {
+            throw Object.assign(new Error("canceled"), { code: "ERR_CANCELED", name: "CanceledError" });
+          }
+        }
+        return response(202, { status: "pending" });
+      },
+      async () => {
+        const wait = settled(
+          waitForDesktopSignIn(readPendingSignIn(store), { signal: controller.signal, intervalMs: 1 })
+        );
+        await until(() => polls === 1);
+        assert.ok(heldSignal instanceof AbortSignal, "the poll is issued with a cancellable signal");
+        controller.abort();
+        releaseHold();
+        const outcome = await wait;
+        assert.equal(outcome.ok, false, "a cancelled wait does not resolve");
+        assert.equal(outcome.error.name, "AbortError");
+        assert.equal(heldSignal.aborted, true, "the request in flight is aborted, not abandoned");
+        assert.equal(polls, 1, "an aborted loop issues no further polls");
+        assert.ok(readPendingSignIn(store), "a cancelled wait leaves the ticket resumable");
+      }
+    )
+  );
+});
+
+test("one ticket has one polling owner and a replacement stops the loop it supersedes", async () => {
+  const store = memoryStorage();
+  savePendingSignIn(transaction(), store);
+  const tx = readPendingSignIn(store);
+  let polls = 0;
+
+  return withGlobals({ localStorage: store }, () =>
+    withApiStub(async () => {
+      polls += 1;
+      return response(202, { status: "pending" });
+    }, async () => {
+      const first = settled(waitForDesktopSignIn(tx, { intervalMs: 1 }));
+      await until(() => hasActivePoll(tx.ticket));
+      assert.equal(hasActivePoll(tx.ticket), true, "the wait owns its ticket while it runs");
+
+      const second = settled(waitForDesktopSignIn(tx, { intervalMs: 1 }));
+      const beaten = await first;
+      assert.equal(beaten.ok, false, "the superseded loop ends");
+      assert.equal(beaten.error.name, "AbortError", "it is cancelled, not allowed to race on");
+      assert.equal(hasActivePoll(tx.ticket), true, "the replacement owns the ticket");
+
+      abortPendingPoll(tx.ticket);
+      const stopped = await second;
+      assert.equal(stopped.ok, false, "the owner releases when the wait is cancelled");
+      assert.equal(stopped.error.name, "AbortError");
+      assert.equal(hasActivePoll(tx.ticket), false, "no owner survives a cancelled wait");
+      assert.ok(readPendingSignIn(store), "a ticket nobody finished is still resumable");
+      assert.ok(polls >= 2, "both loops got as far as asking");
+    })
+  );
+});
+
+test("a backend that briefly returns 5xx is retried and can still complete the sign-in", async () => {
+  const store = memoryStorage();
+  savePendingSignIn(transaction(), store);
+  let polls = 0;
+  return withGlobals({ localStorage: store }, () =>
+    withApiStub(async () => {
+      polls += 1;
+      if (polls <= 2) throw httpError(503, "Service Unavailable");
+      return response(200, { status: "approved", user: { email: "a@b.c" }, token: "session-jwt" });
+    }, async () => {
+      const result = await waitForDesktopSignIn(readPendingSignIn(store), { intervalMs: 1 });
+      assert.equal(result.status, "approved", "an outage mid-wait is not a failed sign-in");
+      assert.equal(polls, 3);
+      assert.equal(store.getItem(DESKTOP_SIGNIN_STORAGE_KEY), null);
+    })
+  );
+});
+
+test("a backend that stays unreachable stops retrying and reports a connection failure, not an expiry", async () => {
+  const store = memoryStorage();
+  savePendingSignIn(transaction(), store);
+  let polls = 0;
+  return withGlobals({ localStorage: store }, () =>
+    withApiStub(
+      async () => {
+        polls += 1;
+        throw offlineError();
+      },
+      async () => {
+        const error = await rejection(() => waitForDesktopSignIn(readPendingSignIn(store), { intervalMs: 1 }));
+        assert.ok(error instanceof DesktopSignInError);
+        assert.equal(error.reason, "network", "a transport failure is not an authentication outcome");
+        assert.match(error.message, /reach the VupsRouter sign-in service/);
+        assert.doesNotMatch(error.message, /expired/, "the app must not blame the ticket for an outage");
+        assert.equal(polls, 4, "retries are bounded: one attempt plus three retries");
+        assert.ok(readPendingSignIn(store), "the ticket survives an outage and can be resumed");
+      }
+    )
+  );
+});
+
+test("a rejected transaction is asked about once and never retried", async () => {
+  const rejections = [
+    { status: 400, data: { status: "invalid", message: "The sign-in request could not be verified. Start again from the app." } },
+    { status: 410, data: { status: "expired", message: "This sign-in request expired. Start again from the app." } }
+  ];
+  for (const fixture of rejections) {
+    const store = memoryStorage();
+    savePendingSignIn(transaction(), store);
+    let polls = 0;
+    await withGlobals({ localStorage: store }, () =>
+      withApiStub(
+        async () => {
+          polls += 1;
+          return response(fixture.status, fixture.data);
+        },
+        async () => {
+          const error = await rejection(() => waitForDesktopSignIn(readPendingSignIn(store), { intervalMs: 1 }));
+          assert.ok(error instanceof DesktopSignInError);
+          assert.equal(polls, 1, `a ${fixture.status} rejection ends the wait at once`);
+          assert.equal(error.message, fixture.data.message, "the server's reason is what the user reads");
+          assert.equal(store.getItem(DESKTOP_SIGNIN_STORAGE_KEY), null, "a rejected ticket is not kept to retry");
+        }
+      )
+    );
+  }
+});
+
+test("a duplicate poll that answers completed is a finished sign-in, not a failure", async () => {
+  const store = memoryStorage();
+  savePendingSignIn(transaction(), store);
+  return withGlobals({ localStorage: store }, () =>
+    withApiStub(async () => response(200, { status: "completed" }), async () => {
+      const result = await waitForDesktopSignIn(readPendingSignIn(store), { intervalMs: 1 });
+      assert.equal(result.status, "completed");
+      assert.equal(store.getItem(DESKTOP_SIGNIN_STORAGE_KEY), null, "a redeemed ticket is never left to resume");
+    })
+  );
+});
+
+test("a transaction already past its local deadline is dropped without asking the server", async () => {
+  const store = memoryStorage();
+  savePendingSignIn(transaction(), store);
+  let polls = 0;
+  return withGlobals({ localStorage: store }, () =>
+    withApiStub(
+      async () => {
+        polls += 1;
+        return response(202, { status: "pending" });
+      },
+      async () => {
+        const error = await rejection(() =>
+          waitForDesktopSignIn(transaction({ expiresAt: Date.now() - 1000 }), { intervalMs: 1 })
+        );
+        assert.ok(error instanceof DesktopSignInError && error.reason === "expired");
+        assert.equal(polls, 0, "a locally dead ticket never reaches the network");
+        assert.equal(store.getItem(DESKTOP_SIGNIN_STORAGE_KEY), null, "the stale local copy goes with it");
+      }
+    )
+  );
+});
+
+test("polling cannot leave an orphan owner behind after the wait ends", async () => {
+  const store = memoryStorage();
+  savePendingSignIn(transaction(), store);
+  await withGlobals({ localStorage: store }, () =>
+    withApiStub(async () => response(200, { status: "approved", user: { email: "a@b.c" } }), async () => {
+      await waitForDesktopSignIn(readPendingSignIn(store), { intervalMs: 1 });
+      assert.equal(hasActivePoll(TICKET), false, "a finished wait releases its ticket");
+    })
+  );
+});
+
+test("the desktop shell serves the window from an origin that survives a restart", () => {
+  const server = read("src-tauri/src/desktop_server.rs");
+  assert.match(server, /fn bind_listener\(\)/, "the listener picks its own port instead of asking the OS");
+  assert.match(server, /page_origin = format!\("http:\/\/127\.0\.0\.1:\{port\}"\)/);
+  assert.match(server, /Ok\(format!\("\{page_origin\}\/chat\?native=windows"\)\)/, "the window is opened on the origin the guard expects");
+  const startBody = server.slice(server.indexOf("pub fn start"), server.indexOf("async fn handle_request"));
+  assert.match(startBody, /let listener = bind_listener\(\)\?;/, "start() delegates the port choice to bind_listener()");
+  assert.doesNotMatch(
+    startBody,
+    /TcpListener::bind/,
+    "start() never asks the OS for a port directly, so the origin is stable unless the whole range is busy"
+  );
+  const bindBody = server.slice(server.indexOf("fn bind_listener()"), server.indexOf("pub(crate) fn guard_headers"));
+  assert.ok(
+    bindBody.indexOf("for port in preferred_ports()") < bindBody.indexOf('bind(("127.0.0.1", 0))'),
+    "an OS-allocated port is the last resort, not the first try"
+  );
+  assert.match(server, /if let Some\(status\) = guard_headers\(/, "every request is checked before any route serves it");
+
+  const capability = JSON.parse(read("src-tauri/capabilities/desktop-local.json"));
+  assert.deepEqual(
+    capability.remote.urls,
+    ["http://127.0.0.1:*"],
+    "the wildcard port is what keeps the loopback scope working when the range is busy"
+  );
+});
+
+test("the app drives one polling loop and never restarts one by recursion", () => {
+  const app = read("src/App.jsx");
+  assert.match(app, /hasActivePoll\(pending\.ticket\)/, "a mount that is already polling does not start a second loop");
+  assert.match(app, /if \(hasActivePoll\(stale\.ticket\)\) abortPendingPoll\(stale\.ticket\);/, "a fresh sign-in cancels the loop it replaces");
+  assert.match(
+    app,
+    /handoffRef\.current\?\.abort\(\);\s*\n\s*const controller = new AbortController\(\);/,
+    "the previous owner is dropped before a ticket is adopted"
+  );
+  assert.match(app, /if \(handoffRef\.current !== controller\) return;/, "a superseded loop cannot write an error over the winner");
+  assert.equal(
+    (app.match(/waitForDesktopSignIn\(/g) || []).length,
+    1,
+    "exactly one place polls, so no failure path can re-enter the wait and loop forever"
+  );
+  assert.equal(
+    (app.match(/beginDesktopSignIn\(/g) || []).length,
+    1,
+    "exactly one place starts a transaction: one click, one attempt"
+  );
+  assert.match(app, /That sign-in was already completed in another window/, "a completed-elsewhere ticket reads as completed");
+  assert.match(app, /That sign-in request is no longer available\. Start again\./, "reopen refuses a ticket that is gone");
 });
 
 test("the app resumes a pending sign-in and lands on the authenticated chat page", () => {

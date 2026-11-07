@@ -3,8 +3,12 @@ import { ArrowsClockwise, FileText, FolderSimple, MagnifyingGlass, X } from "@ph
 import { formatBytes, TEXT_LIMITS, workspaceTextFile } from "../chat/attachments.js";
 import { useWorkspaces } from "./WorkspaceContext.jsx";
 
-export default function WorkspaceFilesDialog({ open, onClose, onAttach }) {
-  const { activeWorkspace, scanWorkspace, readFile } = useWorkspaces();
+export default function WorkspaceFilesDialog({ open, onClose, onAttach, workspace }) {
+  // The folder on screen is the one this chat is bound to, never whichever folder
+  // happens to be globally active: picking files from a different project would
+  // attach them to this conversation.
+  const { scanWorkspace, readFile } = useWorkspaces();
+  const activeWorkspace = workspace || null;
   const [entries, setEntries] = useState([]);
   const [truncated, setTruncated] = useState(false);
   const [query, setQuery] = useState("");
@@ -24,7 +28,7 @@ export default function WorkspaceFilesDialog({ open, onClose, onAttach }) {
       return;
     }
     if (!activeWorkspace) {
-      setError("Select a workspace first.");
+      setError("This chat has no folder yet. Set up a project folder first.");
       return;
     }
     let cancelled = false;

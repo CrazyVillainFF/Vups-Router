@@ -1,9 +1,13 @@
 [[permission]]
 identifier = "allow-workspace-commands"
-description = "Allow the VupsRouter workspace panel to list, pick, rename, remove, scan, read, tree, search, and Git-review the user's registered local workspaces. Every path stays inside the workspace folder the user selected."
+description = "Allow the VupsRouter desktop shell to list, pick, create, rename, remove, scan, read, tree, search, and Git-review the user's registered local workspaces, and to create, save, rename, move, and delete items inside one from the Files panel. Creation registers a real Windows folder; every other path is a workspace-relative path re-checked against the workspace root, so nothing reaches outside the folder the user selected. The vups_root commands create and report only the app's own folder inside the Windows Documents known folder; a project made there, and that own folder on a machine that has registered nothing yet, is registered as a workspace."
 commands.allow = [
   "workspace_list",
+  "workspace_touch",
   "workspace_pick",
+  "workspace_pick_container",
+  "workspace_create",
+  "workspace_add_path",
   "workspace_rename",
   "workspace_remove",
   "workspace_scan",
@@ -11,5 +15,17 @@ commands.allow = [
   "workspace_read_text",
   "workspace_tree",
   "workspace_search",
-  "workspace_git_review"
+  "workspace_make_directory",
+  "workspace_create_file",
+  "workspace_write_file",
+  "workspace_rename_path",
+  "workspace_move_path",
+  "workspace_delete_path",
+  "workspace_git_review",
+  "vups_root_status",
+  "vups_root_ensure",
+  "vups_root_open",
+  "vups_root_reveal",
+  "vups_root_project",
+  "vups_root_default_workspace"
 ]

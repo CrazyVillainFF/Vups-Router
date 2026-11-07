@@ -25,6 +25,7 @@ import {
   CaretDown,
   CaretUp,
   Wrench,
+  GithubLogo,
 } from "@phosphor-icons/react";
 import PromptBar from "./components/reactbits/PromptBar.jsx";
 import NativeChatControls from "./native/NativeChatControls.jsx";
@@ -37,6 +38,7 @@ import {
   DEFAULT_PERMISSION_MODE,
   isPermissionMode,
   loadPermissionMode,
+  permissionModeInfo,
   savePermissionMode,
 } from "./native/permissions.js";
 import AgentActivity from "./components/AgentActivity.jsx";
@@ -58,8 +60,12 @@ import {
   wantsInlineCode
 } from "./chat/artifacts.js";
 import { copyText } from "./chat/clipboard.js";
+import { applyProgressRows } from "./chat/activity.js";
 import { downloadBlob } from "./chat/downloads.js";
 import { collapseMessageText } from "./chat/messageText.js";
+import GitHubRepoBrowser from "./github/GitHubRepoBrowser.jsx";
+import { classifySlash, helpText, slashMenuItems } from "./chat/slashCommands.js";
+import { ownerRepoFrom, repoLabel, repoScopeMessage } from "./github/githubBrowser.js";
 import {
   canPersistFeedback,
   feedbackRequest,
@@ -111,6 +117,7 @@ import {
   respondDesktopToolApproval,
   setDesktopToolPolicy
 } from "./native/desktopTools.js";
+import { presentChatError } from "./chat/chatErrors.js";
 import { presentSaveWarning, settleTurnFromError } from "./chat/turnOutcome.js";
 import { resolveTurnNotice, TURN_NOTICE } from "./chat/turnPresentation.js";
 import {
@@ -123,12 +130,28 @@ import {
   cancelTurn,
   completeTurn,
   createAssistantTurn,
+  failTurn,
   hasRecoverableOutput,
   markTurnMeta,
   recordTurnActivity,
+  recordTurnProgress,
   sanitizeHistoryMessages,
+  storedMessageId,
   TURN_STATUS
 } from "./chat/turnLifecycle.js";
+import {
+  planTaskSend,
+  readRunAsTask,
+  taskAnswerNote,
+  taskProgressEvents,
+  taskRunBlocker,
+  taskRunFor,
+  taskRunsForConversation,
+  writeRunAsTask
+} from "./chat/taskRun.js";
+import { taskErrorLine, taskSummaryLine } from "./tasks/taskProgress.js";
+import { isTerminalTaskState } from "./services/taskApi.js";
+import { useTaskTracker } from "./tasks/TaskTrackerContext.jsx";
 import {
   buildCatalog,
   chatReference,
@@ -163,6 +186,8 @@ import { usePreferences } from "./desktop/PreferencesContext.jsx";
 import { useTasks } from "./desktop/TaskContext.jsx";
 import { useWorkspaces } from "./desktop/WorkspaceContext.jsx";
 import WorkspaceFilesDialog from "./desktop/WorkspaceFilesDialog.jsx";
+import WorkspaceSetupDialog from "./desktop/WorkspaceSetupDialog.jsx";
+import { pathCandidates, projectTaskReason, suggestProjectName } from "./desktop/workspaceRequest.js";
 import { isSideTaskOperation } from "./desktop/sideTaskRun.js";
 import "./chat.css";
 
@@ -174,6 +199,7 @@ const EFFORT_TEMPERATURE = { Precise: 0.3, Balanced: 0.7, Creative: 1.0 };
 // on the client than the backend that accepts it.
 const MAX_USER_MESSAGE_CHARS = 2_000_000;
 const USER_MESSAGE_LIMIT_WARNING = `That message and its attached text are too long. Keep the total under ${MAX_USER_MESSAGE_CHARS.toLocaleString("en-US")} characters.`;
+const COMPOSER_COMMANDS = slashMenuItems();
 const CHAT_MODE_STORAGE_KEY = "vupsrouter.chat.mode";
 const VUPS_MODES = [
   { key: "general", name: "General", description: "Everyday answers, research, and coding help" },
@@ -296,7 +322,108 @@ function rememberChatScope(owner, conversationId, scopeId) {
   writeChatScopes(owner, scopes);
 }
 
-function toLocalMessage(message, artifactMap = null) {
+// The repository a chat works on is remembered per saved conversation, so a
+// reload restores the same chip its transcript already carries a scope note for.
+const REPO_SCOPE_PREFIX = "vupsrouter.github.repo-scope.v1";
+const REPO_SCOPE_LIMIT = 200;
+
+function normalisedRepoScope(value) {
+  if (!value || typeof value !== "object") return null;
+  const owner = typeof value.owner === "string" ? value.owner.trim() : "";
+  const name = typeof value.name === "string" ? value.name.trim() : "";
+  if (!owner || !name) return null;
+  return {
+    owner,
+    name,
+    fullName: typeof value.fullName === "string" && value.fullName ? value.fullName : `${owner}/${name}`,
+    branch: typeof value.branch === "string" ? value.branch.trim() : "",
+    defaultBranch: typeof value.defaultBranch === "string" ? value.defaultBranch.trim() : "",
+    url: typeof value.url === "string" ? value.url : ""
+  };
+}
+
+function readRepoScopes(owner) {
+  const storage = localBrowserStorage();
+  if (!storage) return {};
+  try {
+    const parsed = JSON.parse(storage.getItem(`${REPO_SCOPE_PREFIX}.${owner || "guest"}`) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeRepoScopes(owner, scopes) {
+  const storage = localBrowserStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(
+      `${REPO_SCOPE_PREFIX}.${owner || "guest"}`,
+      JSON.stringify(Object.fromEntries(Object.entries(scopes).slice(-REPO_SCOPE_LIMIT)))
+    );
+  } catch {
+    // A full or blocked storage only means the chip is not restored on reload;
+    // the scope note already sent stays in the conversation.
+  }
+}
+
+function repoScopeForConversation(owner, conversationId) {
+  const id = typeof conversationId === "string" ? conversationId.trim() : "";
+  if (!id) return null;
+  return normalisedRepoScope(readRepoScopes(owner)[id]);
+}
+
+function rememberRepoScope(owner, conversationId, repo) {
+  const id = typeof conversationId === "string" ? conversationId.trim() : "";
+  const chosen = normalisedRepoScope(repo);
+  if (!id || !chosen) return;
+  const scopes = readRepoScopes(owner);
+  scopes[id] = chosen;
+  writeRepoScopes(owner, scopes);
+}
+
+function forgetRepoScope(owner, conversationId) {
+  const id = typeof conversationId === "string" ? conversationId.trim() : "";
+  if (!id) return;
+  const scopes = readRepoScopes(owner);
+  if (!(id in scopes)) return;
+  delete scopes[id];
+  writeRepoScopes(owner, scopes);
+}
+
+// The scope is stated once per repository and branch, so a repeated message does
+// not pad the transcript and changing branch re-announces the new ref.
+function hasRepoScopeNote(messages, repo) {
+  const needle = `GitHub scope: ${repoLabel(repo)}`;
+  const ref = `Branch: ${repo.branch || repo.defaultBranch || "its default branch"}`;
+  return (messages || []).some(
+    message =>
+      message.role === "user" &&
+      String(message.content || "").includes(needle) &&
+      String(message.content || "").includes(ref)
+  );
+}
+
+/**
+ * A saved desktop turn carries the log of the steps it really ran. Replaying it
+ * through the same merge the live turn uses means a reload shows the same lines
+ * in the same order, and a turn that was interrupted still shows work that was
+ * never finished as unfinished.
+ */
+function storedActivity(message) {
+  if (message.role !== "assistant" || !Array.isArray(message.progress)) return null;
+  const rows = applyProgressRows([], message.progress, {
+    runId: `stored:${message.messageId || ""}`
+  });
+  return rows.length > 0 ? rows : null;
+}
+
+function toLocalMessage(stored, artifactMap = null) {
+  const savedFailure = stored.role === "assistant" && stored.status === "failed";
+  // A saved failure is a state, not an answer. Its stored sentence describes
+  // the error card, so the turn reloads as retryable instead of reading as a
+  // reply the model would then be asked to imitate.
+  const message = savedFailure ? { ...stored, content: "" } : stored;
   const images = Array.isArray(message.attachments)
     ? message.attachments.map((attachment) => ({
         id: generateAttachmentId(),
@@ -306,19 +433,28 @@ function toLocalMessage(message, artifactMap = null) {
       }))
     : [];
   const storedArtifact = artifactMap?.get(message.messageId) || null;
-  const artifact =
-    storedArtifact ||
-    (message.role === "assistant" && message.content ? artifactFromResponse(message.content) : null);
+  const savedInterrupted = message.role === "assistant" && message.status === "interrupted";
+  const artifact = savedFailure
+    ? null
+    : storedArtifact ||
+      (message.role === "assistant" && message.content ? artifactFromResponse(message.content) : null);
   const handoff =
     message.role === "user" && isContextHandoffContent(message.content)
       ? { goal: contextHandoffGoal(message.content) }
       : null;
+  const storedProgress = storedActivity(message);
   return {
     id: generateId(),
     role: message.role,
     content: message.content,
-    status: artifact && artifact.status !== "complete" ? TURN_STATUS.INTERRUPTED : TURN_STATUS.COMPLETED,
-    error: null,
+    status: savedFailure
+      ? TURN_STATUS.FAILED
+      : savedInterrupted || (artifact && artifact.status !== "complete")
+        ? TURN_STATUS.INTERRUPTED
+        : TURN_STATUS.COMPLETED,
+    error: savedFailure
+      ? presentChatError({ message: stored.content, code: stored.errorCode })
+      : null,
     saveWarning: null,
     truncated: null,
     ...(message.messageId ? { messageId: message.messageId } : {}),
@@ -326,6 +462,7 @@ function toLocalMessage(message, artifactMap = null) {
       ? { feedback: message.feedback }
       : {}),
     ...(artifact ? { artifact } : {}),
+    ...(storedProgress ? { activity: storedProgress } : {}),
     ...(handoff ? { handoff } : {}),
     ...(images.length > 0 ? { images } : {}),
   };
@@ -357,11 +494,14 @@ const COMBO_UNLOADED_STATE = {
 };
 
 // Only the final message may carry images — the backend rejects attachments
-// on earlier messages, so trimmed history stays text-only.
+// on earlier messages, so trimmed history stays text-only. Each entry keeps the
+// id its message is stored under, so resending a turn cannot duplicate it.
 function requestHistory(messages) {
   const filtered = sanitizeHistoryMessages(messages);
   return filtered.map((message, index) => {
     const entry = { role: message.role, content: message.content };
+    const messageId = storedMessageId(message);
+    if (messageId) entry.messageId = messageId;
     if (index === filtered.length - 1 && Array.isArray(message.images) && message.images.length > 0) {
       entry.images = message.images;
     }
@@ -519,6 +659,8 @@ function Message({
   isStreaming,
   prompt = "",
   conversationId = "",
+  workspacePath = "",
+  permissionLabel = "",
   onRetry,
   onContinue,
   onSwitchModel,
@@ -835,6 +977,9 @@ function Message({
                 status={status}
                 startedAt={message.startedAt}
                 completedAt={message.completedAt}
+                requestText={prompt}
+                workspacePath={workspacePath}
+                permissionLabel={permissionLabel}
               />
             ) : null}
             {displayContent ? (
@@ -1151,6 +1296,8 @@ function MessageList({
   streamingId,
   loading,
   conversationId = "",
+  workspacePath = "",
+  permissionLabel = "",
   onRetry,
   onContinue,
   onSwitchModel,
@@ -1200,6 +1347,8 @@ function MessageList({
             message={msg}
             prompt={prompt}
             conversationId={conversationId}
+            workspacePath={workspacePath}
+            permissionLabel={permissionLabel}
             isStreaming={msg.id === streamingId}
             onRetry={msg.status === TURN_STATUS.FAILED && isLatestTurn ? onRetry : undefined}
             onSwitchModel={msg.status === TURN_STATUS.FAILED && isLatestTurn ? onSwitchModel : undefined}
@@ -1243,7 +1392,17 @@ export default function ChatPage() {
     refreshUsage
   } = useTasks();
   const { preferences } = usePreferences();
-  const { activeWorkspace, workspaces, owner: workspaceOwner, workspaceForChat, bindChatWorkspace } = useWorkspaces();
+  const {
+    activeWorkspace,
+    workspaces,
+    owner: workspaceOwner,
+    supported: nativeWorkspaces,
+    workspaceForChat,
+    bindChatWorkspace,
+    createTaskProject,
+    openFolderPath,
+    touchWorkspace
+  } = useWorkspaces();
   const activeConvId = searchParams.get("task") || "";
   // A local task has not reached the server yet, so it still counts as a draft
   // for choosing an initial folder; a saved chat keeps only its own binding.
@@ -1279,10 +1438,24 @@ export default function ChatPage() {
   const [imageError, setImageError] = useState("");
   const [currentEffort, setCurrentEffort] = useState("Balanced");
   const [chatMode, setChatMode] = useState(loadChatMode);
+  // Task mode is a choice the reader makes once and keeps: off unless switched
+  // on, because sending a background task instead of an answer is not a default.
+  const [runAsTask, setRunAsTask] = useState(readRunAsTask);
+  // The durable tasks this screen is watching, keyed by their own ids. A watch is
+  // not a request: no controller, no stream, nothing to abort — it only names the
+  // turn in this transcript that a task's events belong to. Two open tasks in one
+  // chat are two entries, so neither can consume the other's progress.
+  const [taskRuns, setTaskRuns] = useState(() => ({}));
   const [nativeShell] = useState(() => detectNativeShell());
   const [permissionMode, setPermissionMode] = useState(
     () => loadPermissionMode(localBrowserStorage()) || DEFAULT_PERMISSION_MODE
   );
+  // The brief names the access a turn really has, so it is only stated when this
+  // shell can run local file tools at all; on web there is no such mode.
+  const localAccessLabel =
+    nativeShell === NATIVE_SHELLS.windows && !serverLacksToolEndpoint
+      ? permissionModeInfo(permissionMode).label
+      : "";
   const [approvalRequests, setApprovalRequests] = useState([]);
   const [approvalBusyId, setApprovalBusyId] = useState("");
   const [approvalError, setApprovalError] = useState("");
@@ -1294,9 +1467,21 @@ export default function ChatPage() {
   const [permissionApplying, setPermissionApplying] = useState(false);
   const policySyncRef = useRef("");
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+  // Opening a folder is something the user asks for; it is never a step a send
+  // has to wait on, so this is a plain open flag rather than a paused message.
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  // Why the last project task could not get a folder, shown in the bar instead
+  // of stopping the message that was already sent.
+  const [workspaceProvisionError, setWorkspaceProvisionError] = useState("");
+  // A folder made during a send is only in the native registry and in React
+  // state after this render, so the same send carries it by hand.
+  const provisionedWorkspaceRef = useRef(null);
   const [toolAccessOpen, setToolAccessOpen] = useState(false);
   const [workspaceAttachment, setWorkspaceAttachment] = useState(null);
   const [draftInsertion, setDraftInsertion] = useState(null);
+  const [repoBrowserOpen, setRepoBrowserOpen] = useState(false);
+  const [repoBrowserTarget, setRepoBrowserTarget] = useState(null);
+  const [repoScope, setRepoScope] = useState(null);
   const abortRef = useRef(null);
   const imageAbortRef = useRef(null);
   const sendingRef = useRef(false);
@@ -1306,6 +1491,9 @@ export default function ChatPage() {
   // A brand-new chat has no id yet; this scope id is remapped to the server's
   // conversation id as soon as the first answer reports it.
   const draftChatScopeRef = useRef("");
+  // A chosen repository for a not-yet-saved chat waits here, then is remapped
+  // the same way the first answer names the conversation.
+  const draftRepoScopeRef = useRef(null);
   const continuationGuardRef = useRef(null);
   if (!continuationGuardRef.current) continuationGuardRef.current = createContinuationGuard();
   const [handoffState, setHandoffState] = useState({
@@ -1328,9 +1516,92 @@ export default function ChatPage() {
   }, [activeConvId, workspaceOwner]);
 
   useEffect(() => {
+    if (!workspaceOwner) {
+      setRepoScope(null);
+      return;
+    }
+    if (!activeConvId) {
+      setRepoScope(draftRepoScopeRef.current);
+      return;
+    }
+    // A saved chat owns its repository; viewing one never carries a draft choice
+    // over, and leaving it clears the draft ref so the next new chat starts bare.
+    draftRepoScopeRef.current = null;
+    setRepoScope(repoScopeForConversation(workspaceOwner, activeConvId));
+  }, [activeConvId, workspaceOwner]);
+
+  useEffect(() => {
     if (!draftRequest) return;
     setDraftInsertion({ text: draftRequest.text, key: draftRequest.key });
   }, [draftRequest]);
+
+  const { submit: submitTrackedTask, owner: trackerOwner, tasks: trackedTasks } = useTaskTracker();
+
+  // The tracker holds one account's tasks. When that identity changes — signing
+  // out, or signing in as somebody else — this screen has nothing of its own left
+  // to watch, so it drops the pointers. It does not and cannot stop the tasks
+  // themselves: those records belong to the backend, and they keep running.
+  useEffect(() => {
+    setTaskRuns({});
+  }, [trackerOwner]);
+
+  // Which tasks this chat watches comes from the tracker's own rows, not from the
+  // moment the transcript finished loading: hydration can land after the load, and
+  // a task that ran while this screen was closed still owes the reader the progress
+  // the backend wrote for it. A turn that this transcript has lost is re-added, so
+  // a reload shows the running task instead of dropping its line.
+  useEffect(() => {
+    if (!activeConvId || String(activeConvId).startsWith("local-")) return;
+    const open = taskRunsForConversation(trackedTasks, activeConvId);
+    if (open.length === 0) return;
+    const created = [];
+    const runs = open.map(view => {
+      const existing = taskRuns[view.taskId];
+      if (existing) return existing;
+      const fresh = taskRunFor(view.taskId, view.conversationId || activeConvId);
+      created.push(fresh);
+      return fresh;
+    });
+    if (created.length > 0) {
+      setTaskRuns(previous => {
+        const merged = { ...previous };
+        for (const run of created) {
+          if (!merged[run.taskId]) merged[run.taskId] = run;
+        }
+        return merged;
+      });
+    }
+    const absent = runs
+      .map(run => run.assistantId)
+      .filter(id => !messages.some(message => message.id === id));
+    if (absent.length > 0) {
+      setMessages(previous => [...previous, ...absent.map(id => createAssistantTurn({ id }))]);
+    }
+  }, [activeConvId, messages, taskRuns, trackedTasks]);
+
+  // Live progress for every task watched here. Each run reads its own record and
+  // writes into its own turn under its own run id, through the same forward-only
+  // row merge a streamed chat turn uses — so one operation stays one line as it
+  // moves from running to completed, and no task can consume or settle another's.
+  useEffect(() => {
+    const ids = Object.keys(taskRuns);
+    if (ids.length === 0) return;
+    for (const taskId of ids) {
+      const view = trackedTasks.find(candidate => candidate.taskId === taskId);
+      if (!view) continue;
+      const run = taskRuns[taskId];
+      const events = taskProgressEvents(view.task);
+      if (events.length > 0) {
+        setMessages(previous =>
+          recordTurnProgress(previous, run.assistantId, events, { runId: run.runId })
+        );
+      }
+      if (!run.conversationId && view.conversationId) {
+        adoptTaskRunConversation(run, view.conversationId);
+      }
+      if (isTerminalTaskState(view.state)) settleTaskRun(run, view.task);
+    }
+  }, [taskRuns, trackedTasks]);
 
   useEffect(() => {
     if (nativeShell !== NATIVE_SHELLS.windows || !workspaceOwner) return;
@@ -1423,6 +1694,10 @@ export default function ChatPage() {
     setComposerWarning("");
     setGeneratedImage(null);
     setImageError("");
+    // Detach first: while this conversation loads, the screen must not still be
+    // pointing at the task the previous one was watching. The watch is rebuilt
+    // from the tracker's rows for whichever conversation this becomes.
+    setTaskRuns({});
     if (String(id).startsWith("local-")) {
       const local = getLocalChat(id);
       setMessages(local ? local.messages : []);
@@ -1455,6 +1730,118 @@ export default function ChatPage() {
       if (loadedTaskRef.current !== id) return;
       setNotice(getApiErrorMessage(error));
     }
+  }
+
+  /**
+   * Hand this brief to the backend as a task and watch it from here.
+   *
+   * This is the whole difference between a task and a chat turn: one
+   * `POST /api/tasks`, then reads. No request is begun and no controller is kept,
+   * and `loading`, `streamingIdRef` and `abortRef` stay untouched — so Stop, a
+   * conversation switch and unmounting this screen have nothing here to
+   * interrupt, and the transcript of an ordinary turn cannot be disturbed by a
+   * task. The submit key is this brief in this conversation, which is what makes
+   * a second press, a re-render or a retry after a dropped connection name the
+   * same task instead of asking the backend for another one.
+   */
+  async function submitTaskRun({ plan, baseMessages }) {
+    const watchedConversation = String(activeConvId || "");
+    try {
+      const task = await submitTrackedTask(plan.request, { key: plan.key });
+      const taskId = String(task?.taskId || "");
+      if (!taskId) throw new Error("The task was accepted without an id.");
+      const run = taskRunFor(taskId, task.conversationId || watchedConversation);
+      setTaskRuns(previous => ({ ...previous, [taskId]: run }));
+      setMessages(previous =>
+        previous.some(message => message.id === run.assistantId)
+          ? previous
+          : [...previous, createAssistantTurn({ id: run.assistantId })]
+      );
+      await refreshConversations().catch(() => {});
+      return task;
+    } catch (error) {
+      const message = getApiErrorMessage(error);
+      const uncertain = error?.taskSubmissionUncertain === true;
+      // A submission whose outcome the client cannot prove is not a failure to
+      // resend: the brief may already be on the server, and sending it again
+      // would ask for the same work twice. Saying so is the only honest option.
+      setComposerWarning(
+        uncertain
+          ? `${message} This task may already have started — check the Tasks page before sending it again.`
+          : message
+      );
+      setNotice("");
+      return null;
+    } finally {
+      sendingRef.current = false;
+    }
+  }
+
+  /**
+   * Adopt the conversation a task belongs to, once the backend names it.
+   *
+   * A task sent from an unsaved chat has no conversation id on the wire, and the
+   * worker makes one for it. The chat already hands a new conversation over to
+   * the URL when a streamed answer first reports its id; a task gets the same
+   * treatment, but only while the reader is still on the draft that sent it —
+   * nobody gets moved somewhere else because work finished in the background.
+   */
+  function adoptTaskRunConversation(run, conversationId) {
+    if (activeConvId || loading || sendingRef.current) return;
+    const id = String(conversationId || "");
+    if (!id) return;
+    setTaskRuns(previous => {
+      const current = previous[run.taskId];
+      if (!current || current.conversationId) return previous;
+      return { ...previous, [run.taskId]: { ...current, conversationId: id } };
+    });
+    // A transcript the reader has moved on from no longer holds this run's turn,
+    // and that is the signal to leave the URL where it is.
+    if (!messages.some(message => message.id === run.assistantId)) return;
+    syncTaskParam(id);
+    refreshConversations().catch(() => {});
+  }
+
+  /**
+   * A terminal state the backend reported for a task watched here.
+   *
+   * The answer itself is never copied out of the task record: the worker writes
+   * it into the conversation as a real message, so this re-reads that
+   * conversation — and only that one, and only while nothing else is in flight
+   * here, so a saved answer can neither abort an unrelated chat turn nor
+   * overwrite a transcript the reader has moved on from.
+   */
+  function settleTaskRun(run, record) {
+    setTaskRuns(previous => {
+      if (!previous[run.taskId]) return previous;
+      const next = { ...previous };
+      delete next[run.taskId];
+      return next;
+    });
+    const conversationId = String(record.conversationId || run.conversationId || "");
+    if (record.state === "completed") {
+      setMessages(previous =>
+        completeTurn(previous, run.assistantId, { content: taskAnswerNote(conversationId, activeConvId) })
+      );
+      if (!conversationId || conversationId !== String(activeConvId || "")) return;
+      if (sendingRef.current || loading) return;
+      loadTask(conversationId);
+      return;
+    }
+    if (record.state === "cancelled") {
+      setMessages(previous => cancelTurn(previous, run.assistantId));
+      return;
+    }
+    setMessages(previous =>
+      failTurn(previous, run.assistantId, {
+        error: {
+          title: "Task failed",
+          message: taskErrorLine(record) || "The task ended without an answer.",
+          retry: false,
+          canSwitchModel: false
+        }
+      })
+    );
   }
 
   useEffect(() => {
@@ -1564,6 +1951,15 @@ export default function ChatPage() {
   const activeIsVups = Boolean(activeRow?.vups);
   const activeIsCombo = Boolean(activeRow?.combo);
 
+  // What the tasks watched from this chat are doing, in the backend's own terms:
+  // the state it reported, the stage it set, the wait or error it wrote. A task
+  // with nothing to say contributes no line, because there is nothing to say.
+  const watchedTaskLines = Object.keys(taskRuns)
+    .map(taskId => trackedTasks.find(view => view.taskId === taskId))
+    .filter(view => Boolean(view))
+    .map(view => taskSummaryLine(view.task))
+    .filter(line => Boolean(line));
+
   function changeModel(row) {
     const next = selectionFromRow(row);
     if (!next) return;
@@ -1579,6 +1975,12 @@ export default function ChatPage() {
     } catch {
       /* storage is best-effort */
     }
+  }
+
+  // The switch shows what storage actually kept, not what was asked for: a
+  // webview without localStorage cannot promise the mode survives a reload.
+  function changeRunAsTask(next) {
+    setRunAsTask(writeRunAsTask(next === true));
   }
 
   // The selector only moves after the native layer has adopted the mode, so a
@@ -1645,13 +2047,21 @@ export default function ChatPage() {
       const targetId = streamingIdRef.current;
       if (targetId) {
         setMessages((prev) =>
-          recordTurnActivity(
+          recordTurnProgress(
             prev,
             targetId,
-            {
-              phase: "desktop_tool",
-              message: `Waiting for approval to read ${prompt.scopeName || "a folder"}`
-            },
+            [
+              {
+                key: `approval:${prompt.requestId}`,
+                phase: "approval",
+                status: "running",
+                label: "Waiting for approval",
+                // The target is the native request's own path, shown as the
+                // row's file chip; the card below names the exact action.
+                path: prompt.scopePath || "",
+                message: `Waiting for approval: ${prompt.summary || prompt.scopeName || "a local Windows operation"}`
+              }
+            ],
             { runId: activityRunIdRef.current }
           )
         );
@@ -1682,16 +2092,24 @@ export default function ChatPage() {
       const targetId = streamingIdRef.current;
       if (targetId) {
         setMessages((prev) =>
-          recordTurnActivity(
+          recordTurnProgress(
             prev,
             targetId,
-            {
-              phase: "desktop_tool",
-              message:
-                decision === "deny"
-                  ? "Denied — the blocked file operation was cancelled"
-                  : `Access granted — ${request.summary || "resuming the local operation"}`
-            },
+            [
+              {
+                // The same key the card opened with, so the reader watches one
+                // line move from waiting to the decision they really made.
+                key: `approval:${request.requestId}`,
+                phase: "approval",
+                status: decision === "deny" ? "cancelled" : "completed",
+                label: decision === "deny" ? "Approval declined" : "Approval granted",
+                path: request.scopePath || "",
+                message:
+                  decision === "deny"
+                    ? "Denied — the blocked file operation was cancelled"
+                    : `Access granted — ${request.summary || "resuming the local operation"}`
+              }
+            ],
             { runId: activityRunIdRef.current }
           )
         );
@@ -1714,26 +2132,194 @@ export default function ChatPage() {
     setApprovalError("");
   }
 
-  async function beforeComposerSend(text, attachments, meta) {
-    if (!canSubmitComposer(text, attachments)) return false;
-    const images = (Array.isArray(attachments) ? attachments : []).filter(
-      (item) => item && typeof item === "object" && typeof item.dataUrl === "string"
+  // "" means nothing is in the way of the send itself; only the model choice and
+  // the account behind it can stop it. Anything else is the sentence the user
+  // needs before their draft is cleared.
+  function availabilityBlocker(selectedRow) {
+    if (!canChat) {
+      return activeRow?.combo
+        ? `Vups Combo AI cannot run yet - ${activeRow.tag || "select its models first"}.`
+        : unavailableModelNotice(shared, omniroute);
+    }
+    if (!chatReference(selectedRow).model) return "Choose a model in API settings before chatting.";
+    return "";
+  }
+
+  function clearComposerDraft() {
+    setDraftInsertion({ text: "", key: Date.now() });
+  }
+
+  // Choosing a repository is a chat decision, not a credential action: it only
+  // records which repository the next message names, and it is remembered per
+  // saved conversation so a reload shows the same chip its transcript carries.
+  function scopeRepo(repo, branch) {
+    const chosen = normalisedRepoScope({ ...repo, branch: branch || repo?.branch || repo?.defaultBranch || "" });
+    if (!chosen) return;
+    setRepoScope(chosen);
+    if (activeConvId) {
+      rememberRepoScope(workspaceOwner, activeConvId, chosen);
+      draftRepoScopeRef.current = null;
+    } else {
+      draftRepoScopeRef.current = chosen;
+    }
+    setComposerWarning("");
+    setNotice(
+      `This chat works on ${repoLabel(chosen)} (${chosen.branch || chosen.defaultBranch || "its default branch"}). ` +
+        "The next message you send states that scope to the assistant."
     );
-    if (images.length === 0) return true;
-    const selectedRow =
-      catalog.find((row) => row.key === meta?.model?.key) || meta?.model || activeRow;
-    if (selectedRow?.combo) {
+  }
+
+  function clearRepoScope() {
+    setRepoScope(null);
+    draftRepoScopeRef.current = null;
+    if (activeConvId) forgetRepoScope(workspaceOwner, activeConvId);
+    setNotice("This chat no longer works on a GitHub repository. Nothing already sent is changed.");
+  }
+
+  function closeRepoBrowser() {
+    setRepoBrowserOpen(false);
+    setRepoBrowserTarget(null);
+  }
+
+  // The composer's slash entries run real actions, so none of them is a message
+  // to the model: the draft is cleared by hand after the action runs.
+  function runSlashCommand(command, args) {
+    setNotice("");
+    setComposerWarning("");
+    if (command.action === "help") {
+      setComposerWarning(helpText());
+      clearComposerDraft();
+      return false;
+    }
+    const named = args ? ownerRepoFrom(args) : null;
+    if (args && !named) {
       setComposerWarning(
-        "Vups Combo AI sends text to your selected models. Remove the images to run this task on Combo."
+        `"${args}" is not a repository. Use owner/name, for example /repo CrazyVillainFF/Vups-Router, ` +
+          "or pick one with /github."
       );
       return false;
     }
-    if (selectedRow?.vision !== false) return true;
-    const label = chatReference(selectedRow).model || selectedRow?.name || "this model";
-    setComposerWarning(
-      `The selected model (${label}) does not accept images. Choose a vision-capable model in API settings.`
-    );
+    if (command.action === "repo" && named) {
+      scopeRepo({ ...named, fullName: `${named.owner}/${named.repo}` }, "");
+      clearComposerDraft();
+      return false;
+    }
+    if (named && command.action === "github") setRepoBrowserTarget({ ...named, fullName: `${named.owner}/${named.repo}` });
+    setRepoBrowserOpen(true);
+    clearComposerDraft();
     return false;
+  }
+
+  // Only the Windows app has a real filesystem to write into, and only a project
+  // task needs one. The app owns a folder inside the Documents folder Windows
+  // reported for this user, so the task's folder is made here rather than asked
+  // for: a path named in the message is opened exactly as written, and anything
+  // else becomes a new project under it.
+  async function provisionTaskWorkspace(text) {
+    provisionedWorkspaceRef.current = null;
+    if (!nativeWorkspaces || nativeShell !== NATIVE_SHELLS.windows) return null;
+    if (chatWorkspace || loading || sendingRef.current) return null;
+    if (!projectTaskReason(text)) return null;
+    setWorkspaceProvisionError("");
+    try {
+      const named = await openTypedFolder(text);
+      const workspace = named || (await createTaskProject(suggestProjectName(text) || "New Project"));
+      if (!workspace?.id) return null;
+      const scopeId = currentChatScope();
+      if (scopeId) bindChatWorkspace(scopeId, workspace.id);
+      provisionedWorkspaceRef.current = workspace;
+      return workspace;
+    } catch (provisionError) {
+      // The message still goes out with no folder rather than pretending one
+      // exists; the first native write then reports this same reason.
+      provisionedWorkspaceRef.current = null;
+      setWorkspaceProvisionError(provisionError.message);
+      return null;
+    }
+  }
+
+  // A path typed into chat is tried as written, then walked back to the longest
+  // prefix that is a real folder. None of them existing is not an error — that
+  // is exactly the case the automatic project folder is for.
+  async function openTypedFolder(text) {
+    for (const candidate of pathCandidates(text)) {
+      try {
+        return await openFolderPath(candidate);
+      } catch {
+        /* the next, shorter prefix gets its turn */
+      }
+    }
+    return null;
+  }
+
+  // The chat bar's own folder action, taken deliberately: the folder the user
+  // created or picked becomes this chat's folder, and nothing is sent, because
+  // nothing was ever paused waiting for it.
+  function attachChosenWorkspace(workspace) {
+    setProjectDialogOpen(false);
+    if (!workspace?.id) return;
+    const scopeId = currentChatScope();
+    if (scopeId) bindChatWorkspace(scopeId, workspace.id);
+  }
+
+  async function beforeComposerSend(text, attachments, meta) {
+    if (sendingRef.current || loading) return false;
+    if (!canSubmitComposer(text, attachments)) return false;
+    const entry = classifySlash(text);
+    if (entry.kind === "command") return runSlashCommand(entry.command, entry.args);
+    // A lone slash is an unfinished command, not a message. It is never sent,
+    // and the draft keeps the character the user typed so they can finish it.
+    if (entry.kind === "literal" && entry.reason === "empty") {
+      setComposerWarning("Type a command after the slash — /github, /repo or /help.");
+      return false;
+    }
+    const selectedRow =
+      catalog.find((row) => row.key === meta?.model?.key) || meta?.model || activeRow;
+    const unavailable = availabilityBlocker(selectedRow);
+    if (unavailable) {
+      setNotice(unavailable);
+      return false;
+    }
+    const images = (Array.isArray(attachments) ? attachments : []).filter(
+      (item) => item && typeof item === "object" && typeof item.dataUrl === "string"
+    );
+    if (images.length > 0) {
+      if (selectedRow?.combo) {
+        setComposerWarning(
+          "Vups Combo AI sends text to your selected models. Remove the images to run this task on Combo."
+        );
+        return false;
+      }
+      if (selectedRow?.vision === false) {
+        const label = chatReference(selectedRow).model || selectedRow?.name || "this model";
+        setComposerWarning(
+          `The selected model (${label}) does not accept images. Choose a vision-capable model in API settings.`
+        );
+        return false;
+      }
+    }
+    // A task carries a brief and a folder, nothing else. Refusing it here —
+    // before the composer clears its draft — keeps a long message the reader
+    // typed from disappearing over a send that was never going to work.
+    if (runAsTask) {
+      const files = (Array.isArray(attachments) ? attachments : []).filter(
+        (item) => item && typeof item === "object" && !item.dataUrl && item.status !== "error"
+      );
+      const blocker = taskRunBlocker({
+        prompt: text,
+        combo: Boolean(selectedRow?.combo),
+        images: images.length,
+        textFiles: files.length
+      });
+      if (blocker) {
+        setComposerWarning(blocker);
+        return false;
+      }
+    }
+    // The folder a project task writes into is made here, before the composer
+    // clears its draft, so a send never stops to ask where the work goes.
+    await provisionTaskWorkspace(text);
+    return true;
   }
 
   // Starts a fresh conversation locally with a bounded handoff. The existing
@@ -1864,7 +2450,12 @@ export default function ChatPage() {
     // previous chat's remembered answers and folder must not follow it.
     draftChatScopeRef.current = newChatScopeId();
     setChatScope(draftChatScopeRef.current);
+    draftRepoScopeRef.current = null;
+    setRepoScope(null);
     setMessages([]);
+    // A new chat is not the owner of the tasks the previous one started, and they
+    // keep running regardless; this only stops watching them from here.
+    setTaskRuns({});
     setNotice("");
     setComposerWarning("");
     setGeneratedImage(null);
@@ -2168,7 +2759,10 @@ export default function ChatPage() {
     return true;
   }
 
-  async function handleSend(text, retryHistory, meta) {
+  // `carriedWorkspace` is set only by the resume after the folder decision: the
+  // chat is already bound but this render still sees the old workspace, so the
+  // turn is given the folder directly instead of reading a stale value.
+  async function handleSend(text, retryHistory, meta, carriedWorkspace) {
     const rawAttachments = Array.isArray(meta?.attachments) ? meta.attachments : [];
     const failedAttachments = rawAttachments.filter(
       (item) => item && typeof item === "object" && item.status === "error"
@@ -2198,22 +2792,17 @@ export default function ChatPage() {
       return;
     }
 
-    if (!canChat) {
-      setNotice(
-        activeRow?.combo
-          ? `Vups Combo AI cannot run yet - ${activeRow.tag || "select its models first"}.`
-          : unavailableModelNotice(shared, omniroute)
-      );
+    // A refused send must still be able to explain itself where the text is
+    // visible, so the composer runs the same check before it clears the draft.
+    const selectedRow = catalog.find((row) => row.key === meta?.model?.key) || meta?.model || activeRow;
+    const unavailable = availabilityBlocker(selectedRow);
+    if (unavailable) {
+      setNotice(unavailable);
       return;
     }
 
-    const selectedRow = catalog.find((row) => row.key === meta?.model?.key) || meta?.model || activeRow;
     const reference = chatReference(selectedRow);
     const modelKey = reference.model;
-    if (!modelKey) {
-      setNotice("Choose a model in API settings before chatting.");
-      return;
-    }
 
     if (imagePayload.length > 0 && selectedRow?.vision === false) {
       setNotice(
@@ -2229,36 +2818,61 @@ export default function ChatPage() {
 
     if (sendingRef.current) return;
     sendingRef.current = true;
-    if (nativeShell === NATIVE_SHELLS.windows && workspaceOwner) {
-      try {
-        await setDesktopToolPolicy({
-          owner: workspaceOwner,
-          mode: permissionMode,
-          workspaceId: permissionMode === "workspace" ? chatWorkspace?.id || null : null
-        });
-      } catch (error) {
-        sendingRef.current = false;
-        const message = error?.message || "Could not update the Windows filesystem permission mode.";
-        setNativeToolBridgeError(message);
-        setNotice(message);
-        return;
-      }
-    }
     setNotice("");
     setComposerWarning("");
+    const sendWorkspace = carriedWorkspace || chatWorkspace;
+    provisionedWorkspaceRef.current = null;
     const chosenEffort = meta?.effort || currentEffort;
+    // A repository chosen for this chat is named in the next message the user
+    // sends, so the scope is a real turn in the transcript — not a hidden
+    // instruction, and not a decoration the assistant could never act on.
+    const announcesScope = Boolean(repoScope) && !hasRepoScopeNote(messages, repoScope);
     const userMsg = {
       id: generateId(),
       role: "user",
-      content: text,
+      content: announcesScope
+        ? `${repoScopeMessage(repoScope, repoScope.branch)}\n\n${text}`
+        : text,
       ...(imageItems.length > 0 ? { images: imageItems } : {}),
       ...(textFiles.length > 0 ? { textFiles } : {}),
     };
     const baseMessages = retryHistory ?? [...messages, userMsg];
+
+    // Task mode owns the send completely: the brief becomes one durable task on
+    // the backend and no chat request is made at all. The two paths are
+    // alternatives, never both — a task that also ran a chat turn would answer
+    // and charge for the same brief twice. Everything below this point belongs
+    // to a chat turn: its controller, its Stop button, its stream.
+    const plan = planTaskSend({
+      runAsTask,
+      prompt: userMsg.content,
+      combo: Boolean(selectedRow?.combo),
+      images: imageItems.length,
+      textFiles: textFiles.length,
+      conversationId: activeConvId,
+      reference,
+      model: modelKey,
+      mode: chatMode,
+      temperature: EFFORT_TEMPERATURE[chosenEffort] ?? 0.7,
+      workspacePath: sendWorkspace?.path || ""
+    });
+    if (plan.mode === "blocked") {
+      sendingRef.current = false;
+      setComposerWarning(plan.notice);
+      return;
+    }
+    if (plan.mode === "task") {
+      await submitTaskRun({ prompt: userMsg.content, plan, baseMessages });
+      return;
+    }
+
     const history = requestHistory(baseMessages).slice(-40);
     const assistantId = generateId();
     const activityRunId = generateId();
 
+    // The submitted message is on screen and the request is queued before any
+    // step that can fail slowly, so nothing between the composer and the
+    // backend can swallow the text the user just typed.
     setMessages([
       ...baseMessages,
       createAssistantTurn({ id: assistantId })
@@ -2275,24 +2889,49 @@ export default function ChatPage() {
     const inlineRequested = wantsInlineCode(text);
     let streamedContent = "";
 
-    const useDesktopTools =
-      nativeShell === NATIVE_SHELLS.windows &&
-      Boolean(workspaceOwner) &&
-      imagePayload.length === 0 &&
-      !serverLacksToolEndpoint;
-    // Local tools are a bonus on a plain question but the whole point of the
-    // turn once a project folder is picked, so only the second case owes the
-    // user an explanation when the server cannot run them.
-    const warnAboutSkippedTools = Boolean(chatWorkspace?.id);
-    // "Allow Always" answers are scoped to this chat and kept in native memory.
-    const chatScopeId = useDesktopTools ? currentChatScope() : "";
-    // A draft chat inherits the folder selected in the app; that choice becomes
-    // this chat's own before the first local tool call, and the saved chat
-    // restores it on reload instead of following the global selection.
-    if (draftChat && chatWorkspace?.id && chatScopeId) {
-      bindChatWorkspace(chatScopeId, chatWorkspace.id);
-    }
     try {
+      // The native permission bridge is the one step before dispatch that can
+      // throw. It runs after the message is visible, and a failure drops local
+      // tools for this turn instead of the turn itself — a policy that was
+      // never applied cannot be trusted to scope filesystem access, so the
+      // message goes out as a plain chat with the reason stated in the panel.
+      let nativePolicyReady = true;
+      if (nativeShell === NATIVE_SHELLS.windows && workspaceOwner) {
+        try {
+          await setDesktopToolPolicy({
+            owner: workspaceOwner,
+            mode: permissionMode,
+            workspaceId: permissionMode === "workspace" ? sendWorkspace?.id || null : null
+          });
+        } catch (error) {
+          nativePolicyReady = false;
+          const message = error?.message || "Could not update the Windows filesystem permission mode.";
+          setNativeToolBridgeError(message);
+          setComposerWarning(`${message} This message was sent without local file tools.`);
+        }
+      }
+      // Stop or a task switch during the bridge already settled this turn, and
+      // both bump the request sequence, so the guard below is the whole check.
+      if (!isCurrentRequest(seq)) return;
+
+      const useDesktopTools =
+        nativeShell === NATIVE_SHELLS.windows &&
+        nativePolicyReady &&
+        Boolean(workspaceOwner) &&
+        imagePayload.length === 0 &&
+        !serverLacksToolEndpoint;
+      // Local tools are a bonus on a plain question but the whole point of the
+      // turn once a project folder is picked, so only the second case owes the
+      // user an explanation when the server cannot run them.
+      const warnAboutSkippedTools = Boolean(sendWorkspace?.id);
+      // "Allow Always" answers are scoped to this chat and kept in native memory.
+      const chatScopeId = useDesktopTools ? currentChatScope() : "";
+      // A draft chat inherits the folder selected in the app; that choice becomes
+      // this chat's own before the first local tool call, and the saved chat
+      // restores it on reload instead of following the global selection.
+      if (draftChat && sendWorkspace?.id && chatScopeId) {
+        bindChatWorkspace(chatScopeId, sendWorkspace.id);
+      }
       const requestOptions = {
         conversationId: activeConvId,
         messages: history,
@@ -2310,7 +2949,10 @@ export default function ChatPage() {
         userText: requestText || text,
         // Only this chat's folder is in scope. Another chat's workspace can
         // never be searched just because it exists in the app.
-        searchRoots: chatWorkspace?.path ? [chatWorkspace.path] : [],
+        searchRoots: sendWorkspace?.path ? [sendWorkspace.path] : [],
+        // The server records the folder the turn is bound to in the task's own
+        // log line, so a reload shows where the work really happened.
+        workspacePath: sendWorkspace?.path || "",
         onMeta: ({ conversationId, messageId }) => {
           if (!isCurrentRequest(seq)) return;
           if (String(activeConvId || "").startsWith("local-")) {
@@ -2322,6 +2964,10 @@ export default function ChatPage() {
           // reload and a switch back to this chat.
           if (chatScopeId && conversationId) {
             rememberChatScope(workspaceOwner, conversationId, chatScopeId);
+          }
+          if (repoScope && conversationId) {
+            rememberRepoScope(workspaceOwner, conversationId, repoScope);
+            draftRepoScopeRef.current = null;
           }
           setMessages((prev) => markTurnMeta(prev, assistantId, { messageId, conversationId }));
           setConversations((prev) =>
@@ -2349,6 +2995,21 @@ export default function ChatPage() {
           setMessages((prev) =>
             recordTurnActivity(prev, assistantId, activity, { runId: activityRunId })
           );
+        },
+        // One line per real step, keyed to the operation it describes: the rows
+        // the app raised for its own native calls and the rows the server wrote
+        // for the same calls land on the same line instead of doubling it.
+        onProgress: (events) => {
+          if (!isCurrentRequest(seq)) return;
+          setMessages((prev) =>
+            recordTurnProgress(prev, assistantId, events, { runId: activityRunId })
+          );
+        },
+        // A write that Windows actually performed is the only thing that makes
+        // the open explorer reload; a denied or failed call changes nothing.
+        onWorkspaceMutation: () => {
+          if (!isCurrentRequest(seq)) return;
+          touchWorkspace(sendWorkspace?.id);
         },
       };
       let result;
@@ -2702,6 +3363,8 @@ export default function ChatPage() {
             streamingId={streamingId}
             loading={loading}
             conversationId={activeConvId || ""}
+            workspacePath={chatWorkspace?.path || ""}
+            permissionLabel={localAccessLabel}
             onRetry={handleRetry}
             onContinue={handleContinue}
             onSwitchModel={() => setOpenModelSignal((value) => value + 1)}
@@ -2781,34 +3444,67 @@ export default function ChatPage() {
               <Link to="/settings">Open API settings</Link>
             </div>
           )}
-          {nativeShell === NATIVE_SHELLS.windows && (chatWorkspace || workspaces.length > 0) ? (
+          {nativeShell === NATIVE_SHELLS.windows && nativeWorkspaces ? (
             <div className="vr-workspace-bar">
               <span className="vr-workspace-bar__icon" aria-hidden="true"><FolderSimple size={16} /></span>
               <span className="vr-workspace-bar__copy">
                 <strong>{chatWorkspace ? chatWorkspace.title : "No folder for this chat"}</strong>
-                <span title={chatWorkspace?.path || ""}>
+                <span title={chatWorkspace?.path || workspaceProvisionError}>
                   {chatWorkspace
                     ? chatWorkspace.path
-                    : "Choose one of your folders to give this chat a real project workspace."}
+                    : workspaceProvisionError ||
+                      "Work with no folder of its own runs in Documents\\VupsRouter\\Files; a project task gets its own folder in Projects."}
                 </span>
               </span>
-              <select
-                className="vr-workspace-select"
-                aria-label="Folder for this chat"
-                value={chatWorkspace?.id || ""}
-                onChange={event => bindChatWorkspace(chatScope, event.target.value)}
-                disabled={loading || !chatScope}
-              >
-                <option value="">No folder</option>
-                {workspaces.map(workspace => (
-                  <option key={workspace.id} value={workspace.id}>{workspace.title}</option>
-                ))}
-              </select>
+              {workspaces.length > 0 ? (
+                <select
+                  className="vr-workspace-select"
+                  aria-label="Folder for this chat"
+                  value={chatWorkspace?.id || ""}
+                  onChange={event => bindChatWorkspace(chatScope, event.target.value)}
+                  disabled={loading || !chatScope}
+                >
+                  <option value="">No folder</option>
+                  {workspaces.map(workspace => (
+                    <option key={workspace.id} value={workspace.id}>{workspace.title}</option>
+                  ))}
+                </select>
+              ) : null}
               {chatWorkspace ? (
                 <button type="button" onClick={() => setWorkspacePickerOpen(true)} disabled={loading}>
                   Attach workspace files
                 </button>
               ) : null}
+              <button
+                type="button"
+                onClick={() => setProjectDialogOpen(true)}
+                disabled={loading}
+              >
+                {chatWorkspace ? "Add a folder" : "Set up project folder"}
+              </button>
+            </div>
+          ) : null}
+          {repoScope ? (
+            <div className="vr-chat-repo">
+              <span className="vr-chat-repo__icon" aria-hidden="true"><GithubLogo size={16} weight="fill" /></span>
+              <span className="vr-chat-repo__copy">
+                <strong title={repoScope.url || ""}>{repoLabel(repoScope)}</strong>
+                <span>
+                  {`Branch: ${repoScope.branch || repoScope.defaultBranch || "its default branch"} · this chat's GitHub scope`}
+                </span>
+              </span>
+              <button type="button" onClick={() => setRepoBrowserOpen(true)} disabled={loading}>
+                Change
+              </button>
+              <button type="button" onClick={clearRepoScope} disabled={loading}>
+                Remove
+              </button>
+            </div>
+          ) : null}
+          {watchedTaskLines.length > 0 ? (
+            <div className="vr-notice" role="status">
+              <span>{watchedTaskLines.join(" · ")}</span>
+              <Link to="/tasks">Tasks</Link>
             </div>
           ) : null}
           <div className="vr-mode-switch" role="group" aria-label="Assistant mode">
@@ -2831,6 +3527,36 @@ export default function ChatPage() {
               <span className="vr-mode-switch__hint">GSAP, React motion, CSS, cleanup & reduced motion</span>
             ) : null}
           </div>
+          <div className="vr-mode-switch" role="group" aria-label="Send this message as">
+            <span className="vr-mode-switch__label">Send as</span>
+            <button
+              type="button"
+              className="vr-mode-switch__button"
+              data-active={!runAsTask}
+              aria-pressed={!runAsTask}
+              title="Answer here in this chat, as usual."
+              onClick={() => changeRunAsTask(false)}
+              disabled={loading}
+            >
+              Chat
+            </button>
+            <button
+              type="button"
+              className="vr-mode-switch__button"
+              data-active={runAsTask}
+              aria-pressed={runAsTask}
+              title="Hand the brief to the server worker instead of waiting for an answer here."
+              onClick={() => changeRunAsTask(true)}
+              disabled={loading}
+            >
+              Task
+            </button>
+            {runAsTask ? (
+              <span className="vr-mode-switch__hint">
+                Runs on the server and keeps going when you leave this chat
+              </span>
+            ) : null}
+          </div>
           <div className="vr-prompt-bar-wrap">
             <PromptBar
               placeholder={
@@ -2851,6 +3577,7 @@ export default function ChatPage() {
                           : "Ask anything - your provider, your key, your model..."
               }
               models={catalog}
+              commands={COMPOSER_COMMANDS}
               defaultModel={activeModelKey}
               onModelChange={changeModel}
               onDeleteModel={requestDeleteModel}
@@ -2861,7 +3588,7 @@ export default function ChatPage() {
               onEffortChange={(effort) => setCurrentEffort(effort)}
               busy={loading || imageGenerating}
               generating={imageGenerating}
-              onSend={(text, meta) => handleSend(text, null, meta)}
+              onSend={(text, meta) => handleSend(text, null, meta, provisionedWorkspaceRef.current)}
               beforeSend={beforeComposerSend}
               onStop={handleStop}
               onGenerateImage={handleGenerateImage}
@@ -2905,14 +3632,24 @@ export default function ChatPage() {
             />
             <p className="vr-composer-hint">
               {nativeShell === NATIVE_SHELLS.windows
-                ? `${preferences.sendShortcut === "modifier" ? "Ctrl+Enter" : "Enter"} to send \u00b7 Shift+Enter for newline \u00b7 File contents stay local until you send`
+                ? `${preferences.sendShortcut === "modifier" ? "Ctrl+Enter" : "Enter"} to send \u00b7 Shift+Enter for newline \u00b7 File contents stay local until you send \u00b7 / lists commands`
                 : nativeShell === NATIVE_SHELLS.android
-                  ? `${preferences.sendShortcut === "modifier" ? "Ctrl+Enter" : "Enter"} to send \u00b7 Shift+Enter for newline \u00b7 Camera and files open only when you tap them`
-                  : `${preferences.sendShortcut === "modifier" ? "Ctrl+Enter" : "Enter"} to send \u00b7 Shift+Enter for newline \u00b7 Attach images with the paperclip`}
+                  ? `${preferences.sendShortcut === "modifier" ? "Ctrl+Enter" : "Enter"} to send \u00b7 Shift+Enter for newline \u00b7 Camera and files open only when you tap them \u00b7 / lists commands`
+                  : `${preferences.sendShortcut === "modifier" ? "Ctrl+Enter" : "Enter"} to send \u00b7 Shift+Enter for newline \u00b7 Attach images with the paperclip \u00b7 / lists commands`}
             </p>
           </div>
         </footer>
       </main>
+      <GitHubRepoBrowser
+        open={repoBrowserOpen}
+        initialRepo={repoBrowserTarget}
+        onClose={closeRepoBrowser}
+        onScope={scopeRepo}
+        onManage={() => {
+          closeRepoBrowser();
+          navigate("/plugins");
+        }}
+      />
       {fullAccessPending ? (
         <NativePermissionDialog
           title="Enable full access?"
@@ -2928,8 +3665,14 @@ export default function ChatPage() {
       ) : null}
       <WorkspaceFilesDialog
         open={workspacePickerOpen}
+        workspace={chatWorkspace}
         onClose={() => setWorkspacePickerOpen(false)}
         onAttach={files => setWorkspaceAttachment({ files, key: Date.now() })}
+      />
+      <WorkspaceSetupDialog
+        open={projectDialogOpen}
+        onClose={() => setProjectDialogOpen(false)}
+        onReady={attachChosenWorkspace}
       />
       <ToolAccessDialog
         open={toolAccessOpen}

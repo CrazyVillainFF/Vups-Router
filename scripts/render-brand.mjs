@@ -65,15 +65,26 @@ const micro =
   `<g fill="#171613"><circle cx="312" cy="288" r="56"/><circle cx="512" cy="288" r="56"/>` +
   `<circle cx="712" cy="288" r="56"/><circle cx="512" cy="748" r="52"/></g>`;
 
+// The mark with its tile removed, for the surfaces that must stay transparent.
+const untiled = body => body.replace(/^\s*<rect width="\d+" height="\d+"[^>]*\/>\s*/, "");
+const monochrome = (body, color) => body.replace(/#[0-9A-Fa-f]{6}/g, color);
+
+// Android paints a notification small icon as an alpha mask over its own
+// accent, so the glyph is the micro cut in flat white on nothing.
+const status = monochrome(scaled(untiled(micro), 1.4), "#FFFFFF");
+
 const VARIANTS = {
   tile: inner,
   tileBold: bold,
   micro,
-  maskable: `<rect width="${SIZE}" height="${SIZE}" fill="#FF5B1F"/>${scaled(micro.slice(micro.indexOf("<g")), 0.62)}`,
+  maskable: `<rect width="${SIZE}" height="${SIZE}" fill="#FF5B1F"/>${scaled(untiled(micro), 0.62)}`,
   square: `<rect width="${SIZE}" height="${SIZE}" fill="#FF5B1F"/>${scaled(inner, 0.74)}`,
   circle: `<circle cx="512" cy="512" r="512" fill="#FF5B1F"/>${scaled(inner, 0.8)}`,
   // Adaptive-icon foreground: glyph only, inside the 66dp safe zone.
-  glyph: scaled(bold, 0.6)
+  glyph: scaled(bold, 0.6),
+  // The ink glyph on transparency, used as the metallic-paint texture source.
+  transparent: untiled(inner),
+  status
 };
 
 const write = (file, data) => {
@@ -163,6 +174,7 @@ job("web", () => {
   write(path.join(publicDir, "vups-logo.svg"), base);
   rasterize("tile", 512, 512, path.join(publicDir, "vups-logo.png"));
   rasterize("tile", 192, 192, path.join(publicDir, "vups-logo-192.png"));
+  rasterize("transparent", 1024, 1024, path.join(publicDir, "vups-logo-transparent.png"));
   rasterize("maskable", 512, 512, path.join(publicDir, "vups-maskable-512.png"));
   rasterize("square", 180, 180, path.join(publicDir, "apple-touch-icon.png"));
   for (const size of [16, 32, 48]) {
@@ -185,6 +197,8 @@ job("android", () => {
     rasterize("circle", size, size, path.join(dir, "ic_launcher_round.png"));
     // The adaptive foreground canvas is 108dp, so the glyph needs the full bleed.
     rasterize("glyph", Math.round(size * 2.25), Math.round(size * 2.25), path.join(dir, "ic_launcher_foreground.png"));
+    // A status-bar icon is 24dp; the platform tints it, so it ships as a mask.
+    rasterize("status", Math.round(size / 2), Math.round(size / 2), path.join(androidRes, `drawable-${dpi}`, "ic_stat_vupsrouter.png"));
   }
   write(
     path.join(androidRes, "values/ic_launcher_background.xml"),
@@ -206,17 +220,24 @@ job("android", () => {
   for (const [dir, [width, height]] of Object.entries(splashes)) {
     splash(width, height, path.join(androidRes, dir, "splash.png"));
   }
-  // The web bundle Capacitor copies into the APK carries the same icons.
+  // The unqualified bucket is what Android falls back to when no
+  // orientation/density combination matches, so it must carry the mark too.
+  splash(480, 320, path.join(androidRes, "drawable", "splash.png"));
+  // The web bundle Capacitor copies into the APK carries the same icons,
+  // social card and install chrome.
   for (const file of [
     "vups-logo.svg",
     "vups-logo.png",
     "vups-logo-192.png",
+    "vups-logo-transparent.png",
     "vups-maskable-512.png",
     "apple-touch-icon.png",
     "favicon.ico",
     "favicon-16.png",
     "favicon-32.png",
-    "favicon-48.png"
+    "favicon-48.png",
+    "og-vupsrouter.png",
+    "manifest.webmanifest"
   ]) {
     const from = path.join(publicDir, file);
     if (existsSync(from)) write(path.join(androidAssets, file), readFileSync(from));
@@ -308,6 +329,7 @@ job("social", () => {
     [
       "--headless=new",
       "--disable-gpu",
+      "--disable-lcd-text",
       "--hide-scrollbars",
       "--force-device-scale-factor=1",
       "--virtual-time-budget=4000",
@@ -321,7 +343,12 @@ job("social", () => {
   write(path.join(publicDir, "og-vupsrouter.png"), readFileSync(target));
 });
 
-const selected = only ? jobs.filter(entry => entry.name === only) : jobs;
+// The Android bundle copies the social card out of public/, so it has to be
+// rendered before that job runs regardless of where it is declared.
+const ORDER = ["web", "social", "android", "windows"];
+const selected = (only ? jobs.filter(entry => entry.name === only) : jobs).sort(
+  (a, b) => ORDER.indexOf(a.name) - ORDER.indexOf(b.name)
+);
 if (!selected.length) throw new Error(`--only ${only} matched nothing (${jobs.map(j => j.name)})`);
 for (const entry of selected) {
   const started = Date.now();

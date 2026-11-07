@@ -1,0 +1,11 @@
+[[permission]]
+identifier = "allow-skills-commands"
+description = "Allow the VupsRouter Skills screen to read, install, rescan, switch on or off, and remove local skill packages, and to pick a package from disk."
+commands.allow = [
+  "skills_status",
+  "skills_scan",
+  "skills_install",
+  "skills_uninstall",
+  "skills_set_enabled",
+  "skills_pick_source"
+]

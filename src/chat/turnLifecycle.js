@@ -8,7 +8,7 @@
  *   continuation or a brand-new request.
  */
 
-import { ACTIVITY_STATUS, applyActivityProgress, settleActivity } from "./activity.js";
+import { ACTIVITY_STATUS, applyActivityProgress, applyProgressRows, settleActivity } from "./activity.js";
 
 export const TURN_STATUS = Object.freeze({
   PENDING: "pending",
@@ -83,6 +83,25 @@ export function recordTurnActivity(messages, id, progress, { runId = "run", at =
       ...message,
       status: message.status === TURN_STATUS.PENDING ? TURN_STATUS.STREAMING : message.status,
       activity: applyActivityProgress(message.activity, progress, { runId, at })
+    };
+  });
+}
+
+/**
+ * Merge a batch of durable progress rows into the turn. These come from the
+ * server's task log (or from the app's own native calls), each keyed to the
+ * operation it describes, so one operation stays one line as it moves from
+ * running to completed.
+ */
+export function recordTurnProgress(messages, id, events, { runId = "run", at = Date.now() } = {}) {
+  return mapTurn(messages, id, (message) => {
+    if (!isActiveTurn(message.status)) return message;
+    const activity = applyProgressRows(message.activity, events, { runId, at });
+    if (activity === message.activity) return message;
+    return {
+      ...message,
+      status: message.status === TURN_STATUS.PENDING ? TURN_STATUS.STREAMING : message.status,
+      activity
     };
   });
 }
@@ -208,14 +227,34 @@ export function hasRecoverableOutput(message) {
   return Boolean(String(message?.content || "").trim() || message?.artifact);
 }
 
+const STORED_MESSAGE_ID = /^[A-Za-z0-9_-]{1,80}$/;
+
+/**
+ * The id the backend recognises a message by. A saved message already carries
+ * the server id; one that has never been stored uses the id this client gave it
+ * at submission time, so a retry names the same message instead of creating a
+ * second copy of it.
+ */
+export function storedMessageId(message) {
+  const id = typeof message?.messageId === "string" ? message.messageId.trim() : "";
+  if (STORED_MESSAGE_ID.test(id)) return id;
+  const localId = typeof message?.id === "string" ? message.id.trim() : "";
+  return STORED_MESSAGE_ID.test(localId) ? localId : "";
+}
+
 /**
  * History sent back to the provider must never contain empty assistant
  * messages: the backend rejects the whole request with
- * "Message content cannot be empty."
+ * "Message content cannot be empty." Failed turns are dropped too — they stay
+ * in the transcript so the user can read and retry them, but replaying "the
+ * model did not answer" as an assistant message teaches the model to fail the
+ * same way.
  */
 export function sanitizeHistoryMessages(messages) {
   return (messages || []).filter((message) => {
-    if (message?.role === "assistant") return hasRecoverableOutput(message);
+    if (message?.role === "assistant") {
+      return hasRecoverableOutput(message) && message.status !== TURN_STATUS.FAILED;
+    }
     if (message?.role === "user") {
       return Boolean(String(message?.content || "").trim()) ||
         (Array.isArray(message?.images) && message.images.length > 0) ||

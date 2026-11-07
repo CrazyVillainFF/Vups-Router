@@ -276,13 +276,26 @@ test("the capability governing the loopback origin grants every bridge command",
     entry => typeof entry === "object" && entry.identifier === "opener:allow-open-url"
   );
   assert.ok(opener, "opener:allow-open-url missing from the loopback capability");
-  // Guide links point at whatever provider the user configured, so the native
-  // allowlist covers secure web and mail links only; the shared opener in
-  // externalLinks.js rejects every other scheme before this command is called.
-  assert.deepEqual(opener.allow.map(entry => entry.url).sort(), ["https://*", "mailto:*"]);
+  // Both handoff destinations must be openable, or the desktop sign-in dead-ends:
+  // a packaged build sends the browser to the deployed https site, and a debug
+  // build aimed at a loopback backend keeps the approval page on the app's own
+  // origin (approvalBaseUrl), because the deployed site's /api proxy would ask a
+  // backend that never saw the ticket. Cleartext is therefore scoped to the two
+  // hostnames that mean "this machine"; the shared opener in externalLinks.js
+  // rejects every other scheme before this command is even called.
+  const urls = opener.allow.map(entry => entry.url).sort();
+  assert.deepEqual(urls, ["http://127.0.0.1:*", "http://localhost:*", "https://*", "mailto:*"]);
   assert.ok(
     opener.allow.some(entry => entry.url.startsWith("https://")),
     `the sign-in page at ${PRODUCTION_SITE_URL} stays openable`
+  );
+  assert.ok(
+    urls.includes("http://127.0.0.1:*"),
+    "a QA build pointed at a loopback backend must still open its approval page"
+  );
+  assert.ok(
+    !urls.some(url => /^http:\/\/(?!(?:127\.0\.0\.1|localhost):)/.test(url)),
+    "no routable host may be opened over cleartext http"
   );
 });
 

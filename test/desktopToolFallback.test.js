@@ -213,7 +213,7 @@ test("a plain question on a server without the endpoint sends no warning card", 
   const source = chatPageSource.replace(/\r\n/g, "\n");
   // The card is only owed to the user when a project folder made tools the
   // point of the turn; otherwise every message would carry a feature notice.
-  assert.match(source, /const warnAboutSkippedTools = Boolean\(chatWorkspace\?\.id\);/);
+  assert.match(source, /const warnAboutSkippedTools = Boolean\(sendWorkspace\?\.id\);/);
   assert.match(source, /if \(warnAboutSkippedTools\) setComposerWarning\(reason\);/);
   assert.doesNotMatch(source, /\n\s*setComposerWarning\(reason\);/);
 });

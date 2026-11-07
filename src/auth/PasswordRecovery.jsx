@@ -6,6 +6,11 @@ import CodeSlots from "../components/reactbits/CodeSlots.jsx";
 import VupsLogo from "../components/VupsLogo.jsx";
 import { getApiErrorMessage, requestPasswordReset, resetPassword, verifyResetCode } from "../services/api.js";
 import {
+  backendEnvironmentNotice,
+  logBackendEnvironment,
+  readBackendRuntime
+} from "../native/backendEnvironment.js";
+import {
   RECOVERY_CODE_TTL_MS,
   clearRecoveryContext,
   confirmPasswordHint,
@@ -65,9 +70,24 @@ export function ForgotPasswordPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [backendRuntime, setBackendRuntime] = useState(null);
   const verifyTimer = useRef(null);
   const redirectTimer = useRef(null);
   const sentAtRef = useRef(0);
+
+  // A recovery form on an untrusted backend can produce a code the requester
+  // will never receive, so the screen says which backend it is talking to.
+  useEffect(() => {
+    let ignored = false;
+    readBackendRuntime().then(runtime => {
+      if (ignored) return;
+      setBackendRuntime(runtime);
+      logBackendEnvironment(runtime);
+    });
+    return () => {
+      ignored = true;
+    };
+  }, []);
 
   useEffect(() => {
     const stored = loadRecoveryContext(storage);
@@ -213,8 +233,10 @@ export function ForgotPasswordPage() {
   }
 
   const copy = STEP_COPY[step];
+  const backendNotice = backendEnvironmentNotice(backendRuntime);
 
   return <RecoveryLayout kicker={copy.kicker} heading={copy.heading} intro={copy.intro}>
+    {backendNotice ? <Alert severity={backendNotice.severity} variant="outlined" sx={{ mb: 2 }}>{backendNotice.message}</Alert> : null}
     {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
     {message && <Alert severity="success" sx={{ mb: 2 }}>
       {message}{step === "code" ? " The code is valid for 10 minutes." : ""}

@@ -11,6 +11,7 @@ import "@fontsource/geist-mono/400.css";
 import "@fontsource/geist-mono/500.css";
 import "./tokens.css";
 import App from "./App.jsx";
+import AppBoundary from "./components/AppBoundary.jsx";
 import { isTauriRuntime } from "./native/shell.js";
 import { initHomeTheme } from "./home/homeTheme.js";
 import { useHomeTheme } from "./home/useHomeTheme.js";
@@ -99,7 +100,12 @@ function ThemedApp() {
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <ThemedApp />
+    {/* Without this a throw anywhere — a stale chunk after a deploy, a crash in
+       the shell — unmounts the document and reads as a black screen in the
+       Windows and Android apps. */}
+    <AppBoundary variant="page">
+      <ThemedApp />
+    </AppBoundary>
   </React.StrictMode>
 );
 

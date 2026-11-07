@@ -10,6 +10,7 @@
     "allow-composer-files",
     "allow-panel-browser",
     "allow-panel-terminal",
+    "allow-skills-commands",
     "updater:default",
     "process:allow-restart"
   ]

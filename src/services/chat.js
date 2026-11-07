@@ -20,7 +20,7 @@ import {
   isPersistenceFailureCode,
   REQUEST_BLOCKED_MESSAGE
 } from "../chat/chatErrors.js";
-import { sanitizeHistoryMessages } from "../chat/turnLifecycle.js";
+import { sanitizeHistoryMessages, storedMessageId } from "../chat/turnLifecycle.js";
 
 export class ChatConfigError extends Error {
   constructor(message) {
@@ -122,11 +122,15 @@ function chatEndpoint(vups = false) {
 }
 
 // Exported for tests. Images are only ever attached to the final message —
-// the backend rejects attachments on earlier messages by design.
+// the backend rejects attachments on earlier messages by design. The stable
+// message id rides along so a retried turn rewrites the stored message instead
+// of appending a second copy of it.
 export function toRequestMessages(messages) {
   const filtered = sanitizeHistoryMessages(messages);
   return filtered.map((message, index) => {
     const entry = { role: message.role, content: String(message.content ?? "") };
+    const messageId = storedMessageId(message);
+    if (messageId) entry.messageId = messageId;
     if (index === filtered.length - 1 && Array.isArray(message.textFiles) && message.textFiles.length > 0) {
       const textFiles = readyTextAttachments(message.textFiles);
       if (textFiles.length > 0) {
