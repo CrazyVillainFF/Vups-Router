@@ -58,9 +58,9 @@ Installing a published build:
 1. Download **Download for Windows** above (the same file is listed on the release page as `VupsRouter-windows-x64-setup.exe`).
 2. Run it; the app appears in **Start → VupsRouter** and signs in on first launch.
 3. The installers are **not code-signed yet**, so Windows SmartScreen shows "Windows protected your PC" — choose **More info → Run anyway** only if you trust the download source. Signing (`AZURE_TRUSTED_CERT_*` or a EV/OV certificate) is a separate step and is not claimed here.
-VupsRouter 2.1.0 and later can update from **Settings > Application updates**; v2.0.1 must install 2.1.0 manually once because its webview did not grant the updater permission.
-
 4. Uninstall from **Settings → Apps → VupsRouter**.
+
+VupsRouter 2.1.0 and later can update from **Settings > Application updates**; v2.0.1 must install 2.1.0 manually once because its webview did not grant the updater permission.
 
 ### Android
 
