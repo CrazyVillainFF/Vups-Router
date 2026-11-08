@@ -45,7 +45,7 @@ import {
 const chatPageSource = readFileSync(
   fileURLToPath(new URL("../src/ChatPage.jsx", import.meta.url)),
   "utf8"
-);
+).replace(/\r\n/g, "\n");
 
 function createStorage(initial = {}) {
   const data = new Map(Object.entries(initial));

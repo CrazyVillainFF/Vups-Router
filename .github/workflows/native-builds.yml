@@ -158,8 +158,11 @@ jobs:
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
       - run: npm ci
-      - run: npm test
+      - name: Check out the backend contract source
+        run: git clone --depth 1 https://github.com/CrazyVillainFF/Vups-Router-BE.git ../server
       - run: npm run build
+      - run: npx cap copy android
+      - run: npm test
       # createUpdaterArtifacts stays OFF (it is false in tauri.conf.json) so the
       # bundler never emits a signature: the updater's minisign signature has to
       # cover the exact bytes users download, which is the installer AFTER
@@ -286,6 +289,19 @@ jobs:
           $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/latest/download/$env:WINDOWS_EXE_ASSET"
           node scripts/make-updater-manifest.mjs --signature-file $sig --version $version --url $url --out release-assets/latest.json --notes "VupsRouter $version for Windows"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Windows in-app updates: signed manifest ``latest.json`` published for version ``$version``."
+
+      - name: Require the updater signing key
+        if: needs.windows-signing-available.outputs.updater != 'true'
+        shell: pwsh
+        run: |
+          Write-Error "TAURI_SIGNING_PRIVATE_KEY is not configured, so no signed latest.json can be published."
+          exit 1
+      - name: Confirm the updater manifest was produced
+        if: needs.windows-signing-available.outputs.updater == 'true'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path release-assets/latest.json)) { Write-Error "latest.json was not produced."; exit 1 }
+          if (-not (Test-Path "release-assets/$env:WINDOWS_EXE_ASSET.sig")) { Write-Error "The updater signature was not produced."; exit 1 }
 
       - name: Verify signatures and record checksums
         id: verify
@@ -439,9 +455,11 @@ jobs:
           echo "verifying with $BUILD_TOOLS (apksigner ${APKSIGNER_VERSION:-version unknown})"
           echo "build_tools=$BUILD_TOOLS" >> "$GITHUB_OUTPUT"
       - run: npm ci
-      - run: npm test
+      - name: Check out the backend contract source
+        run: git clone --depth 1 https://github.com/CrazyVillainFF/Vups-Router-BE.git ../server
       - run: npm run build
       - run: npx cap sync android
+      - run: npm test
       - name: Confirm the Capacitor web assets were copied before packaging
         run: node scripts/check-capacitor-bundle.mjs
       - run: chmod +x gradlew
@@ -523,8 +541,11 @@ jobs:
           echo "verifying with $BUILD_TOOLS (apksigner ${APKSIGNER_VERSION:-version unknown})"
           echo "build_tools=$BUILD_TOOLS" >> "$GITHUB_OUTPUT"
       - run: npm ci
+      - name: Check out the backend contract source
+        run: git clone --depth 1 https://github.com/CrazyVillainFF/Vups-Router-BE.git ../server
       - run: npm run build
       - run: npx cap sync android
+      - run: npm test
       - name: Confirm the Capacitor web assets were copied before packaging
         run: node scripts/check-capacitor-bundle.mjs
       - run: chmod +x gradlew
@@ -586,8 +607,9 @@ jobs:
     # other, and nothing is advertised that was not attached.
     if: >-
       always() &&
-      (needs.windows.result == 'success' || needs.android-debug.result == 'success') &&
-      (needs.android-release.result == 'success' || needs.android-release.result == 'skipped') &&
+      needs.windows.result == 'success' &&
+      needs.android-debug.result == 'success' &&
+      needs.android-release.result == 'success' &&
       (github.event_name != 'workflow_dispatch' || github.event.inputs.tag != '')
     permissions:
       contents: write
