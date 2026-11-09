@@ -13,16 +13,16 @@ React 19 + Vite frontend for VupsRouter: the existing home, signup, and signin p
 
 Also available in the release: `VupsRouter-windows-x64.msi` (same app, for managed installs) and `VupsRouter-android-test-debug.apk` (debug-signed test build; it cannot update a release-signed install). **There is no iOS app** — nothing is downloaded for iPhone or iPad; use the web app there.
 
-**Current build: v2.1.0** — released **2026-11-08 02:09 UTC** (07:39 IST, 8 Nov 2026). Verify any download against [`SHA256SUMS.txt`](https://github.com/CrazyVillainFF/Vups-Router/releases/download/v2.1.0/SHA256SUMS.txt):
+**Current build: v2.1.1** — released **2026-11-09 13:19 UTC** (18:49 IST, 9 Nov 2026). Verify any download against [`SHA256SUMS.txt`](https://github.com/CrazyVillainFF/Vups-Router/releases/download/v2.1.1/SHA256SUMS.txt):
 
 | File | SHA-256 |
 | --- | --- |
-| `VupsRouter-android-release.apk` (5,270,687 B) | `76a220bff823e045e426d1a2a517ad3ba079e9e502c07f71d1e6574fd19b2b84` |
-| `VupsRouter-android-test-debug.apk` (6,398,953 B) | `7fb8f5d23da79d4211a80b8219ed81fcb7c0c42915da2281db218b516b0b4e3f` |
-| `VupsRouter-windows-x64-setup.exe` (7,102,846 B) | `f0311b52be91c8ecb5a5fcdc4058c96ba1999984dab376841f620e5da9906822` |
-| `VupsRouter-windows-x64.msi` (9,605,120 B) | `dd19d70f416e85a99da64c5526314dbf6270e6eb01f6e7c76d18547aaf65e1c3` |
+| `VupsRouter-android-release.apk` (5,270,728 B) | `e028dc9db7db378f402a5723869830a2d3df1272b3f8f6e7761f38c2588fe7de` |
+| `VupsRouter-android-test-debug.apk` (6,399,017 B) | `d43102f90bcfbc7060a0e81a7278a17806a71083db16db5266cee5baa2180cd4` |
+| `VupsRouter-windows-x64-setup.exe` (7,101,846 B) | `bae112f211d5a08966db69af8092e1bd62594b5e9ab88b5eb065f957564050d5` |
+| `VupsRouter-windows-x64.msi` (9,605,120 B) | `b7ffd1214065b96cd31186d9545b9efc2b8b5669b44bbb2bdebf203bb32ebcc7` |
 
-The release-signed APK was built by CI from the `v2.1.0` tag with the fixed release keystore and verified with `apksigner`/`aapt` before upload. The CI workflow also attaches the debug test APK; the release job is gated on the Android signing secrets.
+The release-signed APK was built by CI from the `v2.1.1` tag with the fixed release keystore and verified with `apksigner`/`aapt` before upload. The CI workflow also attaches the debug test APK; the release job is gated on the Android signing secrets.
 
 The two *latest/download* links above always resolve to the newest release, because CI publishes assets with version-free names. `src/download/releases.js` (the in-app `/download` page) reads the same GitHub Release at runtime, so this table and the website cannot disagree. If an asset is missing from the release, the page shows *Not published yet* instead of a dead button.
 
@@ -66,11 +66,11 @@ VupsRouter 2.1.0 and later can update from **Settings > Application updates**; v
 
 `android/` is a real Capacitor 7 project (`com.vupsrouter.app`) that loads the same production site with `?native=android`. The Android download above is the **release-signed** APK, published as `VupsRouter-android-release.apk`. CI also builds a **debug** APK (`VupsRouter-android-test-debug.apk`); both are checked with `apksigner`/`aapt` before upload. The debug build is signed with the Android debug key, is not Play-Store eligible, and cannot update a release-signed install.
 
-Android identifies an app by package name **and** signing certificate. The release identity is fixed at `CN=VupsRouter, OU=Releases, O=VupsRouter, C=US` with certificate SHA-256 `486cf30b77ea2cba1ba397b07740fbef62244a8663cc20f91f7c21cd90e2eeb1`, and every release raises `versionCode`. Installing v2.1.0 (`versionCode 15`) over an existing release-signed VupsRouter build updates it in place and keeps its data. A build signed with any other key — including the debug test APK — is refused by Android as "app not installed" unless the old app is uninstalled first, which erases its data.
+Android identifies an app by package name **and** signing certificate. The release identity is fixed at `CN=VupsRouter, OU=Releases, O=VupsRouter, C=US` with certificate SHA-256 `486cf30b77ea2cba1ba397b07740fbef62244a8663cc20f91f7c21cd90e2eeb1`, and every release raises `versionCode`. Installing v2.1.1 (`versionCode 16`) over an existing release-signed VupsRouter build updates it in place and keeps its data. A build signed with any other key — including the debug test APK — is refused by Android as "app not installed" unless the old app is uninstalled first, which erases its data.
 
 To update a phone that already has the app, open it and use **Settings → Application updates → Check for update**, or download `VupsRouter-android-release.apk` above and install it over the existing app. Do not uninstall first. The in-app flow uses the same native rule and opens the system installer only after the package id, certificate, and higher `versionCode` all match.
 
-CI signs a release APK only when all four of these repository secrets are present. They are configured now, and the v2.1.0 release-signed APK was built and verified by CI with the fixed keystore. Keep these secrets available for future releases:
+CI signs a release APK only when all four of these repository secrets are present. They are configured now, and the v2.1.1 release-signed APK was built and verified by CI with the fixed keystore. Keep these secrets available for future releases:
 
 | Secret | Purpose |
 | --- | --- |
