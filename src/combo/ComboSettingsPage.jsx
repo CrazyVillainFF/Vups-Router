@@ -13,6 +13,7 @@ import { QuantumLoader } from "../components/LoadingVisuals.jsx";
 import { getApiErrorMessage } from "../services/api.js";
 import {
   availabilityMap,
+  COMBO_MAX_SELECTED,
   formatCheckedAt,
   mergeSelectedModels,
   moveSelectedModel,
@@ -536,7 +537,7 @@ export default function ComboSettingsPage() {
             value={settings.maxWorkingModels}
             onChange={value => updateSetting("maxWorkingModels", Number(value))}
           >
-            {[1, 2, 3, 4, 5, 6, 7, 8].map(value => (
+            {Array.from({ length: COMBO_MAX_SELECTED }, (_, index) => index + 1).map(value => (
               <option key={value} value={value}>{value}</option>
             ))}
           </SelectRow>
