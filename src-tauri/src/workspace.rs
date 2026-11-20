@@ -1494,6 +1494,23 @@ pub async fn workspace_touch(app: AppHandle, owner: String, id: String) -> Resul
     Ok(updated)
 }
 
+/// Re-checks a saved selection against this owner's registry and the real disk.
+/// Resolves the id under the calling owner only, so a stale id from another
+/// account is reported instead of being followed. Canonicalizes the workspace
+/// path to prove the folder still exists on disk.
+#[tauri::command]
+pub async fn workspace_validate(app: AppHandle, owner: String, id: String) -> Result<Workspace, String> {
+    let owner = normalize_owner(&owner)?;
+    if id.trim().is_empty() {
+        return Err("Choose a workspace.".into());
+    }
+    let _guard = store_guard();
+    let store = load_store(&app)?;
+    let workspace = find_workspace(&store, &owner, id.trim())?;
+    canonical_directory(Path::new(&workspace.path))?;
+    Ok(workspace.clone())
+}
+
 #[tauri::command]
 pub async fn workspace_pick(app: AppHandle, owner: String) -> Result<Option<Workspace>, String> {
     let owner = normalize_owner(&owner)?;

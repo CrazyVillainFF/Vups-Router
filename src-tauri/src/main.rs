@@ -4,6 +4,8 @@ mod composer_files;
 mod desktop_exec;
 mod desktop_server;
 mod desktop_tools;
+mod hardware;
+mod local_chats;
 mod panel_browser;
 mod panel_terminal;
 mod skills;
@@ -15,6 +17,7 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 fn main() {
     tauri::Builder::default()
         .manage(desktop_tools::DesktopToolState::default())
+        .manage(local_chats::LocalChatState::default())
         .manage(composer_files::ComposerFileState::default())
         .manage(panel_browser::BrowserState::default())
         .manage(panel_terminal::TerminalState::default())
@@ -41,7 +44,17 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            hardware::local_hardware_info,
+            local_chats::local_chats_list,
+            local_chats::local_chats_get,
+            local_chats::local_chats_create,
+            local_chats::local_chats_append_message,
+            local_chats::local_chats_update,
+            local_chats::local_chats_delete,
+            local_chats::local_chats_import,
+            local_chats::local_chats_storage_info,
             workspace::workspace_list,
+            workspace::workspace_validate,
             workspace::workspace_touch,
             workspace::workspace_pick,
             workspace::workspace_pick_container,
@@ -65,8 +78,6 @@ fn main() {
             vups_root::vups_root_ensure,
             vups_root::vups_root_open,
             vups_root::vups_root_reveal,
-            vups_root::vups_root_project,
-            vups_root::vups_root_default_workspace,
             panel_browser::panel_browser_create,
             panel_browser::panel_browser_set_bounds,
             panel_browser::panel_browser_navigate,
@@ -89,6 +100,7 @@ fn main() {
             panel_terminal::panel_terminal_close,
             desktop_tools::desktop_tool_set_policy,
             desktop_tools::desktop_tool_policy_status,
+            desktop_tools::desktop_tool_release_policy,
             desktop_tools::desktop_tool_execute,
             desktop_tools::desktop_tool_respond,
             desktop_tools::desktop_tool_grants_list,
