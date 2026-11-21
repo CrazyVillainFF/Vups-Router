@@ -4,8 +4,6 @@ mod composer_files;
 mod desktop_exec;
 mod desktop_server;
 mod desktop_tools;
-mod hardware;
-mod local_chats;
 mod panel_browser;
 mod panel_terminal;
 mod skills;
@@ -17,7 +15,6 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 fn main() {
     tauri::Builder::default()
         .manage(desktop_tools::DesktopToolState::default())
-        .manage(local_chats::LocalChatState::default())
         .manage(composer_files::ComposerFileState::default())
         .manage(panel_browser::BrowserState::default())
         .manage(panel_terminal::TerminalState::default())
@@ -44,15 +41,6 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            hardware::local_hardware_info,
-            local_chats::local_chats_list,
-            local_chats::local_chats_get,
-            local_chats::local_chats_create,
-            local_chats::local_chats_append_message,
-            local_chats::local_chats_update,
-            local_chats::local_chats_delete,
-            local_chats::local_chats_import,
-            local_chats::local_chats_storage_info,
             workspace::workspace_list,
             workspace::workspace_validate,
             workspace::workspace_touch,
