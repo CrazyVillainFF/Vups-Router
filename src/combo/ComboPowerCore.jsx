@@ -724,6 +724,7 @@ export default function ComboPowerCore({
             <span className="combo-core__groove" />
             <VupsLogo className="combo-core__logo" sizes={`${layout.centerSize}px`} />
           </span>
+          <span className="combo-core__brand">Vups Combo AI</span>
         </div>
 
         {layout.nodes.map(node => {

@@ -283,23 +283,27 @@
 
 .combo-wire__line {
   fill: none;
-  stroke: color-mix(in srgb, var(--accent) 34%, transparent);
-  stroke-width: 1.5;
-  transition: stroke 0.4s ease, stroke-width 0.4s ease;
+  stroke: color-mix(in srgb, var(--text) 42%, transparent);
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  transition: stroke 0.35s ease, stroke-width 0.35s ease, opacity 0.35s ease;
 }
 
 .combo-wire.status-working .combo-wire__line {
-  stroke: color-mix(in srgb, var(--accent) 55%, transparent);
+  stroke: #16c784;
+  opacity: 0.9;
 }
 
 .combo-wire.status-not_working .combo-wire__line {
-  stroke: var(--muted);
-  stroke-dasharray: 3 6;
+  stroke: #ff3b4f;
+  stroke-dasharray: 5 7;
+  opacity: 0.72;
 }
 
 .combo-wire.status-unknown .combo-wire__line {
-  stroke: var(--muted);
-  stroke-dasharray: 2 6;
+  stroke: #4d8dff;
+  stroke-dasharray: 4 8;
+  opacity: 0.65;
 }
 
 .combo-wire.live-queued .combo-wire__line {
@@ -307,8 +311,10 @@
 }
 
 .combo-wire.live-working .combo-wire__line {
-  stroke: color-mix(in srgb, var(--accent) 60%, transparent);
-  stroke-width: 1.5;
+  stroke: #ff6b3d;
+  stroke-width: 2.2;
+  opacity: 1;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent) 70%, transparent));
 }
 
 .combo-wire.live-done .combo-wire__line {
@@ -322,7 +328,7 @@
 
 .combo-wire__dot {
   fill: var(--accent);
-  filter: none;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 80%, transparent));
 }
 
 .combo-core[data-connected="false"] .combo-wire__dot {
@@ -403,13 +409,16 @@
 .combo-core__plate {
   position: absolute;
   inset: 9%;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
   border-radius: 50%;
   background: var(--bg);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--text) 10%, transparent), inset 0 -2px 0 color-mix(in srgb, var(--slab) 60%, transparent);
   place-items: center;
+  align-items: center;
+  justify-content: center;
   will-change: transform;
 }
 
@@ -434,11 +443,50 @@
 .combo-core__logo {
   position: relative;
   z-index: 1;
-  width: 46%;
-  height: 46%;
+  width: 40%;
+  height: 40%;
   object-fit: contain;
   border-radius: 50%;
   filter: none;
+}
+
+.combo-core__brand {
+  position: absolute;
+  left: 50%;
+  bottom: 11%;
+  z-index: 1;
+  margin-top: 5px;
+  color: var(--text);
+  font: 600 clamp(10px, 1.5vw, 14px) / 1.05 var(--font-sans), sans-serif;
+  letter-spacing: -0.035em;
+  text-align: center;
+  text-shadow: 0 1px 12px color-mix(in srgb, var(--bg) 90%, transparent);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+/* WebGL paints the physical core, while this label remains a crisp, accessible
+   brand layer on top. Keeping the label in the DOM prevents the canvas and the
+   wire endpoints from drifting apart during startup or context loss. */
+.combo-core--3d .combo-core__center {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 4%;
+}
+
+.combo-core--3d .combo-core__plate {
+  display: none;
+}
+
+.combo-core--3d .combo-core__brand {
+  bottom: 3%;
+  padding: 4px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 74%, transparent);
+  font-size: clamp(10px, 1.3vw, 13px);
+  backdrop-filter: blur(4px);
 }
 
 .combo-provider-node {
