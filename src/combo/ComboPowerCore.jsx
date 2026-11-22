@@ -607,12 +607,19 @@ export default function ComboPowerCore({
     return `${node.provider.name} provider node, ${statusLabel(status)}${activity}. Activate to show this provider in the model library. Drag or use arrow keys to reposition, Escape or double click to return it to the default position.`;
   }
 
-  const machineOn = machineEnabled && providers.length > 0;
+  // The topology presentation is the default web view. The existing WebGL
+  // machine remains available for visual QA and native experiments with
+  // `?renderer=3d`, but the graph is the stable, responsive presentation users
+  // see by default.
+  const topologyMode = typeof window === "undefined"
+    ? true
+    : new URLSearchParams(window.location.search).get("renderer") !== "3d";
+  const machineOn = !topologyMode && machineEnabled && providers.length > 0;
 
   return (
     <div
       ref={rootRef}
-      className={`combo-core${reduced ? " combo-core--still" : ""}${machineOn ? " combo-core--3d" : ""}`}
+      className={`combo-core${reduced ? " combo-core--still" : ""}${topologyMode ? " combo-core--topology" : ""}${machineOn ? " combo-core--3d" : ""}`}
       data-connected={connected ? "true" : "false"}
       data-renderer={machineOn ? "webgl" : "dom"}
       style={{
@@ -642,6 +649,11 @@ export default function ComboPowerCore({
           wake();
         }}
       >
+        <div className="combo-core__legend" aria-hidden="true">
+          <span><i data-state="active" /> Active</span>
+          <span><i data-state="recent" /> Recent</span>
+          <span><i data-state="error" /> Error</span>
+        </div>
         <div className="combo-core__ambient" aria-hidden="true" />
         {machineOn ? (
           <Suspense fallback={null}>
@@ -766,15 +778,13 @@ export default function ComboPowerCore({
               <span className="combo-provider-node__disc">
                 <ProviderMark art={node.provider.artwork} />
               </span>
-              {node.provider.artwork.type === "wordmark" ? null : (
-                <span
-                  className="combo-provider-node__label"
-                  data-side={Math.sin(node.angle) < -0.3 ? "above" : "below"}
-                  data-align={node.xPct < 20 ? "start" : node.xPct > 80 ? "end" : "center"}
-                >
-                  {node.provider.name}
-                </span>
-              )}
+              <span
+                className="combo-provider-node__label"
+                data-side={Math.sin(node.angle) < -0.3 ? "above" : "below"}
+                data-align={node.xPct < 20 ? "start" : node.xPct > 80 ? "end" : "center"}
+              >
+                {node.provider.name}
+              </span>
             </div>
           );
         })}

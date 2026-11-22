@@ -726,6 +726,173 @@
   white-space: nowrap;
 }
 
+/* ── Provider topology presentation --------------------------------------
+   The graph is intentionally a 2D topology by default: it keeps the exact
+   provider state and wire animation readable on ordinary laptops, while the
+   existing WebGL machine remains available through ?renderer=3d. */
+.combo-core--topology {
+  border-color: color-mix(in srgb, #5d75a8 72%, var(--border));
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 50% 52%, color-mix(in srgb, #24314d 25%, transparent), transparent 30%),
+    #151a23;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), inset 0 -1px 0 rgb(255 255 255 / 0.03);
+}
+
+.combo-core--topology .combo-core__ambient {
+  inset: 22%;
+  border-radius: 50%;
+  background: #345c9a;
+  filter: blur(44px);
+  opacity: calc(0.06 + var(--combo-connected, 0) * 0.08);
+}
+
+.combo-core--topology .combo-core__legend {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  z-index: 7;
+  display: flex;
+  gap: 18px;
+  color: #aab1bd;
+  font: 500 12px/1.2 var(--font-sans), sans-serif;
+}
+
+.combo-core--topology .combo-core__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.combo-core--topology .combo-core__legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #7a8493;
+  box-shadow: 0 0 10px rgb(122 132 147 / 0.35);
+}
+
+.combo-core--topology .combo-core__legend i[data-state="active"] { background: #18c979; box-shadow: 0 0 10px rgb(24 201 121 / 0.55); }
+.combo-core--topology .combo-core__legend i[data-state="recent"] { background: #ffa91f; box-shadow: 0 0 10px rgb(255 169 31 / 0.45); }
+.combo-core--topology .combo-core__legend i[data-state="error"] { background: #ff3f52; box-shadow: 0 0 10px rgb(255 63 82 / 0.45); }
+
+.combo-core--topology .combo-core__wires { z-index: 1; }
+.combo-core--topology .combo-wire__line { stroke: #738091; stroke-width: 1.55; opacity: 0.85; }
+.combo-core--topology .combo-wire.status-working .combo-wire__line { stroke: #20d17e; opacity: 0.92; }
+.combo-core--topology .combo-wire.status-not_working .combo-wire__line { stroke: #ff4053; stroke-dasharray: 5 7; opacity: 0.85; }
+.combo-core--topology .combo-wire.status-unknown .combo-wire__line { stroke: #4e92ff; stroke-dasharray: 4 8; opacity: 0.72; }
+.combo-core--topology .combo-wire.live-working .combo-wire__line { stroke: #ffad2e; stroke-width: 2.8; filter: drop-shadow(0 0 4px rgb(255 173 46 / 0.65)); }
+.combo-core--topology .combo-wire__dot { fill: #ffad2e; }
+
+.combo-core--topology .combo-core__center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 13px;
+  width: 252px;
+  height: 84px;
+  padding: 0 20px;
+  border: 2px solid #ee4d64;
+  border-radius: 13px;
+  background: #202631;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.04), 0 0 24px rgb(238 77 100 / 0.16), inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
+.combo-core--topology .combo-core__glow {
+  inset: -25%;
+  z-index: -1;
+  background: #ee4d64;
+  filter: blur(32px);
+  opacity: calc(0.03 + var(--combo-connected, 0) * 0.1);
+}
+
+.combo-core--topology .combo-core__plate {
+  position: relative;
+  inset: auto;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #ef6073;
+  border-radius: 10px;
+  background: #3a2630;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), 0 0 16px rgb(239 96 115 / 0.2);
+}
+
+.combo-core--topology .combo-core__plate::before,
+.combo-core--topology .combo-core__plate::after { display: none; }
+.combo-core--topology .combo-core__groove { display: none; }
+.combo-core--topology .combo-core__logo { width: 60%; height: 60%; border-radius: 6px; }
+.combo-core--topology .combo-core__brand {
+  position: static;
+  margin: 0;
+  color: #f35b73;
+  font-size: clamp(16px, 1.7vw, 22px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-align: left;
+  text-shadow: none;
+  transform: none;
+}
+
+.combo-core--topology .combo-provider-node {
+  width: 178px;
+  height: 58px;
+  border: 2px solid #18c979;
+  border-radius: 11px;
+  background: #151a23;
+  box-shadow: 0 0 16px rgb(24 201 121 / 0.06), inset 0 1px 0 rgb(255 255 255 / 0.04);
+}
+
+.combo-core--topology .combo-provider-node__disc {
+  inset: 7px auto 7px 10px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 8px;
+  background: #202631;
+  box-shadow: none;
+}
+
+.combo-core--topology .combo-provider-node__disc::before,
+.combo-core--topology .combo-provider-node__disc::after { display: none; }
+.combo-core--topology .combo-provider-mark { width: 30px; height: 30px; }
+.combo-core--topology .combo-provider-node__label {
+  top: 50%;
+  left: 60px;
+  right: 8px;
+  max-width: none;
+  color: #c7cdd7;
+  font-size: 15px;
+  font-weight: 650;
+  text-align: left;
+  text-overflow: ellipsis;
+  transform: translateY(-50%);
+}
+.combo-core--topology .combo-provider-node__label[data-side="above"],
+.combo-core--topology .combo-provider-node__label[data-align="start"],
+.combo-core--topology .combo-provider-node__label[data-align="end"] { top: 50%; left: 60px; right: 8px; bottom: auto; transform: translateY(-50%); text-align: left; }
+.combo-core--topology .combo-provider-node[data-status="not_working"],
+.combo-core--topology .combo-provider-node[data-activity="failed"] { border-color: #ff4053; opacity: 1; }
+.combo-core--topology .combo-provider-node[data-status="unknown"] { border-color: #4e92ff; }
+.combo-core--topology .combo-provider-node[data-activity="queued"] { border-color: #ffa91f; }
+.combo-core--topology .combo-provider-node[data-activity="working"] { border-color: #ffa91f; box-shadow: 0 0 18px rgb(255 169 31 / 0.18); }
+.combo-core--topology .combo-provider-node[data-activity="done"] { border-color: #18c979; }
+
+@media (max-width: 720px) {
+  .combo-core--topology .combo-core__legend { top: 14px; right: 14px; gap: 9px; font-size: 10px; }
+  .combo-core--topology .combo-provider-node { width: 138px; height: 50px; }
+  .combo-core--topology .combo-provider-node__label { left: 50px; font-size: 12px; }
+  .combo-core--topology .combo-provider-node__label[data-side="above"],
+  .combo-core--topology .combo-provider-node__label[data-align="start"],
+  .combo-core--topology .combo-provider-node__label[data-align="end"] { left: 50px; }
+  .combo-core--topology .combo-core__center { width: 196px; height: 70px; padding: 0 12px; gap: 8px; }
+  .combo-core--topology .combo-core__brand { font-size: 15px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .combo-core--topology .combo-wire__line { transition: none; }
+}
+
 .combo-core__empty {
   position: absolute;
   left: 50%;
