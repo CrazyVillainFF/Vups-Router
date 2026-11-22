@@ -223,7 +223,6 @@ export default function SettingsPage({ embedded = false }) {
   const [modelsWarning, setModelsWarning] = useState("");
   const [selectedModels, setSelectedModels] = useState([]);
   const [defaultModel, setDefaultModel] = useState("");
-  const [manualModel, setManualModel] = useState("");
   const [modelType, setModelType] = useState("custom");
   const [freeCatalog, setFreeCatalog] = useState(null);
   const [freeCatalogLoading, setFreeCatalogLoading] = useState(false);
@@ -343,7 +342,6 @@ export default function SettingsPage({ embedded = false }) {
     const nextForm = formFromProvider(existingProvider, entry);
     setForm(nextForm);
     setShowKey(false);
-    setManualModel("");
     setModelsWarning("");
     if (existingProvider) {
       setSelectedModels(savedModelIds(existingProvider));
@@ -374,7 +372,6 @@ export default function SettingsPage({ embedded = false }) {
   function startAnotherKey(provider) {
     setForm({ ...formFromProvider(provider, providerById(provider.providerId)), configId: "", apiKey: "" });
     setShowKey(false);
-    setManualModel("");
     setModelsWarning("");
     setModels([]);
     setSelectedModels([]);
@@ -440,7 +437,29 @@ export default function SettingsPage({ embedded = false }) {
         setSelectedModels(savedConfig.models);
         setDefaultModel(savedConfig.defaultModel || "");
       }
-      setAlert({ severity: "success", message: `${result.message} Key: ${savedConfig.apiKeyMasked || "saved"}.` });
+      // Saving a key is the natural discovery point. The cache prevents a
+      // second request when the user opens the model section or presses Load
+      // models immediately afterwards.
+      if (savedConfig.configId) {
+        try {
+          const discovered = await cachedFetchProviderModelsDetailed(savedConfig.configId);
+          const discoveredModels = Array.isArray(discovered.models) ? discovered.models : [];
+          if (discoveredModels.length > 0) {
+            setModels(discoveredModels);
+            setSelectedModels(current => current.length > 0 ? current : discoveredModels.map(model => model.id));
+            setAlert({ severity: "success", message: `${result.message} Discovered ${discoveredModels.length} available models.` });
+          } else {
+            setAlert({ severity: "success", message: `${result.message} No model catalogue was returned by this provider.` });
+          }
+        } catch {
+          // Saving the provider succeeded; discovery is best effort and can be
+          // retried from the explicit Load models action.
+          setAlert({ severity: "success", message: `${result.message} Model discovery can be retried below.` });
+        }
+      }
+      if (!savedConfig.configId) {
+        setAlert({ severity: "success", message: `${result.message} Key: ${savedConfig.apiKeyMasked || "saved"}.` });
+      }
     } catch (error) {
       setAlert({ severity: "error", message: getApiErrorMessage(error) });
     } finally {
@@ -491,7 +510,10 @@ export default function SettingsPage({ embedded = false }) {
   async function handleTestModel() {
     if (!form) return;
     setAlert(null);
-    const model = form.model.trim();
+    // Model IDs come from the provider catalogue. Keep the legacy saved model
+    // as a read-only fallback so existing configurations remain usable, but do
+    // not ask users to type or invent IDs in the settings UI.
+    const model = defaultModel || selectedModels[0] || (savedProvider?.defaultModel || savedProvider?.model || "");
     if (!form.baseUrl.trim()) {
       setAlert({ severity: "error", message: "Enter an API base URL first." });
       return;
@@ -501,7 +523,7 @@ export default function SettingsPage({ embedded = false }) {
       return;
     }
     if (!model) {
-      setAlert({ severity: "error", message: "Enter the exact model ID before testing a model." });
+      setAlert({ severity: "info", message: "Save the provider and load its available models before testing a model." });
       return;
     }
     const confirmed = window.confirm(
@@ -570,7 +592,7 @@ export default function SettingsPage({ embedded = false }) {
       if (data.warning) {
         setModelsWarning(data.warning.message);
       } else {
-        setAlert({ severity: list.length > 0 ? "success" : "info", message: list.length > 0 ? `Loaded ${list.length} models.` : "The provider returned no models. Add model IDs manually." });
+        setAlert({ severity: list.length > 0 ? "success" : "info", message: list.length > 0 ? `Loaded ${list.length} models.` : "This provider did not return a model catalogue. Use its supported provider-specific configuration." });
       }
     } catch (error) {
       setAlert({ severity: "error", message: `${getApiErrorMessage(error)} Saved models were not changed.` });
@@ -582,17 +604,6 @@ export default function SettingsPage({ embedded = false }) {
   function toggleModel(id) {
     setSelectedModels(current => (current.includes(id) ? current.filter(entry => entry !== id) : [...current, id]));
     setDefaultModel(current => (current === id ? "" : current));
-  }
-
-  function addManualModel() {
-    const id = manualModel.trim();
-    if (!id) return;
-    if (id.length > 200) {
-      setAlert({ severity: "error", message: "Model IDs must be 200 characters or fewer." });
-      return;
-    }
-    setSelectedModels(current => (current.includes(id) ? current : [...current, id]));
-    setManualModel("");
   }
 
   async function handleSaveModels() {
@@ -1124,14 +1135,6 @@ export default function SettingsPage({ embedded = false }) {
                     )
                   }}
                 />
-                <TextField
-                  label="Model ID"
-                  value={form.model}
-                  onChange={event => setForm(current => ({ ...current, model: event.target.value }))}
-                  placeholder="e.g. deepseek-chat"
-                  helperText="The exact model ID from your provider. Save models below to pick one from a list."
-                  inputProps={{ maxLength: 200 }}
-                />
               </div>
               <div className="settings-actions">
                 <Button
@@ -1185,25 +1188,6 @@ export default function SettingsPage({ embedded = false }) {
                   </p>
                 </LwAlert>
               )}
-              {Array.isArray(registryEntry?.suggestedModels) && registryEntry.suggestedModels.length > 0 && (
-                <div className="settings-models">
-                  <span className="settings-models-label">SUGGESTED MODEL IDS — NOT VERIFIED ON YOUR KEY YET</span>
-                  <div className="settings-models-list">
-                    {registryEntry.suggestedModels.map(model => (
-                      <button
-                        key={model.id}
-                        type="button"
-                        className={`settings-model-chip${selectedModels.includes(model.id) ? " is-active" : ""}`}
-                        aria-pressed={selectedModels.includes(model.id)}
-                        title={`${model.id} — click to add or remove, then use Test model`}
-                        onClick={() => toggleModel(model.id)}
-                      >
-                        {model.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
               {models.length > 0 && (
                 <div className="settings-models">
                   <span className="settings-models-label">DISCOVERED THIS SESSION — CLICK TO ADD OR REMOVE</span>
@@ -1238,7 +1222,7 @@ export default function SettingsPage({ embedded = false }) {
                       {id}
                     </button>
                   ))}
-                  {selectedModels.length === 0 && <span className="settings-empty">No saved models yet — discover or add one below.</span>}
+                  {selectedModels.length === 0 && <span className="settings-empty">No models saved yet — load the provider catalogue to choose one.</span>}
                 </div>
                 <p className="settings-empty">
                   Capability badges come from provider metadata. This app currently routes chat and image inputs; image
@@ -1246,21 +1230,6 @@ export default function SettingsPage({ embedded = false }) {
                 </p>
               </div>
               <div className="settings-filter-row">
-                <TextField
-                  size="small"
-                  label="Add model ID manually"
-                  value={manualModel}
-                  onChange={event => setManualModel(event.target.value)}
-                  onKeyDown={event => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      addManualModel();
-                    }
-                  }}
-                />
-                <Button size="small" variant="outlined" startIcon={<AddRoundedIcon />} onClick={addManualModel}>
-                  Add model
-                </Button>
                 <TextField
                   size="small"
                   select
@@ -1294,7 +1263,7 @@ export default function SettingsPage({ embedded = false }) {
               <h2>How to configure {registryEntry?.name || savedProvider?.provider}</h2>
               <ol className="settings-guide-steps">
                 <li>Create an API key on the provider's official page {registryEntry?.keysUrl ? "" : "(paste your key below)"} and keep it private — never share API keys.</li>
-                <li>Enter the base URL and model ID, save, then use <b>Check connection</b> (lists models only) or <b>Test model</b> (sends a tiny prompt that may consume tokens).</li>
+                <li>Enter the base URL, save, and use <b>Check connection</b> to discover models. Select a discovered model before using <b>Test model</b> (which sends a tiny prompt).</li>
               </ol>
               {registryEntry && <GuideLinks entry={registryEntry} />}
               <Link to="/chat" className="settings-chat-link">Go to chat →</Link>
