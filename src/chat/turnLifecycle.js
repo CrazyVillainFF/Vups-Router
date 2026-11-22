@@ -76,6 +76,24 @@ export function appendTurnChunk(messages, id, chunk) {
   });
 }
 
+/**
+ * The answer as the server currently holds it, for a turn that is not streaming
+ * into this screen.
+ *
+ * A durable run is read whole rather than in deltas, so this replaces instead of
+ * appending — and only ever forwards, because a read that lands out of order
+ * must not shorten an answer the reader has already seen.
+ */
+export function syncTurnContent(messages, id, content) {
+  if (typeof content !== "string" || content.length === 0) return messages;
+  return mapTurn(messages, id, (message) => {
+    if (!isActiveTurn(message.status)) return message;
+    const next = longerContent(message.content, content);
+    if (next === message.content) return message;
+    return { ...message, status: TURN_STATUS.STREAMING, content: next };
+  });
+}
+
 export function recordTurnActivity(messages, id, progress, { runId = "run", at = Date.now() } = {}) {
   return mapTurn(messages, id, (message) => {
     if (!isActiveTurn(message.status)) return message;
@@ -179,7 +197,7 @@ export function failTurn(messages, id, { error, content, messageId, artifact } =
  * Marks a user-initiated stop. Empty placeholders are removed entirely so
  * they can never be sent back to the backend as empty history.
  */
-export function cancelTurn(messages, id) {
+export function cancelTurn(messages, id, { keepEmpty = false } = {}) {
   let changed = false;
   const next = [];
   for (const message of messages) {
@@ -192,7 +210,7 @@ export function cancelTurn(messages, id) {
       continue;
     }
     const hasOutput = Boolean(String(message.content || "").trim() || message.artifact);
-    if (!hasOutput) {
+    if (!hasOutput && !keepEmpty) {
       changed = true;
       continue;
     }

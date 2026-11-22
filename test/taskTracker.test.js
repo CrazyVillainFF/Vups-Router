@@ -24,6 +24,7 @@ import {
   taskTrackerStatus,
   watchTrackedTask
 } from "../src/tasks/taskTracker.js";
+import { taskPlanProgress } from "../src/tasks/taskRunView.js";
 
 /** Seeded rows share one timestamp so ordering assertions stay deterministic. */
 const SEED_AT = "2026-11-07T10:00:00.000Z";
@@ -79,8 +80,13 @@ function createBackend(seed = []) {
   }
 
   function detailOf(record) {
+    // The real projection always carries the plan with its rolled-up counts.
+    const plan = record.plan || [];
     return {
       ...summary(record),
+      plan,
+      completedSteps: plan.filter(step => step?.status === "completed").length,
+      pendingSteps: plan.filter(step => step?.status === "pending" || step?.status === "blocked").length,
       result: record.result || {},
       modelRequests: record.modelRequests || [],
       toolOperations: record.toolOperations || [],
@@ -320,6 +326,71 @@ function begin(seed) {
 test.beforeEach(() => {
   resetTaskTracker();
 });
+
+for (const finalReadFails of [false, true]) {
+  test(`terminal event replay refreshes final plan and result${finalReadFails ? " after a lost detail response" : ""}`, async () => {
+    // The browser lifecycle screenshot that started this: the event row said the
+    // task finished while the panel still showed the plan it had a moment ago.
+    const backend = begin([
+      {
+        taskId: "tsk_final",
+        state: "running",
+        conversationId: "conv_final",
+        plan: [
+          { title: "Read the brief", status: "completed" },
+          { title: "Draft the answer", status: "pending" },
+          { title: "Check the draft", status: "pending" }
+        ],
+        completedSteps: 1,
+        pendingSteps: 2,
+        events: [{ seq: 1, message: "Reading the brief" }]
+      }
+    ]);
+
+    await refreshTrackedTask("tsk_final");
+    assert.equal(taskPlanProgress(getTrackedTask("tsk_final").task).done, 1);
+
+    // The turn lands between two reads: the record now holds the finished plan
+    // and the answer, and only the detail read carries either.
+    const record = backend.records.get("tsk_final");
+    record.state = "completed";
+    record.stage = "completed";
+    record.plan = record.plan.map(step => ({ ...step, status: "completed" }));
+    record.completedSteps = 3;
+    record.pendingSteps = 0;
+    record.result = { text: "The finished answer." };
+    backend.push("tsk_final", "Checking the draft", { phase: "task", status: "completed", key: "task_completed" });
+
+    if (finalReadFails) backend.failDetail("tsk_final", NETWORK_ERROR);
+
+    await pollTaskTrackerOnce();
+
+    if (finalReadFails) {
+      const stalled = getTrackedTask("tsk_final");
+      assert.equal(stalled.state, "completed");
+      assert.equal(stalled.offline, true);
+      // The terminal page alone cannot fix the plan; the missing read must not
+      // be treated as a final one.
+      assert.equal(taskPlanProgress(stalled.task).done, 1);
+
+      delete backend.errors.detail.tsk_final;
+      await pollTaskTrackerOnce();
+    }
+
+    const final = getTrackedTask("tsk_final");
+    assert.equal(final.state, "completed");
+    assert.equal(final.offline, false);
+    assert.equal(taskPlanProgress(final.task).done, 3);
+    assert.equal(taskPlanProgress(final.task).pending, 0);
+    assert.equal(final.task.result.text, "The finished answer.");
+    assert.ok(backend.ops("detail").some(call => call.taskId === "tsk_final"));
+
+    // Settled: a finished task is not polled again, so no duplicate detail reads.
+    const reads = backend.ops("detail").length;
+    await pollTaskTrackerOnce();
+    assert.equal(backend.ops("detail").length, reads);
+  });
+}
 
 test("the tracker registry survives the view that created it", async () => {
   const backend = begin([

@@ -57,7 +57,9 @@ export function isOpenTaskState(state) {
 
 export async function submitTask(input = {}) {
   const prompt = typeof input.prompt === "string" ? input.prompt.trim() : "";
-  if (!prompt) throw Object.assign(new Error("Say what the task should do."), { code: "invalid_prompt" });
+  if (!prompt && !(Array.isArray(input.images) && input.images.length > 0)) {
+    throw Object.assign(new Error("Say what the task should do."), { code: "invalid_prompt" });
+  }
   const { prompt: _prompt, conversationId, ...request } = input;
   const { data } = await apiClient.post("/tasks", {
     prompt,
@@ -102,6 +104,8 @@ export async function fetchTaskEvents(taskId, { after = 0 } = {}) {
     done: data.done === true,
     lastSeq: Number(data.lastSeq) || 0,
     events: Array.isArray(data.events) ? data.events : [],
+    ...(data.output === undefined ? {} : { output: data.output }),
+    ...(data.gap === undefined ? {} : { gap: data.gap === true, firstSeq: Number(data.firstSeq) || 0 }),
     ...(data.pendingClarification === undefined ? {} : { pendingClarification: data.pendingClarification })
   };
 }

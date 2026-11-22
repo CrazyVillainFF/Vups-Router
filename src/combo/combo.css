@@ -129,6 +129,9 @@
   display: grid;
   grid-template-columns: minmax(292px, 360px) minmax(0, 1fr);
   grid-template-areas: "panel stage";
+  /* The row is bounded by the page, so the library scrolls inside its own
+     panel instead of making the whole page taller than the screen. */
+  grid-template-rows: minmax(0, 1fr);
   gap: 16px;
   flex: 1;
   min-height: 0;
@@ -180,9 +183,9 @@
 }
 
 .combo-art--sm {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
 }
 
 .combo-art--md {
@@ -902,7 +905,8 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 15px 14px 10px;
+  overflow: hidden;
+  padding: 12px 12px 8px;
   border: 1px solid var(--combo-line);
   border-radius: 16px;
   background: var(--bg);
@@ -935,8 +939,8 @@
 .combo-summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 12px;
-  margin: 10px 0 0;
+  gap: 4px 12px;
+  margin: 8px 0 0;
   color: var(--combo-muted);
   font-size: 10.5px;
 }
@@ -945,6 +949,12 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.combo-summary span[data-state="total"],
+.combo-summary span[data-state="selected"] {
+  color: var(--text);
+  font-weight: 600;
 }
 
 .combo-summary span[data-state="working"] {
@@ -957,13 +967,6 @@
 
 .combo-summary span[data-state="unknown"] {
   color: var(--combo-dim);
-}
-
-.combo-panel__desc {
-  margin: 8px 0 12px;
-  color: var(--combo-dim);
-  font-size: 11px;
-  line-height: 1.6;
 }
 
 .combo-search {
@@ -1040,18 +1043,134 @@
   outline-offset: 2px;
 }
 
-.combo-filter-check {
-  display: inline-flex;
+.combo-sweep {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.combo-sweep__title {
+  margin: 0 0 5px;
+  color: var(--text);
+  font: 600 11px var(--font-sans), sans-serif;
+}
+
+.combo-sweep__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--combo-dim);
+  font: 9.5px var(--font-mono), monospace;
+}
+
+.combo-sweep__counts li[data-state="working"] {
+  color: var(--text);
+}
+
+.combo-sweep__counts li[data-state="not_working"] {
+  color: var(--error);
+}
+
+.combo-sweep__counts li[data-state="checking"] {
+  color: var(--combo-accent);
+}
+
+.combo-sweep__progress {
+  margin: 5px 0 0;
+  color: var(--combo-dim);
+  font: 9.5px var(--font-mono), monospace;
+}
+
+.combo-pager {
+  display: flex;
   align-items: center;
-  gap: 5px;
-  color: var(--combo-muted);
-  font-size: 10.5px;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.combo-pager__count {
+  color: var(--combo-dim);
+  font: 9.5px var(--font-mono), monospace;
+  white-space: nowrap;
+}
+
+.combo-pager-btn {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: 500 10.5px var(--font-sans), sans-serif;
   white-space: nowrap;
   cursor: pointer;
 }
 
-.combo-filter-check input {
-  accent-color: var(--accent);
+.combo-pager-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  color: var(--accent);
+}
+
+.combo-pager-btn:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  outline: 2px solid var(--combo-accent);
+  outline-offset: 2px;
+}
+
+.combo-pager-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.combo-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.combo-selection-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: 500 11px var(--font-sans), sans-serif;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease-out,
+    color 150ms ease-out,
+    background-color 150ms ease-out;
+}
+
+.combo-selection-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  color: var(--accent);
+}
+
+.combo-selection-btn:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  outline: 2px solid var(--combo-accent);
+  outline-offset: 2px;
+}
+
+.combo-selection-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .combo-panel__state {
@@ -1102,13 +1221,13 @@
 .combo-row {
   display: flex;
   width: 100%;
-  min-height: 50px;
+  min-height: 34px;
   box-sizing: border-box;
   align-items: center;
-  gap: 9px;
-  padding: 6px 7px;
+  gap: 8px;
+  padding: 3px 6px;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: 8px;
   background: transparent;
   color: inherit;
   text-align: left;
@@ -1171,7 +1290,7 @@
   align-items: center;
   gap: 3px;
   color: var(--combo-dim);
-  font: 8.5px var(--font-mono), monospace;
+  font: 9.5px var(--font-mono), monospace;
   letter-spacing: 0.2px;
   white-space: nowrap;
 }
@@ -1182,6 +1301,16 @@
 
 .combo-row__status[data-status="not_working"] {
   color: var(--error);
+}
+
+/* A model nobody has checked is not a failure, and one being checked right
+   now is neither: each says so in its own words. */
+.combo-row__status[data-status="unknown"] {
+  color: var(--combo-dim);
+}
+
+.combo-row__status[data-status="checking"] {
+  color: var(--combo-accent);
 }
 
 .combo-row__mark {
@@ -1715,6 +1844,11 @@
 
   .combo-filter-select {
     height: 44px;
+  }
+
+  .combo-selection-btn {
+    height: 44px;
+    font-size: 12px;
   }
 }
 

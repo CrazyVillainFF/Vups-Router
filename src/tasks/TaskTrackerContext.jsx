@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
+import { useConnectivity } from "../connectivity/connectivity.js";
 import {
   answerTrackedClarification,
   getTaskTrackerSnapshot,
@@ -37,8 +38,12 @@ function subscribe(listener) {
 
 export function TaskTrackerProvider({ children, intervalMs }) {
   const { user, isAuthenticated } = useAuth();
+  const { online } = useConnectivity();
   const snapshot = useSyncExternalStore(subscribe, getTaskTrackerSnapshot, getTaskTrackerSnapshot);
-  const ownerId = isAuthenticated ? String(user?.id || user?.email || "") : "";
+  // The tracker polls the cloud backend. A cached offline identity can still
+  // read Local Chats, but it must not start a poll loop the connection cannot
+  // serve; reconnecting restores the owner and the tracker resumes.
+  const ownerId = isAuthenticated && online ? String(user?.id || user?.email || "") : "";
   // One intent, one task: the id names the submit that is currently wanted, and
   // survives a remount under it so nothing re-sends the same brief.
   const submissionSeq = useRef(0);

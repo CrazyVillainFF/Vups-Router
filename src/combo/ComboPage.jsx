@@ -15,21 +15,22 @@ import { QuantumLoader } from "../components/LoadingVisuals.jsx";
 import ShinyText from "../components/reactbits/ShinyText/ShinyText.jsx";
 import CountUp from "../components/reactbits/CountUp/CountUp.jsx";
 import { getApiErrorMessage } from "../services/api.js";
-import { comboTestTimeoutMs, fetchComboState, runComboAvailability, saveComboState, testComboModel } from "./comboApi.js";
+import { comboAvailabilityTimeoutMs, comboTestTimeoutMs, fetchComboState, runComboAvailability, saveComboState, testComboModel } from "./comboApi.js";
+import { MODEL_CHECK_CONCURRENCY, createModelCheckQueue } from "./modelCheckQueue.js";
 import {
   availabilityMap,
-  COMBO_MAX_SELECTED,
   filterModels,
-  hasVisionModels,
   isWorkingModelsFilter,
   libraryEmptyMessage,
   mergeSelectedModels,
   providerOptions,
+  selectAllModels,
   selectionForSave,
   statusFor,
   statusLabel,
   summaryFor,
   toggleSelectedModel,
+  unselectNotWorkingModels,
   withStaleSelected,
   WORKING_MODELS_FILTER
 } from "./comboSelection.js";
@@ -45,6 +46,14 @@ const FALLBACK_SETTINGS = {
   autoAvailability: true,
   maxWorkingModels: 4
 };
+
+// How many models one availability request carries. A sweep over the whole
+// library is split into batches of this size so each request can finish, and
+// each finished batch is already saved when the next one starts.
+
+// How many model rows the library draws at once. The library itself may hold
+// thousands of models; the page only ever holds one page of them.
+const LIBRARY_PAGE_SIZE = 100;
 
 function StatusGlyph({ status }) {
   if (status === "working") return <CheckCircle size={12} weight="fill" aria-hidden="true" />;
@@ -66,12 +75,13 @@ function isCancelledRequest(error) {
 
 // One row, two controls: the row itself still only selects, and the Test control
 // beside it is the only thing that can talk to a provider. A test result is kept
-// per model key, so a row that has never been tested shows no status at all
-// instead of implying a check the app never ran.
-const ModelRow = React.memo(function ModelRow({ model, selected, status, test, onToggle, onTest }) {
+// per model key. Every row states where its model stands - Working, Not Working,
+// Not Checked, or Checking - so a model nobody has checked is never hidden and
+// never mistaken for one that failed.
+const ModelRow = React.memo(function ModelRow({ model, selected, status, test, checking, onToggle, onTest }) {
   const testing = test?.phase === "testing";
-  const shown = testing ? "testing" : status;
-  const showStatus = testing || selected || status !== "unknown";
+  const shown = testing || checking ? "checking" : status;
+  const showStatus = true;
   const resultLine = test && !testing && test.phase !== "idle"
     ? [
         test.status ? statusLabel(test.status) : null,
@@ -104,8 +114,12 @@ const ModelRow = React.memo(function ModelRow({ model, selected, status, test, o
           <span className="combo-row__side">
             {showStatus ? (
               <span className="combo-row__status" data-status={shown}>
-                {testing ? <CircleNotch size={12} className="combo-spin" aria-hidden="true" /> : <StatusGlyph status={status} />}
-                {testing ? "Testing" : statusLabel(status)}
+                {shown === "checking" ? (
+                  <CircleNotch size={12} className="combo-spin" aria-hidden="true" />
+                ) : (
+                  <StatusGlyph status={status} />
+                )}
+                {shown === "checking" ? "Checking" : statusLabel(status)}
               </span>
             ) : null}
             <span className="combo-row__mark" aria-hidden="true">
@@ -141,17 +155,21 @@ export default function ComboPage() {
   const [loadError, setLoadError] = useState("");
   const [loadNonce, setLoadNonce] = useState(0);
   const [config, setConfig] = useState({ enabled: true, settings: FALLBACK_SETTINGS, selected: [] });
-  const [catalog, setCatalog] = useState({ models: [] });
+  const [catalog, setCatalog] = useState({ models: [], total: 0, keys: [], providers: [] });
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState("");
   const [selected, setSelected] = useState([]);
   const [availability, setAvailability] = useState(() => new Map());
   const [availabilityBusy, setAvailabilityBusy] = useState(false);
+  const [checkProgress, setCheckProgress] = useState(null);
+  const [checkingKeys, setCheckingKeys] = useState(() => new Set());
   const [availabilityError, setAvailabilityError] = useState("");
   const [availabilityCheckedAt, setAvailabilityCheckedAt] = useState(null);
   const [saveState, setSaveState] = useState("idle");
   const [saveError, setSaveError] = useState("");
   const [query, setQuery] = useState("");
   const [providerFilter, setProviderFilter] = useState("");
-  const [visionOnly, setVisionOnly] = useState(false);
+  const [listPage, setListPage] = useState(0);
   const [panelNotice, setPanelNotice] = useState("");
   const [tests, setTests] = useState(() => ({}));
   const [testNotice, setTestNotice] = useState("");
@@ -167,8 +185,87 @@ export default function ComboPage() {
   const autoChecked = useRef(false);
   // One live test per model key, and a per-key sequence so a late answer from a
   // stopped or superseded test can never be drawn as a current result.
-  const testControllers = useRef(new Map());
-  const testSeq = useRef(new Map());
+  // Every availability check on this page goes through one queue, so the number
+  // of probes in flight is a single number however the check was started.
+  const checkQueueRef = useRef(null);
+  if (!checkQueueRef.current) {
+    checkQueueRef.current = createModelCheckQueue({
+      concurrency: MODEL_CHECK_CONCURRENCY,
+      run: async (job, { signal }) =>
+        testComboModel({
+          key: job.key,
+          timeoutMs: comboTestTimeoutMs(configRef.current.settings?.probeTimeoutMs),
+          signal
+        }),
+      isRetryable: error => {
+        const status = Number(error?.status || error?.response?.status || 0);
+        // A rate limit or a provider that is briefly unwell is worth another
+        // try. A refused credential or an unknown model is not.
+        return status === 429 || status >= 500;
+      },
+      onStart: job => {
+        setCheckingKeys(current => new Set([...current, job.key]));
+        setTests(current => ({ ...current, [job.key]: { phase: "testing", label: job.label } }));
+      },
+      onResult: (job, data) => {
+        setCheckingKeys(current => {
+          const next = new Set(current);
+          next.delete(job.key);
+          return next;
+        });
+        const result = data?.model;
+        if (result?.status !== "working" && result?.status !== "not_working") {
+          // A response that names no status proves nothing about the model, so
+          // the row keeps its old state and says the test did not report,
+          // rather than inventing a verdict.
+          setTests(current => ({
+            ...current,
+            [job.key]: { phase: "error", label: job.label, detail: "The test finished without reporting a model status." }
+          }));
+          return;
+        }
+        setTests(current => ({
+          ...current,
+          [job.key]: {
+            phase: "done",
+            label: job.label,
+            status: result.status,
+            latencyMs: result.latencyMs,
+            httpStatus: result.httpStatus,
+            detail: result.detail
+          }
+        }));
+        setAvailability(current => {
+          const next = new Map(current);
+          next.set(job.key, {
+            key: job.key,
+            status: result.status,
+            checkedAt: result.checkedAt || new Date().toISOString()
+          });
+          return next;
+        });
+        if (!job.silent) {
+          setTestNotice(
+            result.status === "working"
+              ? `${job.label} is Working.`
+              : `${job.label} is Not Working - ${String(result.detail || result.reason || "the provider did not answer").slice(0, 150)}.`
+          );
+        }
+      },
+      onFailure: (job, error) => {
+        setCheckingKeys(current => {
+          const next = new Set(current);
+          next.delete(job.key);
+          return next;
+        });
+        setTests(current => ({
+          ...current,
+          [job.key]: { phase: "error", label: job.label, detail: getApiErrorMessage(error) }
+        }));
+      },
+      onProgress: snapshot => setCheckProgress(snapshot)
+    });
+  }
 
   useEffect(() => {
     selectedRef.current = selected;
@@ -180,8 +277,9 @@ export default function ComboPage() {
 
   useEffect(() => () => {
     availabilityAbort.current?.abort();
-    for (const controller of testControllers.current.values()) controller.abort();
-    testControllers.current.clear();
+    // Leaving the page stops the checks it started. A model that was not
+    // checked keeps whatever status it had.
+    checkQueueRef.current?.cancel();
   }, []);
 
   useEffect(() => subscribeComboRun(setLiveRun), []);
@@ -193,9 +291,11 @@ export default function ComboPage() {
     setSaveState("idle");
     setSaveError("");
     autoChecked.current = false;
-    fetchComboState()
-      .then(data => {
-        if (cancelled) return;
+    // Only the first page is asked for. The rest of the catalogue is fetched
+    // when a reader asks for it, so the library is on screen long before every
+    // provider's models have arrived.
+    requestCatalogue({ offset: 0, limit: LIBRARY_PAGE_SIZE }, `0||`)
+      .then(data => {        if (cancelled) return;
         const nextConfig = data?.config || {};
         const nextCatalog = data?.catalog || { models: [] };
         const selectedList = Array.isArray(nextConfig.selected) ? nextConfig.selected : [];
@@ -205,7 +305,12 @@ export default function ComboPage() {
           selected: selectedList,
           updatedAt: nextConfig.updatedAt ?? null
         });
-        setCatalog({ models: Array.isArray(nextCatalog.models) ? nextCatalog.models : [] });
+        setCatalog({
+          models: Array.isArray(nextCatalog.models) ? nextCatalog.models : [],
+          total: Number(nextCatalog.total) || 0,
+          keys: Array.isArray(nextCatalog.keys) ? nextCatalog.keys : [],
+          providers: Array.isArray(nextCatalog.providers) ? nextCatalog.providers : []
+        });
         setSelected(selectedList);
         setAvailability(
           withStaleSelected(
@@ -238,9 +343,75 @@ export default function ComboPage() {
     () => summaryFor(selected, displayAvailability),
     [selected, displayAvailability]
   );
+  // The sweep covers the whole library, so it counts the library rather than
+  // the selection.
+  const librarySummary = useMemo(
+    () => summaryFor(catalogModels, displayAvailability),
+    [catalogModels, displayAvailability]
+  );
   const providerNetwork = useMemo(() => buildProviderNetwork(mergedSelected), [mergedSelected]);
-  const providers = useMemo(() => providerOptions(catalogModels), [catalogModels]);
-  const showVisionFilter = useMemo(() => hasVisionModels(catalogModels), [catalogModels]);
+  // The provider list and the totals come from the server, which knows about
+  // every model rather than only the page on screen.
+  const providers = catalog.providers.length > 0 ? catalog.providers : providerOptions(catalogModels);
+
+  // One page of the catalogue at a time. The same page is never asked for
+  // twice while a request for it is in flight.
+  const catalogueRequest = useRef("");
+  const cataloguePending = useRef(new Map());
+  function requestCatalogue(options, key) {
+    const existing = cataloguePending.current.get(key);
+    if (existing) return existing;
+    const promise = fetchComboState(options);
+    cataloguePending.current.set(key, promise);
+    const clear = () => {
+      if (cataloguePending.current.get(key) === promise) cataloguePending.current.delete(key);
+    };
+    promise.then(clear, clear);
+    return promise;
+  }
+  async function loadCataloguePage({ page = 0, query: search = "", provider: only = "" } = {}) {
+    const requestKey = `${page}|${search}|${only}`;
+    if (catalogueRequest.current === requestKey) return null;
+    catalogueRequest.current = requestKey;
+    setCatalogLoading(true);
+    setCatalogError("");
+    try {
+      const data = await requestCatalogue(
+        { offset: page * LIBRARY_PAGE_SIZE, limit: LIBRARY_PAGE_SIZE, query: search, provider: only },
+        requestKey
+      );
+      const nextCatalog = data?.catalog || { models: [] };
+      setCatalog({
+        models: Array.isArray(nextCatalog.models) ? nextCatalog.models : [],
+        total: Number(nextCatalog.total) || 0,
+        keys: Array.isArray(nextCatalog.keys) ? nextCatalog.keys : [],
+        providers: Array.isArray(nextCatalog.providers) ? nextCatalog.providers : []
+      });
+      setListPage(page);
+      return nextCatalog;
+    } catch (error) {
+      setCatalogError(getApiErrorMessage(error));
+      return null;
+    } finally {
+      if (catalogueRequest.current === requestKey) catalogueRequest.current = "";
+      setCatalogLoading(false);
+    }
+  }
+
+  // A search or a provider filter is answered by the server, which knows every
+  // model the account holds and not only the page on screen. The first page of
+  // the catalogue is already loaded, so the first run is skipped, and a filter
+  // that has not changed is never asked for twice.
+  const catalogueFilter = useRef(`${query}|${providerFilter}`);
+  useEffect(() => {
+    const key = `${query}|${providerFilter}`;
+    if (catalogueFilter.current === key) return undefined;
+    catalogueFilter.current = key;
+    const handle = setTimeout(() => {
+      loadCataloguePage({ page: 0, query, provider: workingOnly ? "" : providerFilter });
+    }, 220);
+    return () => clearTimeout(handle);
+  }, [query, providerFilter]);
 
   // One power-on for the machine. The DOM shell and the WebGL layer read the same
   // driver value, so the sequence can never drift out of step with itself.
@@ -255,15 +426,30 @@ export default function ComboPage() {
   }, [providerNetwork, providerFilter]);
 
   const workingOnly = isWorkingModelsFilter(providerFilter);
+  // The server has already searched and filtered the catalogue, so the page on
+  // screen is the answer. The one filter it cannot answer is the status view,
+  // which is applied to what is loaded.
   const filtered = useMemo(() => {
     const list = filterModels(catalogModels, {
-      query,
-      provider: workingOnly ? "" : providerFilter,
+      query: "",
+      provider: "",
       workingOnly,
       availability: displayAvailability
     });
-    return visionOnly ? list.filter(model => model.vision === true) : list;
-  }, [catalogModels, query, providerFilter, workingOnly, displayAvailability, visionOnly]);
+    return list;
+  }, [catalogModels, workingOnly, displayAvailability]);
+
+  // A library can hold thousands of models, and the page draws one page of them
+  // at a time. Select All and Test All still work on the whole library: the
+  // server names every model it holds, and the page is a view of it, never its
+  // limit.
+  const pageCount = Math.max(1, Math.ceil((catalog.total || filtered.length) / LIBRARY_PAGE_SIZE));
+  const page = Math.min(listPage, pageCount - 1);
+  const pageStart = page * LIBRARY_PAGE_SIZE;
+  const visibleModels = filtered.slice(0, LIBRARY_PAGE_SIZE);
+  useEffect(() => {
+    setListPage(0);
+  }, [query, providerFilter]);
 
   function focusProviderInLibrary(provider) {
     // The library filters by the catalog's own provider label, so a node has to
@@ -274,8 +460,40 @@ export default function ComboPage() {
     setProviderFilter(current => (current === name ? "" : name));
   }
 
-  async function checkAvailability({ force = false, keys = null } = {}) {
-    if (selectedRef.current.length === 0) return;
+  // The whole library, checked through the one queue. The server names every
+  // model it holds, so a check covers models that are not on screen. A model
+  // that already has a current result is left alone: asking a provider about it
+  // again would cost a request and tell nobody anything new.
+  function testAll() {
+    const queue = checkQueueRef.current;
+    const keys = catalog.keys.length > 0 ? catalog.keys : catalogModels.map(model => model.key);
+    const unchecked = keys.filter(key => statusFor(displayAvailability, key) === "unknown");
+    if (!unchecked.length) {
+      setTestNotice("Every model in the library already has a result.");
+      return;
+    }
+    queue.enqueue(unchecked.map(key => ({ key, label: modelTitle({ key, model: key }), silent: true })));
+    setTestNotice(`Checking ${unchecked.length.toLocaleString()} models...`);
+  }
+
+  // A deliberate re-check of the selection, so every selected model is asked
+  // about again even when its last result is still on the page.
+  function recheckSelected() {
+    const queue = checkQueueRef.current;
+    const models = selectedRef.current;
+    if (!models.length) return;
+    queue.enqueue(models.map(model => ({ key: model.key, label: modelTitle(model), silent: true })));
+    setTestNotice(`Re-checking ${models.length.toLocaleString()} models...`);
+  }
+
+  async function checkAvailability({ force = false, keys = null, scope = "selected" } = {}) {
+    const targets = Array.isArray(keys) && keys.length > 0
+      ? [...new Set(keys.map(key => String(key)).filter(Boolean))]
+      : selectedRef.current.map(model => model.key);
+    if (!targets.length) return;
+    // While the queue is checking models, nothing else may put a probe on a
+    // provider: the ceiling on probes in flight is one number for the page.
+    if (checkQueueRef.current.isRunning()) return;
     availabilitySeq.current += 1;
     const seq = availabilitySeq.current;
     availabilityAbort.current?.abort();
@@ -284,7 +502,14 @@ export default function ComboPage() {
     setAvailabilityBusy(true);
     setAvailabilityError("");
     try {
-      const data = await runComboAvailability({ force, keys, signal: controller.signal });
+      // One request for the whole selection. The server answers from its cache
+      // what it already knows and probes only what is missing.
+      const data = await runComboAvailability({
+        force,
+        keys: targets,
+        signal: controller.signal,
+        timeoutMs: comboAvailabilityTimeoutMs(targets.length, configRef.current.settings?.probeTimeoutMs)
+      });
       if (seq !== availabilitySeq.current) return;
       const models = Array.isArray(data?.models) ? data.models : [];
       setAvailability(current => {
@@ -307,14 +532,17 @@ export default function ComboPage() {
   // A row's Test control is a toggle while a probe is in flight: clicking it
   // again stops that probe instead of stacking a second request on the model.
   function stopModelTest(model) {
-    const controller = testControllers.current.get(model.key);
-    if (!controller) return false;
-    testSeq.current.set(model.key, (testSeq.current.get(model.key) || 0) + 1);
-    testControllers.current.delete(model.key);
-    controller.abort();
+    const key = model.key;
+    const stopped = checkQueueRef.current.cancelKey(key);
+    if (!stopped) return false;
     setTests(current => {
       const next = { ...current };
-      delete next[model.key];
+      delete next[key];
+      return next;
+    });
+    setCheckingKeys(current => {
+      const next = new Set(current);
+      next.delete(key);
       return next;
     });
     setTestNotice(`Test for ${modelTitle(model)} stopped. No status was recorded.`);
@@ -325,66 +553,10 @@ export default function ComboPage() {
     if (stopModelTest(model)) return;
     const key = model.key;
     const label = modelTitle(model);
-    const seq = (testSeq.current.get(key) || 0) + 1;
-    testSeq.current.set(key, seq);
-    const controller = new AbortController();
-    testControllers.current.set(key, controller);
-    setTests(current => ({ ...current, [key]: { phase: "testing", label } }));
-    setTestNotice(`Testing ${label}...`);
-
-    testComboModel({
-      key,
-      timeoutMs: comboTestTimeoutMs(configRef.current.settings?.probeTimeoutMs),
-      signal: controller.signal
-    })
-      .then(data => {
-        if (seq !== testSeq.current.get(key)) return;
-        testControllers.current.delete(key);
-        const result = data?.model;
-        if (result?.status !== "working" && result?.status !== "not_working") {
-          // A response that names no status proves nothing about the model, so the
-          // row keeps its old state and says the test did not report, rather than
-          // inventing a verdict.
-          setTests(current => ({
-            ...current,
-            [key]: { phase: "error", label, detail: "The test finished without reporting a model status." }
-          }));
-          setTestNotice(`${label} could not be tested. The model status is unchanged.`);
-          return;
-        }
-        setTests(current => ({
-          ...current,
-          [key]: {
-            phase: "done",
-            label,
-            status: result.status,
-            latencyMs: result.latencyMs,
-            httpStatus: result.httpStatus,
-            detail: result.detail
-          }
-        }));
-        setAvailability(current => {
-          const next = new Map(current);
-          next.set(key, {
-            key,
-            status: result.status,
-            checkedAt: result.checkedAt || new Date().toISOString()
-          });
-          return next;
-        });
-        setTestNotice(
-          result.status === "working"
-            ? `${label} is Working.`
-            : `${label} is Not Working - ${String(result.detail || result.reason || "the provider did not answer").slice(0, 150)}.`
-        );
-      })
-      .catch(error => {
-        if (isCancelledRequest(error) || seq !== testSeq.current.get(key)) return;
-        testControllers.current.delete(key);
-        const message = getApiErrorMessage(error);
-        setTests(current => ({ ...current, [key]: { phase: "error", label, detail: message } }));
-        setTestNotice(`${label}: the test did not complete. ${message}`);
-      });
+    // A model checked by hand joins the same queue as the library sweep, so it
+    // can never push more probes in flight than the ceiling allows.
+    checkQueueRef.current.enqueue([{ key, label }]);
+    setTestNotice(`Checking ${label}...`);
   }
 
   useEffect(() => {
@@ -397,7 +569,7 @@ export default function ComboPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  function persistSelection(next) {
+  function persistSelection(next, { refreshAvailability = true } = {}) {
     const seq = ++saveSeq.current;
     const payload = selectionForSave(next, catalogModels);
     setSelected(next);
@@ -421,7 +593,7 @@ export default function ComboPage() {
           }));
         }
         setSaveState("saved");
-        if (configRef.current.settings?.autoAvailability !== false && keys.length > 0) {
+        if (refreshAvailability && configRef.current.settings?.autoAvailability !== false && keys.length > 0) {
           checkAvailability({ keys });
         }
       })
@@ -435,11 +607,52 @@ export default function ComboPage() {
   function toggleModel(model) {
     const next = toggleSelectedModel(selectedRef.current, model);
     if (next === selectedRef.current) {
-      setPanelNotice(`Vups Combo AI supports up to ${COMBO_MAX_SELECTED} selected models.`);
+      setPanelNotice("That model could not be selected. Reload the model list and try again.");
       return;
     }
     setPanelNotice("");
     persistSelection(next);
+  }
+
+  // Select the whole library. The models already selected keep their stored
+  // identity, and the availability of a model is not a condition: an
+  // unavailable model is still part of the library. No model is contacted on
+  // account of being selected.
+  async function selectAll() {
+    // Selecting every model needs every model, not only the page on screen,
+    // so the whole matching catalogue is fetched once if it is not already
+    // here.
+    let models = catalogModels;
+    const total = catalog.total || catalogModels.length;
+    if (catalogModels.length < total) {
+      try {
+        const data = await fetchComboState({
+          offset: 0,
+          limit: 0,
+          query,
+          provider: workingOnly ? "" : providerFilter
+        });
+        models = Array.isArray(data?.catalog?.models) ? data.catalog.models : models;
+      } catch (error) {
+        setPanelNotice(getApiErrorMessage(error));
+        return;
+      }
+    }
+    const next = selectAllModels(selectedRef.current, models);
+    if (next.length === selectedRef.current.length) {
+      setPanelNotice("");
+      return;
+    }
+    setPanelNotice("");
+    persistSelection(next, { refreshAvailability: false });
+  }
+
+  // Keep only the models a real check proved are working. The decision reads
+  // the availability the server already published; it never asks a model.
+  function unselectNotWorking() {
+    const next = unselectNotWorkingModels(selectedRef.current, displayAvailability);
+    setPanelNotice("");
+    persistSelection(next, { refreshAvailability: false });
   }
 
   function retrySave() {
@@ -562,7 +775,7 @@ export default function ComboPage() {
               <button
                 type="button"
                 className="combo-icon-btn"
-                onClick={() => checkAvailability({ force: true })}
+                onClick={() => recheckSelected()}
                 disabled={availabilityBusy || selected.length === 0}
                 aria-label="Recheck model availability"
                 title="Recheck availability"
@@ -572,14 +785,12 @@ export default function ComboPage() {
             </div>
 
             <div className="combo-summary" aria-label="Selection status">
+              <span data-state="total">{catalogModels.length.toLocaleString()} models</span>
+              <span data-state="selected">{summary.selected.toLocaleString()} selected</span>
               <span data-state="working"><CheckCircle size={12} weight="fill" aria-hidden="true" /> {summary.working} working</span>
               <span data-state="not_working"><XCircle size={12} weight="fill" aria-hidden="true" /> {summary.notWorking} Not Working</span>
-              {summary.unknown ? <span data-state="unknown">{summary.unknown} not checked</span> : null}
+              {summary.unknown ? <span data-state="unknown">{summary.unknown} Not Checked</span> : null}
             </div>
-
-            <p className="combo-panel__desc">
-              Selected models stay saved even when unavailable. Only working models receive requests.
-            </p>
 
             <div className="combo-search">
               <MagnifyingGlass size={14} aria-hidden="true" />
@@ -613,17 +824,50 @@ export default function ComboPage() {
                   </option>
                 ))}
               </select>
-              {showVisionFilter ? (
-                <label className="combo-filter-check">
-                  <input
-                    type="checkbox"
-                    checked={visionOnly}
-                    onChange={event => setVisionOnly(event.target.checked)}
-                  />
-                  Vision only
-                </label>
-              ) : null}
             </div>
+
+            <div className="combo-selection-actions">
+              <button
+                type="button"
+                className="combo-selection-btn"
+                onClick={selectAll}
+                disabled={catalogModels.length === 0}
+              >
+                Select All
+              </button>
+              <button
+                type="button"
+                className="combo-selection-btn"
+                onClick={unselectNotWorking}
+                disabled={selected.length === 0}
+              >
+                Unselect Not Working
+              </button>
+              <button
+                type="button"
+                className="combo-selection-btn"
+                onClick={testAll}
+                disabled={availabilityBusy || catalogModels.length === 0}
+              >
+                Test All
+              </button>
+            </div>
+
+            {checkProgress && (checkProgress.active > 0 || checkProgress.pending > 0) ? (
+              <div className="combo-sweep" role="status" aria-live="polite">
+                <p className="combo-sweep__title">
+                  {`Checked ${checkProgress.completed.toLocaleString()} of ${(
+                    checkProgress.completed + checkProgress.failed + checkProgress.active + checkProgress.pending
+                  ).toLocaleString()} models`}
+                </p>
+                <ul className="combo-sweep__counts">
+                  <li data-state="working">Working: {librarySummary.working.toLocaleString()}</li>
+                  <li data-state="not_working">Not Working: {librarySummary.notWorking.toLocaleString()}</li>
+                  <li data-state="checking">Checking: {checkProgress.active.toLocaleString()}</li>
+                  <li data-state="unknown">Not Checked: {librarySummary.unknown.toLocaleString()}</li>
+                </ul>
+              </div>
+            ) : null}
 
             <div className="combo-panel__state" role="status" aria-live="polite">
               {availabilityBusy ? "Checking selected models..." : null}
@@ -640,9 +884,6 @@ export default function ComboPage() {
               {!availabilityBusy && !availabilityError && saveState === "saved"
                 ? "Selection saved"
                 : null}
-              {!availabilityBusy && !availabilityError && saveState === "idle" && availabilityCheckedAt
-                ? "Status updated"
-                : null}
               {panelNotice ? <span className="combo-panel__state-error">{panelNotice}</span> : null}
               {testNotice ? <span className="combo-test-notice">{testNotice}</span> : null}
             </div>
@@ -655,23 +896,51 @@ export default function ComboPage() {
             ) : filtered.length === 0 ? (
               <p className="combo-panel__empty">{libraryEmptyMessage({ query, workingOnly })}</p>
             ) : (
-              <ul className="combo-list" role="list" aria-label="Available models" onKeyDown={onListKeyDown}>
-                {filtered.map(model => {
-                  const isSelected = selected.some(entry => entry.key === model.key);
-                  return (
-                    <li key={model.key} className="combo-list__item">
-                      <ModelRow
-                        model={model}
-                        selected={isSelected}
-                        status={statusFor(displayAvailability, model.key)}
-                        test={tests[model.key]}
-                        onToggle={toggleModel}
-                        onTest={testModel}
-                      />
-                    </li>
-                  );
-                })}
-              </ul>
+              <>
+                <ul className="combo-list" role="list" aria-label="Available models" onKeyDown={onListKeyDown}>
+                  {visibleModels.map(model => {
+                    const isSelected = selected.some(entry => entry.key === model.key);
+                    return (
+                      <li key={model.key} className="combo-list__item">
+                        <ModelRow
+                          model={model}
+                          selected={isSelected}
+                          status={statusFor(displayAvailability, model.key)}
+                          test={tests[model.key]}
+                          checking={checkingKeys.has(model.key)}
+                          onToggle={toggleModel}
+                          onTest={testModel}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+                {pageCount > 1 || catalogLoading ? (
+                  <nav className="combo-pager" aria-label="Model library pages">
+                    <button
+                      type="button"
+                      className="combo-pager-btn"
+                      onClick={() => loadCataloguePage({ page: Math.max(0, page - 1), query, provider: workingOnly ? "" : providerFilter })}
+                      disabled={page === 0 || catalogLoading}
+                    >
+                      Previous
+                    </button>
+                    <span className="combo-pager__count">
+                      {catalogLoading
+                        ? "Loading models…"
+                        : `Showing ${(pageStart + 1).toLocaleString()}-${Math.min(pageStart + LIBRARY_PAGE_SIZE, catalog.total || filtered.length).toLocaleString()} of ${(catalog.total || filtered.length).toLocaleString()}`}
+                    </span>
+                    <button
+                      type="button"
+                      className="combo-pager-btn"
+                      onClick={() => loadCataloguePage({ page: Math.min(pageCount - 1, page + 1), query, provider: workingOnly ? "" : providerFilter })}
+                      disabled={page >= pageCount - 1 || catalogLoading}
+                    >
+                      Next
+                    </button>
+                  </nav>
+                ) : null}
+              </>
             )}
           </aside>
         </div>

@@ -85,7 +85,7 @@ export class ChatPersistenceError extends ChatNetworkError {
 // disables a total wall-clock cutoff by default; callers that genuinely need one
 // can pass it explicitly.
 export const DEFAULT_CHAT_TIMEOUTS = Object.freeze({
-  idle: 120000,
+  idle: 600000,
   overall: 0
 });
 
@@ -628,4 +628,13 @@ export async function streamChatResponse({
     clearTimers();
     signal?.removeEventListener("abort", onExternalAbort);
   }
+}
+
+/**
+ * End a turn on the server. Closing this screen's connection does not stop the
+ * generation, so Stop has to name the turn it means to cancel.
+ */
+export async function stopChatTurn(messageId) {
+  const { data } = await apiClient.post("/chat/stop", { messageId });
+  return data;
 }

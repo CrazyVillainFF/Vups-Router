@@ -23,6 +23,7 @@ export const DESKTOP_TOOL_LABELS = Object.freeze({
   list_installed_apps: "Checking installed apps",
   find_app: "Finding an installed app",
   launch_app: "Launching an app",
+  open_terminal: "Opening a terminal",
   open_with_app: "Opening a file with an app",
   list_processes: "Checking running apps",
   close_app: "Closing an app",
@@ -106,13 +107,32 @@ export async function getDesktopToolPolicy() {
   }
 }
 
+// Ends one account's live local-tool authorization in the Windows app.
+export async function releaseDesktopToolPolicy(owner) {
+  requireDesktop();
+  try {
+    return await invoke("desktop_tool_release_policy", { owner });
+  } catch (error) {
+    throw new Error(bridgeError(error, "Could not end local file access for this account."));
+  }
+}
+
 export async function executeDesktopTool(tool, args, { operationId, chatId } = {}) {
   requireDesktop();
+  // Normalize args so the native terminal tool always receives a string array.
+  const normalizedArgs = args && typeof args === "object" ? { ...args } : {};
+  if (tool === "open_terminal" && normalizedArgs.args !== undefined && !Array.isArray(normalizedArgs.args)) {
+    if (typeof normalizedArgs.args === "string") {
+      normalizedArgs.args = normalizedArgs.args.trim() ? [normalizedArgs.args.trim()] : [];
+    } else {
+      normalizedArgs.args = [];
+    }
+  }
   try {
     return await invoke("desktop_tool_execute", {
       request: {
         tool,
-        args: args && typeof args === "object" ? args : {},
+        args: normalizedArgs,
         operationId: typeof operationId === "string" && operationId ? operationId : null,
         // Scopes "Allow Always (Only for This Chat)" to the asking chat. The
         // native layer keeps that grant in memory only.

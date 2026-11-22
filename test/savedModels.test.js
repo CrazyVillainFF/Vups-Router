@@ -197,17 +197,27 @@ test("a disabled status row stays out of the free list", () => {
   );
 });
 
-test("the Apex picker row carries no app mark and no placeholder icon", () => {
+test("neither the Apex picker row nor the composer chip carries an app mark", () => {
   const picker = read("src/components/reactbits/PromptBar.jsx");
   const rowMarkup = picker.slice(picker.indexOf("prompt-bar__row--combo"), picker.indexOf("prompt-bar__model-main"));
   assert.ok(!/VupsLogo/.test(rowMarkup), "the Apex row must not render the app mark");
   assert.ok(!/prompt-bar__model-mark/.test(picker), "no leading mark slot is left in the row");
-  assert.match(picker, /className="prompt-bar__pick-mark"/, "the composer chip keeps its mark");
+  assert.ok(
+    !/prompt-bar__pick-mark/.test(picker),
+    "the composer chip must not render a logo beside the model name"
+  );
+  assert.ok(!/VupsLogo/.test(picker), "the composer no longer imports the app mark at all");
 
   const css = read("src/components/reactbits/PromptBar.css");
   assert.ok(!/prompt-bar__model-mark/.test(css), "the row mark styles are gone with the element");
+  assert.ok(!/prompt-bar__pick-mark/.test(css), "the chip mark styles are gone with the element");
+  // The chip may not be boxed either: no orange frame around the model name.
   const comboChip = css.slice(css.indexOf(".prompt-bar__pick--combo"), css.indexOf(".prompt-bar__pick--combo") + 220);
   assert.ok(!/gap:\s*5px/.test(comboChip), "the chip keeps the shared gap once the mark is removed");
+  assert.ok(
+    !/box-shadow:\s*inset/.test(comboChip),
+    "the selected Combo model is named, not framed in an orange box"
+  );
 });
 
 test("the welcome screen opens on text instead of a brand graphic", () => {

@@ -5,7 +5,14 @@ import {
   permissionModeInfo
 } from "./permissions.js";
 
-export default function NativeChatControls({ mode, disabled = false, applying = false, bridgeError = "", onChange }) {
+export default function NativeChatControls({
+  mode,
+  disabled = false,
+  applying = false,
+  bridgeError = "",
+  notice = "",
+  onChange
+}) {
   const selected = permissionModeInfo(mode);
   const selectedIndex = Math.max(
     0,
@@ -146,7 +153,7 @@ export default function NativeChatControls({ mode, disabled = false, applying = 
               {item.id === "full" ? (
                 <span className="vr-permission__option-warning">
                   <Warning size={12} weight="fill" aria-hidden="true" />
-                  Requires confirmation before enabling
+                  Confirmation required; ends when this app session does
                 </span>
               ) : null}
             </button>
@@ -160,6 +167,11 @@ export default function NativeChatControls({ mode, disabled = false, applying = 
               <ShieldCheck size={13} aria-hidden="true" />
               Return to Ask me every time
             </button>
+          ) : null}
+          {notice ? (
+            <p className="vr-permission__note" data-notice="dropped">
+              {notice}
+            </p>
           ) : null}
           {bridgeDown ? (
             <p className="vr-permission__note" data-bridge="down">

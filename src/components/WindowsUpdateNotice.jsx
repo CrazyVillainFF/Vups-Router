@@ -8,6 +8,7 @@ import {
   X
 } from "@phosphor-icons/react";
 import { displayVersion } from "../update/appUpdates.js";
+import { useConnectivity } from "../connectivity/connectivity.js";
 import {
   checkWindowsUpdate,
   createUpdaterProgress,
@@ -41,6 +42,7 @@ function storeDismissedVersion(version) {
 
 export default function WindowsUpdateNotice() {
   const available = isWindowsUpdaterAvailable();
+  const { online } = useConnectivity();
   const [update, setUpdate] = useState(null);
   const [phase, setPhase] = useState("idle");
   const [percent, setPercent] = useState(null);
@@ -48,7 +50,9 @@ export default function WindowsUpdateNotice() {
   const busyRef = useRef(false);
 
   useEffect(() => {
-    if (!available) return undefined;
+    // The background check talks to GitHub. Offline, it waits for the
+    // connection instead of timing out behind the startup work.
+    if (!available || !online) return undefined;
     let active = true;
     const timer = setTimeout(() => {
       checkWindowsUpdate()
@@ -66,7 +70,7 @@ export default function WindowsUpdateNotice() {
       active = false;
       clearTimeout(timer);
     };
-  }, [available]);
+  }, [available, online]);
 
   const dismiss = useCallback(() => {
     if (update) storeDismissedVersion(displayVersion(update.version));

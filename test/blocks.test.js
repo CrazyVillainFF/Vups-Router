@@ -419,7 +419,10 @@ test("the composer keeps solid surfaces and crisp focus", () => {
     blocksCss,
     /\.vr-prompt-bar \.prompt-bar__field:focus-within\s*\{[^}]*outline:\s*1px solid var\(--blocks-accent\)/
   );
-  assert.match(blocksCss, /\.vr-mode-switch__button\s*\{[^}]*border-radius:\s*0/);
+  assert.match(
+    blocksCss,
+    /\.vr-prompt-bar \.prompt-bar__tool:focus-visible,\s*\.vr-prompt-bar \.prompt-bar__pick:focus-visible\s*\{[^}]*outline:\s*1px solid var\(--blocks-accent\)/
+  );
 });
 
 test("the shelf never sits over the composer at any validated width", () => {

@@ -1,6 +1,7 @@
 import { apiClient } from "./api.js";
 import { toRequestMessages } from "./chat.js";
 import { matchLocalFileTask } from "./localFileTask.js";
+import { toolAllowedForRequest, toolCallSignature, toolDenial } from "../localai/intentGate.js";
 import { formatBytes } from "../chat/attachments.js";
 import {
   cancelDesktopToolApprovals,
@@ -14,7 +15,81 @@ import {
 // edit, run tests, read the failure, fix it, rerun. Each round is still bounded.
 const MAX_STEPS = 12;
 const MAX_CALLS_PER_STEP = 6;
+// The room a tool result gets, measured on the encoded object. The server
+// refuses a tool message over 20 000 characters, so this stays inside it.
 const MAX_TOOL_RESULT_CHARS = 16000;
+// Shrink the longest strings first, one step at a time, until the result fits.
+const TOOL_RESULT_STRING_CAPS = [4000, 1000, 250];
+
+/**
+ * Keep the head and the tail of an over-long string. The summary a test runner
+ * prints is at the end of its log, and cutting only the tail would throw away
+ * the one line that says whether the run passed.
+ */
+function shorten(text, cap) {
+  if (text.length <= cap) return text;
+  const omitted = text.length - cap;
+  const head = Math.ceil((cap - 40) * 0.6);
+  const tail = cap - 40 - head;
+  return `${text.slice(0, head)}\n…[${omitted} characters omitted]…\n${tail > 0 ? text.slice(text.length - tail) : ""}`;
+}
+
+/**
+ * Every string in the payload bounded, with the rest of its shape intact: a
+ * number, a boolean and a key are what the outcome is read from, and they cost
+ * almost nothing.
+ */
+function boundStrings(value, cap, depth = 0) {
+  if (typeof value === "string") return shorten(value, cap);
+  if (Array.isArray(value)) {
+    return depth >= 6 ? value.slice(0, 200).map(entry => boundStrings(entry, cap, depth + 1)) : value.map(entry => boundStrings(entry, cap, depth + 1));
+  }
+  if (!value || typeof value !== "object") return value;
+  if (depth >= 6) return "[nested too deeply]";
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [key, boundStrings(entry, cap, depth + 1)])
+  );
+}
+
+/**
+ * The text sent back to the model as one tool result.
+ *
+ * The old rule sliced the encoded JSON at a character count, which cut the
+ * payload's own keys off the end: a 30 000-character test log arrived as
+ * unparseable text, the server could not read `ok` or `exitCode` from it, and a
+ * run that had really finished was recorded as a failure. Bounding the strings
+ * inside the object keeps the result valid JSON, so the outcome survives the
+ * size limit.
+ */
+function toolContent(value) {
+  const unreadable = JSON.stringify({
+    ok: false,
+    error: { code: "tool_result_unserializable", message: "The tool result could not be encoded." }
+  });
+  const encode = entry => {
+    try {
+      const text = JSON.stringify(entry);
+      return typeof text === "string" ? text : unreadable;
+    } catch {
+      return unreadable;
+    }
+  };
+  const whole = encode(value);
+  if (whole.length <= MAX_TOOL_RESULT_CHARS) return whole;
+  for (const cap of TOOL_RESULT_STRING_CAPS) {
+    const shrunk = encode(boundStrings(value, cap));
+    if (shrunk.length <= MAX_TOOL_RESULT_CHARS) return shrunk;
+  }
+  // Still too large with every string at 250 characters: the payload is enormous
+  // rather than verbose. Its own outcome flag is the only honest thing left to
+  // send, so the model is told the contents were dropped and not that the tool
+  // failed.
+  return encode({
+    ok: Boolean(value?.ok),
+    truncated: true,
+    note: "This tool result held more text than the model can be sent. Its contents were dropped; the operation's own outcome is unchanged."
+  });
+}
 
 export class DesktopChatError extends Error {
   constructor(message, code = "desktop_chat_failed", status = null) {
@@ -88,32 +163,76 @@ function waitForRetry(ms, signal) {
   });
 }
 
-async function postDesktopToolRound(body, { signal } = {}) {
+// What a round that did not reach the model looks like to the person watching.
+// These lines describe this device's connection, not the run, so they are never
+// reported to the server: another device reading the same task must not be told
+// a link it never held went down, and the durable log keeps only what really
+// happened on the machine where the work was done.
+const CONNECTION_ROWS = Object.freeze({
+  lost: { status: "running", message: "The connection to the server dropped. Sending this round again…" },
+  busy: { status: "running", message: "The server did not answer this round. Trying it again…" },
+  back: Object.freeze({
+    network: { status: "completed", message: "Reconnected - the round went through and the task is carrying on." },
+    server: { status: "completed", message: "The retry was accepted and the task is carrying on." }
+  }),
+  gone: { status: "failed", message: "The round did not go through, so the task stopped here." }
+});
+
+/**
+ * The reconnection lines of one turn. One loss episode owns one line: the first
+ * round that has to be sent again opens it, and what becomes of that episode —
+ * an accepted retry or an exhausted one — settles it. A second retry inside the
+ * same episode leaves the line alone, because "sending this round again" is
+ * still exactly what is happening, and a line nobody settles would sit on
+ * screen claiming work that stopped the moment the turn failed.
+ */
+function connectionProgressReporter(onProgress) {
+  if (typeof onProgress !== "function") return null;
+  let open = null;
+  let flaps = 0;
+  const settle = row => {
+    if (!open) return;
+    onProgress([{ key: open.key, phase: "connection", ...row }]);
+    open = null;
+  };
+  return {
+    dropped(cause) {
+      if (open) return;
+      flaps += 1;
+      open = { key: `connection:${flaps}`, cause };
+      onProgress([{ key: open.key, phase: "connection", ...(cause === "network" ? CONNECTION_ROWS.lost : CONNECTION_ROWS.busy) }]);
+    },
+    recovered() {
+      settle(CONNECTION_ROWS.back[open?.cause] || CONNECTION_ROWS.back.server);
+    },
+    gaveUp() {
+      settle(CONNECTION_ROWS.gone);
+    }
+  };
+}
+
+async function postDesktopToolRound(body, { signal, onConnection } = {}) {
   let lastFailure = null;
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
     try {
       const response = await apiClient.post("/chat/desktop-tools", body, { signal, timeout: 0 });
+      onConnection?.recovered();
       return response.data;
     } catch (error) {
       if (signal?.aborted) throw abortError();
       const failure = requestError(error);
       lastFailure = failure;
-      if (attempt >= RETRY_DELAYS_MS.length || !retryableDesktopFailure(failure)) throw failure;
+      if (attempt >= RETRY_DELAYS_MS.length || !retryableDesktopFailure(failure)) {
+        // Only a round this app already announced as retrying owes a closing
+        // line; a rejection that stopped the turn at once is the error card's.
+        onConnection?.gaveUp();
+        throw failure;
+      }
+      onConnection?.dropped(failure.status === null ? "network" : "server");
       await waitForRetry(RETRY_DELAYS_MS[attempt], signal);
     }
   }
   throw lastFailure;
-}
-
-function toolContent(value) {
-  let text;
-  try {
-    text = JSON.stringify(value);
-  } catch {
-    text = JSON.stringify({ error: { code: "tool_result_unserializable", message: "The tool result could not be encoded." } });
-  }
-  if (typeof text !== "string") text = String(text);
-  return text.length > MAX_TOOL_RESULT_CHARS ? `${text.slice(0, MAX_TOOL_RESULT_CHARS)}...` : text;
 }
 
 function parseArguments(value) {
@@ -153,7 +272,11 @@ function progressRowLabel(event) {
   // no label and keeps its own sentence. Labelling it by tool name would throw
   // away the one thing the reader wants to know: which skill.
   if (event?.phase === "skill") return "";
-  if (event?.tool) return desktopToolLabel(event.tool);
+  // The tool name is the whole story of a tool row and of nothing else. A
+  // command row carries the same tool name to say which process ran, but its
+  // own sentence is the exit code and the test tally — renaming it to "Running
+  // a command" would hide the result the user is waiting for.
+  if (event?.phase === "tool" && event?.tool) return desktopToolLabel(event.tool);
   if (event?.phase === "task") return event.path ? "Working folder" : "Starting the task";
   return "";
 }
@@ -288,6 +411,14 @@ const SEARCH_ROOT_FOLDERS = Object.freeze(["documents", "desktop", "downloads"])
 const FAILURE_REMEDIES = {
   approval_denied: "Nothing was read, written or run; the operation stopped where it was denied.",
   cancelled: "The operation was stopped before it finished, and nothing further runs for this turn.",
+  not_requested:
+    "Nothing was started and nothing was changed: this message did not ask for that action.",
+  repeat_blocked:
+    "The app stopped repeating one failing attempt so the same error could not loop. Fix the reported cause, then ask again.",
+  no_workspace:
+    "No project folder is selected for this chat, so nothing was started. Choose a project folder, then try again.",
+  workspace_required:
+    "Agent (workspace) mode needs a project folder for this chat before any local file can be read or changed.",
   path_not_found: "The folder or file was not there, so the app made no changes and created nothing.",
   access_denied:
     "This is a Windows access decision, not a VupsRouter setting. The app made no permission, ownership or elevation changes.",
@@ -940,6 +1071,7 @@ export async function runDesktopToolChat({
   temperature,
   signal,
   assistantMessageId,
+  userMessageId,
   operationId,
   chatId,
   userText,
@@ -954,6 +1086,9 @@ export async function runDesktopToolChat({
   const runId = operationId || createRunId();
   const conversation = toRequestMessages(messages);
   const steps = [];
+  // One signature per attempt that already failed in this run, so a model that
+  // repeats the same broken call gets the same refusal instead of a second run.
+  const failedCalls = new Set();
   const toolExecutor = typeof executeTool === "function" ? executeTool : executeDesktopTool;
   // Every native call carries the turn's operation id, so Stop can cancel the
   // exact paused approval or running scan and cannot touch another chat's work.
@@ -964,6 +1099,9 @@ export async function runDesktopToolChat({
       ...(chatId ? { chatId } : {})
     });
   let step = 0;
+  // One reconnection line per round this app had to send again, owned by this
+  // turn alone.
+  const connection = connectionProgressReporter(onProgress);
 
   try {
     emitProgress(onProgress, taskProgressRow(workspacePath));
@@ -1011,7 +1149,8 @@ export async function runDesktopToolChat({
         messages: conversation,
         model: model || undefined,
         mode,
-        assistantMessageId
+        assistantMessageId,
+        ...(userMessageId ? { userMessageId } : {})
       };
       if (workspacePath) body.workspacePath = workspacePath;
       if (configId) body.configId = configId;
@@ -1026,7 +1165,7 @@ export async function runDesktopToolChat({
         // tool result). Stop still aborts through the signal; there is no
         // artificial wall-clock cutoff on this request. A busy or unreachable
         // round is retried a bounded number of times before the turn is failed.
-        data = await postDesktopToolRound(body, { signal });
+        data = await postDesktopToolRound(body, { signal, onConnection: connection });
       } catch (error) {
         if (signal?.aborted) throw abortError();
         // postDesktopToolRound already mapped the HTTP failure into this
@@ -1110,16 +1249,22 @@ export async function runDesktopToolChat({
         tool_calls: calls
       });
 
+      // The gate reads the user's own words for this turn, never the model's
+      // paraphrase of them, so a greeting stays a greeting however it is echoed.
+      const gateText =
+        (typeof userText === "string" && userText.trim()) || lastUserText(messages);
+
       for (const call of calls) {
         if (signal?.aborted) throw abortError();
         const name = call?.function?.name || "";
+        const callId = call?.id || `desktop_call_${step}`;
         let args;
         try {
           args = parseArguments(call?.function?.arguments);
         } catch (error) {
           conversation.push({
             role: "tool",
-            tool_call_id: call?.id || `desktop_call_${step}`,
+            tool_call_id: callId,
             content: toolContent({
               ok: false,
               error: { code: "invalid_arguments", message: error?.message || "The tool arguments were not valid JSON." }
@@ -1128,8 +1273,38 @@ export async function runDesktopToolChat({
           steps.push({ tool: name, label: desktopToolLabel(name), ok: false, data: null, error: null });
           continue;
         }
+        // Deterministic intent gate: a model-generated tool call cannot bypass
+        // what the user actually asked for. A greeting, an explanation or an
+        // ordinary coding request never reaches the terminal or the filesystem.
+        if (!toolAllowedForRequest(name, gateText)) {
+          const denial = toolDenial(name, gateText);
+          conversation.push({
+            role: "tool",
+            tool_call_id: callId,
+            content: toolContent({ ok: false, error: denial })
+          });
+          // No step row: nothing ran, so the transcript records no operation.
+          continue;
+        }
+        // The same call that already failed in this run is not made twice: a
+        // loop that repeats one broken attempt never gives the user an answer.
+        const signature = toolCallSignature(name, args);
+        if (failedCalls.has(signature)) {
+          const repeat = {
+            code: "repeat_blocked",
+            message: `The same ${desktopToolLabel(name)} request already failed in this run, so it was not run again. Address the reported cause before asking for it once more.`
+          };
+          conversation.push({
+            role: "tool",
+            tool_call_id: callId,
+            content: toolContent({ ok: false, error: repeat })
+          });
+          steps.push({ tool: name, label: desktopToolLabel(name), ok: false, data: null, error: repeat });
+          continue;
+        }
+        const before = steps.length;
         await runLocalTool(name, args, {
-          callId: call?.id || `desktop_call_${step}`,
+          callId,
           conversation,
           steps,
           onProgress,
@@ -1137,6 +1312,8 @@ export async function runDesktopToolChat({
           onWorkspaceMutation,
           executeTool: executeForOperation
         });
+        const row = steps.length > before ? steps[steps.length - 1] : null;
+        if (row && row.ok === false) failedCalls.add(signature);
         if (signal?.aborted) throw abortError();
       }
       step += 1;

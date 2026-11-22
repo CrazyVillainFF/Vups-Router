@@ -1,0 +1,41 @@
+/* The pixel grid keeps the accent colour the thinking marker already had, so
+   the swap changes the motion and not the identity of the row. */
+.vr-pixel {
+  display: grid;
+  grid-template-columns: repeat(3, 4px);
+  grid-auto-rows: 4px;
+  gap: 2px;
+  flex: none;
+  align-self: center;
+}
+
+.vr-pixel__cell {
+  display: block;
+  background: var(--accent);
+  opacity: 0.15;
+  animation-name: vr-pixel-on;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: opacity;
+}
+
+@keyframes vr-pixel-on {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+/* The global reduced-motion rule would leave every cell on its end frame, which
+   is the dim one — an indicator that reads as inactive. Hold a steady, visible
+   grid instead: the row still says work is happening, and nothing moves. */
+@media (prefers-reduced-motion: reduce) {
+  .vr-pixel__cell {
+    animation: none;
+    opacity: 0.55;
+  }
+}

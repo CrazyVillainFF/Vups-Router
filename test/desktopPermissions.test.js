@@ -15,6 +15,10 @@ const cardSource = readFileSync(new URL("../src/native/InChatPermissionCard.jsx"
 const chatPageSource = readFileSync(new URL("../src/ChatPage.jsx", import.meta.url), "utf8");
 const bridgeSource = readFileSync(new URL("../src/native/desktopTools.js", import.meta.url), "utf8");
 const rustSource = readFileSync(new URL("../src-tauri/src/desktop_tools.rs", import.meta.url), "utf8");
+const accountStateSource = readFileSync(
+  new URL("../src/desktop/accountSessionState.js", import.meta.url),
+  "utf8"
+);
 
 const recentResult = {
   path: "C:\\Users\\Vishnu\\Downloads",
@@ -240,7 +244,12 @@ test("every local call carries its chat and operation so grants cannot leak betw
 });
 
 test("a saved chat keeps one scope id while a new chat starts empty", () => {
-  assert.match(chatPageSource, /const CHAT_SCOPE_STORAGE_PREFIX = "vupsrouter\.desktop\.chat-scope\.v1"/);
+  assert.match(
+    accountStateSource,
+    /const CHAT_SCOPE_STORAGE_PREFIX = "vupsrouter\.desktop\.chat-scope\.v1"/,
+    "sign-out cleanup and the composer share one scope key"
+  );
+  assert.match(chatPageSource, /import \{ chatScopeStorageKey \} from "\.\/desktop\/accountSessionState\.js"/);
   assert.match(chatPageSource, /function currentChatScope\(\)/);
   assert.match(chatPageSource, /chatScopeForConversation\(workspaceOwner, activeConvId\)/);
   assert.match(chatPageSource, /chatId: chatScopeId \|\| undefined/);
@@ -401,10 +410,12 @@ test("one pending approval produces one card and dedup is not left to the UI alo
   );
   assert.match(dedup, /seenApprovalKeys\.current\.has\(prompt\.approvalKey\)/);
   assert.match(dedup, /entry\.requestId === prompt\.requestId/);
-  // The waiting line quotes the native request's own summary, so a write or a
-  // command is never described as a read, and it says the run is paused.
-  assert.match(dedup, /label: "Waiting for approval"/);
-  assert.match(dedup, /message: `Waiting for approval: \$\{prompt\.summary/);
+  // The wait is recorded from the request's own id, and the line says the run is
+  // paused rather than naming the operation: a write or a command cannot read as
+  // a read, because the wording lives in one table shared with the backend
+  // (src/chat/approvalEvents.js, pinned word-for-word by approvalProgress.test.js).
+  assert.match(dedup, /pendingApprovals\.current\.set\(prompt\.requestId, prompt\)/);
+  assert.match(dedup, /noteApproval\(prompt, "waiting"\)/);
   assert.doesNotMatch(dedup, /Waiting for approval to read/);
 
   // Enforcement lives in the native layer: identical concurrent requests join
@@ -588,10 +599,19 @@ test("a genuine OS failure is never dressed up as a permission problem", () => {
   assert.match(desktopChat, /status: "completed"/);
   assert.match(desktopChat, /status: "failed", code/);
   assert.doesNotMatch(desktopChat, /permission granted|access approved|approval successful/i);
+  // A permission line may only claim a decision once the native layer has
+  // accepted it, so each surface delivers the answer first and records the
+  // lifecycle afterwards.
   assert.match(
     chatPageSource,
-    /Access granted — \$\{request\.summary/,
+    /await respondDesktopToolApproval\(requestId, decision\);[\s\S]*?await noteApproval\(request, decision === "deny" \? "denied" : "granted"\);/,
     "the resume line is recorded after the native layer accepts the decision"
+  );
+  const sideTaskSource = readFileSync(new URL("../src/desktop/panel/SideTaskPane.jsx", import.meta.url), "utf8");
+  assert.match(
+    sideTaskSource,
+    /respondDesktopToolApproval\(prompt\.requestId, decision\)\s*\n\s*\.then\(\(\) => noteApproval\(prompt, decision === "deny" \? "denied" : "granted"\)\)/,
+    "the side task records its decision line only after the native answer lands"
   );
 });
 

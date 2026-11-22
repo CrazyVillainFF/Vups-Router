@@ -27,7 +27,8 @@ function statusFixture(overrides = {}) {
       { name: "Files", kind: "folder", path: "C:\\Users\\tester\\Documents\\VupsRouter\\Files" },
       { name: "Skills", kind: "folder", path: "C:\\Users\\tester\\Documents\\VupsRouter\\Skills" },
       { name: "Plugins", kind: "folder", path: "C:\\Users\\tester\\Documents\\VupsRouter\\Plugins" },
-      { name: "Logs", kind: "folder", path: "C:\\Users\\tester\\Documents\\VupsRouter\\Logs" }
+      { name: "Logs", kind: "folder", path: "C:\\Users\\tester\\Documents\\VupsRouter\\Logs" },
+      { name: "Local Chats", kind: "folder", path: "C:\\Users\\tester\\Documents\\VupsRouter\\Local Chats" }
     ],
     recentLogLines: ["bootstrap: layout ok"],
     note: "The path shown is the Documents folder Windows reported for this user.",
@@ -46,9 +47,17 @@ test("a healthy layout reads as ready with the real path and every folder", () =
   assert.equal(view.tone, "ok");
   assert.equal(view.label, "Ready");
   assert.equal(view.path, "C:\\Users\\tester\\Documents\\VupsRouter");
-  assert.equal(view.rows.length, 6);
-  assert.deepEqual(view.rows.map(row => row.name), ["Workspaces", "Projects", "Files", "Skills", "Plugins", "Logs"]);
-  assert.ok(view.rows.every(row => row.state === "folder"), "all six are reported as real folders");
+  assert.equal(view.rows.length, 7);
+  assert.deepEqual(view.rows.map(row => row.name), [
+    "Workspaces",
+    "Projects",
+    "Files",
+    "Skills",
+    "Plugins",
+    "Logs",
+    "Local Chats"
+  ]);
+  assert.ok(view.rows.every(row => row.state === "folder"), "all seven are reported as real folders");
   assert.match(view.detail, /layout version 1/i);
 });
 

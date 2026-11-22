@@ -118,22 +118,27 @@ test("the chat page only ever reads the chat's own folder", () => {
   const source = readFileSync(new URL("../src/ChatPage.jsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.match(
     source,
-    /const chatWorkspace = boundChatWorkspace \|\| \(draftChat \? activeWorkspace : null\);/,
-    "a saved chat cannot borrow the global active folder"
+    /const chatWorkspace = boundChatWorkspace \|\| \(missingBoundWorkspace \? null : activeWorkspace\);/,
+    "a chat with a missing binding does not borrow the global active folder"
   );
   assert.match(
     source,
-    /const sendWorkspace = carriedWorkspace \|\| chatWorkspace;/,
+    /let sendWorkspace = carriedWorkspace \|\| chatWorkspace;/,
     "the folder chosen mid-send is carried into the same turn"
   );
+  assert.doesNotMatch(
+    source,
+    /draftChat && sendWorkspace\?\.id/,
+    "sending no longer silently claims the active folder for a draft"
+  );
   assert.match(
     source,
-    /if \(draftChat && sendWorkspace\?\.id && chatScopeId\) \{\s*bindChatWorkspace\(chatScopeId, sendWorkspace\.id\);/,
-    "a draft claims its folder only when the user sends"
+    /if \(scopeId\) bindChatWorkspace\(scopeId, workspace\.id\);/,
+    "a folder is bound only by an explicit picker choice"
   );
   assert.match(source, /const warnAboutSkippedTools = Boolean\(sendWorkspace\?\.id\);/);
-  assert.match(source, /workspaceId: permissionMode === "workspace" \? chatWorkspace\?\.id \|\| null : null/);
-  assert.doesNotMatch(source, /workspaceId: permissionMode === "workspace" \? activeWorkspace/);
+  assert.match(source, /workspaceId: chatWorkspace\?\.id \|\| null/);
+  assert.doesNotMatch(source, /workspaceId: permissionMode === "workspace"/);
   assert.match(source, /searchRoots: sendWorkspace\?\.path \? \[sendWorkspace\.path\] : \[\]/);
   assert.doesNotMatch(source, /searchRoots: workspaces\.map/);
   assert.match(

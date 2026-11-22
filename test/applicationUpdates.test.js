@@ -412,3 +412,47 @@ test("Windows reports an honest failure when the updater cannot reach the manife
   assert.match(container.textContent, /Unable to reach the update service\. Check your connection/);
   assert.equal(button(container, "Update to 1.0.9"), undefined);
 });
+
+test("Windows shows up-to-date status when updater successfully finds no newer version", async () => {
+  __setWindowsUpdaterDepsForTest({
+    updater: {
+      check: async () => null // No update available
+    },
+    process: { relaunch: async () => {} }
+  });
+  dom.window.__TAURI_INTERNALS__ = {
+    invoke: async cmd => (cmd === "plugin:app|version" ? "2.1.0" : null)
+  };
+  const { default: Component } = await loadComponent();
+  const container = await render(Component);
+
+  await click(button(container, "Check for updates"));
+  assert.match(container.textContent, /Up to date/i);
+  assert.match(container.textContent, /2\.1\.0/i);
+  assert.equal(button(container, "Update to"), undefined);
+});
+
+test("Windows shows available update with proper action button when updater finds new version", async () => {
+  __setWindowsUpdaterDepsForTest({
+    updater: {
+      check: async () => ({
+        version: "2.1.1",
+        date: "2026-11-09T00:00:00Z",
+        body: "New features",
+        downloadAndInstall: async () => {},
+        close: async () => {}
+      })
+    },
+    process: { relaunch: async () => {} }
+  });
+  dom.window.__TAURI_INTERNALS__ = {
+    invoke: async cmd => (cmd === "plugin:app|version" ? "2.1.0" : null)
+  };
+  const { default: Component } = await loadComponent();
+  const container = await render(Component);
+
+  await click(button(container, "Check for updates"));
+  assert.match(container.textContent, /Update available/i);
+  assert.match(container.textContent, /2\.1\.1/i);
+  assert.ok(button(container, "Update to") !== undefined);
+});

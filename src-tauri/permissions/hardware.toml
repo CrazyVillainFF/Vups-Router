@@ -1,0 +1,6 @@
+[[permission]]
+identifier = "allow-hardware-info"
+description = "Allow the Local AI page to read this computer's physical memory, CPU, GPU and disk figures so hardware compatibility is shown from real values. Read-only; nothing is written and no data leaves the device."
+commands.allow = [
+  "local_hardware_info"
+]

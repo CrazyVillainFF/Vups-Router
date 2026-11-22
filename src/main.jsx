@@ -13,6 +13,7 @@ import "./tokens.css";
 import App from "./App.jsx";
 import AppBoundary from "./components/AppBoundary.jsx";
 import { isTauriRuntime } from "./native/shell.js";
+import { startConnectivity } from "./connectivity/connectivity.js";
 import { initHomeTheme } from "./home/homeTheme.js";
 import { useHomeTheme } from "./home/useHomeTheme.js";
 import { paletteFor, token } from "./tokens.js";
@@ -21,6 +22,7 @@ import "./styles.css";
 // Painted before the first render so the app shell never flashes one palette
 // while the stored preference is read.
 initHomeTheme();
+startConnectivity();
 
 /* Mobile browsers tint their chrome from <meta name="theme-color">, and that
    element cannot read a custom property. Filling it from the token table keeps

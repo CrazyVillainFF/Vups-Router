@@ -199,7 +199,7 @@ test("the chat page resends a tool turn as a plain chat when tools are unavailab
 
   const block = fallback.slice(
     fallback.indexOf("if (useDesktopTools) {"),
-    fallback.indexOf("if (useDesktopTools) {") + 1200
+    fallback.indexOf("if (useDesktopTools) {") + 3400
   );
   assert.match(block, /catch \(error\) \{/);
   assert.match(block, /DESKTOP_TOOL_FALLBACK_REASONS\[error\?\.code\]/);
@@ -295,5 +295,136 @@ test("the desktop service still returns an answer when the endpoint exists", asy
     assert.equal(result.messageId, "m-1");
   } finally {
     apiClient.post = original;
+  }
+});
+
+/**
+ * A round that had to be sent again is a phase of the turn the reader watched,
+ * so it has to read as one. These rows are the app's own account of its link,
+ * which is why they stay on this screen: a second device reading the same saved
+ * log must not be told a connection it never held went down.
+ */
+function reconnectionRun(script, operationId = "reconnect_operation") {
+  const rows = [];
+  const calls = [];
+  let attempts = 0;
+  const original = apiClient.post;
+  apiClient.post = async (url, body) => {
+    attempts += 1;
+    calls.push({ url, body });
+    const outcome = script[`${attempts}`] || script.other;
+    if (outcome === "network") throw Object.assign(new Error("Network Error"), { code: "ERR_NETWORK" });
+    if (typeof outcome === "object" && outcome.status) {
+      throw Object.assign(new Error(`Request failed with status code ${outcome.status}`), {
+        response: { status: outcome.status, data: outcome.data || {} }
+      });
+    }
+    return { data: outcome };
+  };
+  const run = () =>
+    runDesktopToolChat({
+      messages: [{ role: "user", content: "Add a footer to the landing page." }],
+      operationId,
+      executeTool: async () => ({ ok: true, data: { content: "hello" } }),
+      onProgress: events => rows.push(...events)
+    });
+  const finish = () => {
+    apiClient.post = original;
+  };
+  const lines = () => rows.filter(row => row.phase === "connection");
+  return { run, finish, lines, rows, calls };
+}
+
+const FINAL = { type: "final", content: "Done.", finishReason: "stop" };
+const ONE_CALL = {
+  type: "tool_calls",
+  toolCalls: [{ id: "call_1", type: "function", function: { name: "read_file", arguments: "{\"path\":\"C:\\\\a.txt\"}" } }],
+  assistantMessage: { role: "assistant", content: null }
+};
+
+test("a round the app had to send again opens a line and settles that same line when it lands", async () => {
+  const harness = reconnectionRun({ 1: "network", other: FINAL });
+  try {
+    const result = await harness.run();
+    assert.equal(result.content, "Done.");
+    const lines = harness.lines();
+    assert.equal(lines.length, 2, "the wait and what became of it are one line the reader watched move");
+    assert.equal(lines[0].key, "connection:1");
+    assert.equal(lines[0].status, "running");
+    assert.match(lines[0].message, /connection to the server dropped/i);
+    assert.equal(lines[1].key, lines[0].key, "the retry settles the line it opened instead of adding a second one");
+    assert.equal(lines[1].status, "completed");
+    assert.match(lines[1].message, /reconnected/i);
+    // It reads in the order it happened: after the round it belongs to was
+    // announced, so the line is not sitting above work that came before it.
+    const providerIndex = harness.rows.findIndex(row => row.key === "provider:0");
+    assert.ok(providerIndex >= 0, "the round announces itself");
+    assert.ok(providerIndex < harness.rows.indexOf(lines[0]), "the retry line comes after the round it retried");
+  } finally {
+    harness.finish();
+  }
+});
+
+test("a round the server refused to take is not reported as a lost connection", async () => {
+  const harness = reconnectionRun({
+    1: { status: 409, data: { code: "run_busy", message: "This desktop tool run is already waiting for a model response." } },
+    other: FINAL
+  });
+  try {
+    await harness.run();
+    const [opened, settled] = harness.lines();
+    assert.match(opened.message, /server did not answer/i, "a busy run is not a dead link, and the line says which");
+    assert.doesNotMatch(opened.message, /connection/i);
+    assert.match(settled.message, /retry was accepted/i);
+    assert.doesNotMatch(settled.message, /reconnected/i);
+  } finally {
+    harness.finish();
+  }
+});
+
+test("a turn whose retries ran out closes the line instead of leaving it running", async () => {
+  const harness = reconnectionRun({ other: { status: 503, data: { message: "The server is busy." } } });
+  try {
+    await assert.rejects(() => harness.run(), error => error.status === 503);
+    const lines = harness.lines();
+    assert.equal(lines.length, 2, "one lost episode is one line, however many tries it took");
+    assert.equal(lines[0].status, "running");
+    assert.equal(lines[1].status, "failed", "a stopped round cannot be shown as a step still in flight");
+    assert.equal(lines[1].key, lines[0].key, "the last try closes the line the first loss opened");
+    assert.match(lines[1].message, /did not go through/i);
+    assert.equal(harness.calls.length, 3, "one round and two retries, then the turn is failed");
+  } finally {
+    harness.finish();
+  }
+});
+
+test("two rounds lost in one turn get two lines, not one line repainted", async () => {
+  const harness = reconnectionRun({ 1: "network", 2: ONE_CALL, 3: "network", other: FINAL });
+  try {
+    const result = await harness.run();
+    assert.equal(result.content, "Done.");
+    assert.deepEqual(
+      harness.lines().map(row => `${row.key}:${row.status}`),
+      ["connection:1:running", "connection:1:completed", "connection:2:running", "connection:2:completed"],
+      "a settled line is never reopened by the next loss, so each one keeps its own record"
+    );
+  } finally {
+    harness.finish();
+  }
+});
+
+test("a turn that never lost a round raises no connection line and uploads none of its own rows", async () => {
+  const harness = reconnectionRun({ other: FINAL });
+  try {
+    await harness.run();
+    assert.deepEqual(harness.lines(), [], "no loss happened, so no line claims one");
+    assert.deepEqual([...new Set(harness.calls.map(call => call.url))], ["/chat/desktop-tools"]);
+    assert.doesNotMatch(
+      JSON.stringify(harness.calls.map(call => call.body)),
+      /connection:|reconnected|retry was accepted/i,
+      "the app's own connection lines are never sent to the durable log"
+    );
+  } finally {
+    harness.finish();
   }
 });

@@ -431,27 +431,10 @@ test("every native workspace command the bridge calls is registered and permitte
   }
 });
 
-// -- the chat wiring: a project task gets its folder from the app-owned
-//    Documents root, and the send never stops to ask where to put it --
+// -- the chat wiring: a project task gets its folder from an explicit user
+//    choice, and the send never invents one --
 
-test("a project task is created in the app's own Projects folder without asking", async () => {
-  const seen = [];
-  dialogDom.window.__TAURI_INTERNALS__ = {
-    invoke: async (command, args) => {
-      seen.push({ command, args });
-      return { id: "w-auto", title: args.name, path: "C:\\Users\\tester\\Documents\\VupsRouter\\Projects\\" + args.name };
-    }
-  };
-  const bridge = await import(pathToFileURL(path.join(desktopDir, "workspaceBridge.js")).href);
-  const workspace = await bridge.createTaskProject("owner-1", "React Site");
-  assert.deepEqual(seen.map(entry => entry.command), ["vups_root_project"]);
-  assert.deepEqual(seen[0].args, { owner: "owner-1", name: "React Site" });
-  assert.equal(workspace.id, "w-auto");
-  await assert.rejects(() => bridge.createTaskProject("", "React Site"), /owner/i, "an owner is required");
-  delete dialogDom.window.__TAURI_INTERNALS__;
-});
-
-test("the send never pauses for a folder decision on Windows", () => {
+test("the send never invents a folder; it asks only when the user has none", () => {
   const source = readFileSync(path.join(root, "src", "ChatPage.jsx"), "utf8").replace(/\r\n/g, "\n");
   assert.doesNotMatch(source, /workspaceSetupReason/, "the pause reason is gone with the pause");
   assert.doesNotMatch(source, /setWorkspaceSetup\(/, "no state can hold a paused message");
@@ -463,8 +446,8 @@ test("the send never pauses for a folder decision on Windows", () => {
   );
   assert.match(
     source,
-    /await provisionTaskWorkspace\(text\);\n\s*return true;/,
-    "the task's folder is made before the message goes out"
+    /return await provisionTaskWorkspace\(text\);/,
+    "the task's folder is settled before the message goes out"
   );
   assert.match(
     source,
@@ -473,26 +456,43 @@ test("the send never pauses for a folder decision on Windows", () => {
   );
   assert.match(
     source,
-    /if \(!nativeWorkspaces \|\| nativeShell !== NATIVE_SHELLS\.windows\) return null;/,
-    "the website keeps sending with no folder at all"
+    /if \(!nativeWorkspaces \|\| nativeShell !== NATIVE_SHELLS\.windows\) return true;/,
+    "the website keeps sending with no native folder at all"
   );
-  assert.match(source, /<WorkspaceSetupDialog\s+open=\{projectDialogOpen\}\s+onClose=/, "creating a folder stays an action the user takes");
+  assert.doesNotMatch(source, /WorkspaceSetupDialog/, "the chat has no folder dialog behind a send");
 });
 
-test("the folder affordance is visible on Windows before any folder exists", () => {
-  const source = readFileSync(path.join(root, "src", "ChatPage.jsx"), "utf8").replace(/\r\n/g, "\n");
-  const bar = source.slice(
-    source.indexOf('{nativeShell === NATIVE_SHELLS.windows && nativeWorkspaces'),
-    source.indexOf('{nativeShell === NATIVE_SHELLS.windows && nativeWorkspaces') + 4000
-  );
-  assert.ok(bar.startsWith('{nativeShell === NATIVE_SHELLS.windows && nativeWorkspaces ? ('), bar.slice(0, 80));
-  assert.match(bar, /Set up project folder/);
-  assert.match(
-    bar,
-    /runs in Documents/,
-    "a chat with no attached folder is told where its work actually happens"
-  );
-  assert.doesNotMatch(bar, /when you send it/, "the bar never makes a folder sound like a step to take");
-  assert.doesNotMatch(source, /nativeShell === NATIVE_SHELLS\.windows && \(chatWorkspace \|\| workspaces\.length > 0\)/);
-  assert.match(source, /workspaces\.length > 0 \? \(\s*<select/);
+test("folder configuration is a setting, and a chat keeps the folder it was given", () => {
+  const chat = readFileSync(path.join(root, "src", "ChatPage.jsx"), "utf8").replace(/\r\n/g, "\n");
+  const settings = readFileSync(
+    path.join(root, "src", "desktop", "DesktopPages.jsx"),
+    "utf8"
+  ).replace(/\r\n/g, "\n");
+  const start = settings.indexOf("export function ProjectFolderSection");
+  assert.notEqual(start, -1, "the settings page owns the project folder section");
+  const section = settings.slice(start, settings.indexOf("export function", start + 10));
+
+  // Both native ways to get a folder moved here, through the same context
+  // actions the composer used: the picker that registers a folder that exists,
+  // the dialog that has Windows create one, and the choice of which one is the
+  // working directory new chats inherit.
+  assert.match(settings, /<ProjectFolderSection \/>/);
+  assert.match(section, /onClick=\{\(\) => run\(addWorkspace\)\}/);
+  assert.match(section, /onClick=\{\(\) => setSetupOpen\(true\)\}/);
+  assert.match(section, /<WorkspaceSetupDialog\s+open=\{setupOpen\}\s+onClose=/, "creating a folder stays an action the user takes");
+  assert.match(section, /selectWorkspace\(event\.target\.value\)/);
+  assert.match(section, /onClick=\{\(\) => selectWorkspace\(workspace\.id\)\}/);
+
+  // The panel above the composer is gone — no path display, no folder picker,
+  // no attach-workspace control — and nothing re-creates it in a smaller form.
+  for (const gone of ["vr-workspace-bar", "vr-workspace-select", "Attach workspace files", "Set up project folder"]) {
+    assert.equal(chat.includes(gone), false, `the composer still renders ${gone}`);
+  }
+
+  // What the chat keeps is the folder of its own conversation: the chip opens
+  // that folder's files, and a chat that could not get one says where to fix it.
+  assert.match(chat, /className="vr-header-workspace"/);
+  assert.match(chat, /onClick=\{\(\) => setWorkspacePickerOpen\(true\)\}/);
+  assert.match(chat, /<Link to="\/app-settings">Project folder settings<\/Link>/);
+  assert.doesNotMatch(chat, /when you send it/, "a folder is never described as a step a send waits on");
 });

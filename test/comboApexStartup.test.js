@@ -5,6 +5,7 @@ import { JSDOM } from "jsdom";
 let dom;
 let React;
 let ReactDOMClient;
+let gsapLib;
 let useApexStartup;
 let resetApexStartup;
 let STARTUP_DURATION;
@@ -57,6 +58,9 @@ before(async () => {
 
   React = await import("react");
   ReactDOMClient = await import("react-dom/client");
+  // The very instance the hook imports, so the test can watch GSAP's own render
+  // clock instead of guessing where the sequence is on a stopwatch.
+  gsapLib = (await import("gsap")).gsap;
   // Imported only after the DOM exists, so gsap binds to jsdom rather than to
   // the headless fallback it would pick up at module load time.
   const hook = await import("../src/combo/hooks/useApexStartup.js");
@@ -141,6 +145,49 @@ function isRevealed(container) {
   );
 }
 
+const LAYER_SELECTORS = [".combo-head", ".combo-stage__core", ".combo-panel", ".combo-stage__note"];
+
+// A wall-clock sample of a running tween is not a stable expectation: every
+// wait in these tests is nominal, and under a loaded suite a 120 ms sleep
+// really runs for most of a second, so a layer can be past any single instant
+// by the time it is read. Sampling each GSAP frame proves what the instant
+// sample was meant to prove - that a layer interpolates between hidden and
+// revealed instead of jumping - whatever the clock looks like. GSAP renders on
+// the ticker's own listener, which is registered before these, so a sample
+// taken here sees the DOM after the update.
+function watchReveal(container) {
+  const layers = LAYER_SELECTORS.map(selector => ({
+    selector,
+    element: container.querySelector(selector)
+  }));
+  const frames = [];
+  const sample = () => {
+    const frame = {};
+    for (const { selector, element } of layers) {
+      frame[selector] = { opacity: element.style.opacity, visibility: element.style.visibility };
+    }
+    frames.push(frame);
+  };
+  gsapLib.ticker.add(sample);
+  sample();
+  return {
+    frames,
+    stop() {
+      gsapLib.ticker.remove(sample);
+    }
+  };
+}
+
+// A value GSAP wrote partway through a reveal - not the hidden start, not the
+// finished state, and not the empty string a cleared property leaves behind.
+function isMidReveal(value) {
+  return value !== "" && Number(value) > 0 && Number(value) < 1;
+}
+
+function revealTrace(frames, selector) {
+  return frames.map(frame => frame[selector].opacity).join(",");
+}
+
 test("the first Apex mount powers on once, reveals every layer and leaves nothing hidden", async () => {
   resetApexStartup();
   const shell = mountShell();
@@ -148,36 +195,65 @@ test("the first Apex mount powers on once, reveals every layer and leaves nothin
   assert.equal(shell.driver.current, 0, "the machine driver starts cold");
   assert.equal(shell.isRunning(), true, "React knows a sequence is in flight");
 
-  // GSAP writes the from-values on its first tick, so the hidden state is read a
-  // frame later rather than synchronously with the commit.
-  await advance(120);
-  const panel = shell.container.querySelector(".combo-panel");
+  // GSAP writes the from-values on its first tick, so the reveal is read frame
+  // by frame rather than at one stopwatch instant.
+  const reveal = watchReveal(shell.container);
   const head = shell.container.querySelector(".combo-head");
-  assert.equal(panel.style.opacity, "0", "the settings panel has not been revealed yet");
-  assert.notEqual(panel.style.visibility, "hidden", "the library stays reachable during startup");
-  assert.ok(
-    Number(head.style.opacity) >= 0 && Number(head.style.opacity) < 1,
-    `the header is mid-reveal, not skipped: ${head.style.opacity}`
-  );
-  assert.ok(
-    hiddenState(shell.container).some(entry => entry.opacity === "0" || entry.visibility === "hidden"),
-    "at least one layer really does begin hidden"
-  );
+  try {
+    await advance(120);
+    const frames = reveal.frames;
+    // The from-values only reach the DOM on GSAP's first tick, and that tick
+    // lands late whenever the event loop is busy, so a header can legitimately
+    // be painted for the first time most of the way up. Where the reveal has to
+    // end rather than snap is settled from the whole frame trace below.
+    assert.ok(
+      frames.some(frame => isMidReveal(frame[".combo-head"].opacity)),
+      `the header is mid-reveal, not skipped: ${revealTrace(frames, ".combo-head")}`
+    );
+    assert.ok(
+      frames.some(frame => frame[".combo-panel"].opacity === "0" && isMidReveal(frame[".combo-head"].opacity)),
+      `the settings panel is still closed while the header opens: ${revealTrace(frames, ".combo-panel")}`
+    );
+    assert.ok(
+      frames.every(frame => frame[".combo-panel"].visibility !== "hidden"),
+      "the library stays reachable during startup"
+    );
+    assert.ok(
+      frames.some(frame =>
+        Object.values(frame).some(entry => entry.opacity === "0" || entry.visibility === "hidden")
+      ),
+      "at least one layer really does begin hidden"
+    );
 
-  const trace = [];
-  for (let round = 0; round < 40 && shell.container.dataset.apexStartup; round += 1) {
-    trace.push(Number(shell.driver.current.toFixed(3)));
-    await advance(80);
+    const trace = [];
+    for (let round = 0; round < 40 && shell.container.dataset.apexStartup; round += 1) {
+      trace.push(Number(shell.driver.current.toFixed(3)));
+      await advance(80);
+    }
+    assert.equal(shell.container.dataset.apexStartup, undefined, "the flag retires when the run ends");
+    assert.equal(shell.driver.current, 1, "the driver lands fully powered");
+    assert.equal(shell.isRunning(), false, "the page stops reporting a startup");
+    assert.ok(isRevealed(shell.container), "every layer ends visible");
+    assert.equal(getComputedStyle(head).visibility, "visible", "autoAlpha releases visibility on completion");
+    assert.doesNotMatch(head.getAttribute("style") || "", /opacity|visibility|transform/, "a finished layer is handed back with no inline residue");
+    const monotonic = trace.every((value, index) => index === 0 || value >= trace[index - 1]);
+    assert.ok(monotonic, `the driver only moves forward: ${trace.join(",")}`);
+    assert.ok(trace.length > 3 && trace[trace.length - 1] > trace[0], "the driver actually interpolates");
+    const headSteps = frames
+      .map(frame => frame[".combo-head"].opacity)
+      .filter(value => value !== "")
+      .map(Number);
+    assert.ok(
+      headSteps.length > 1 && headSteps[0] < 1,
+      `the header was painted as a climb, not switched on once: ${headSteps.join(",")}`
+    );
+    assert.ok(
+      headSteps.every((value, index) => index === 0 || value >= headSteps[index - 1]),
+      `the header only fades up: ${headSteps.join(",")}`
+    );
+  } finally {
+    reveal.stop();
   }
-  assert.equal(shell.container.dataset.apexStartup, undefined, "the flag retires when the run ends");
-  assert.equal(shell.driver.current, 1, "the driver lands fully powered");
-  assert.equal(shell.isRunning(), false, "the page stops reporting a startup");
-  assert.ok(isRevealed(shell.container), "every layer ends visible");
-  assert.equal(getComputedStyle(head).visibility, "visible", "autoAlpha releases visibility on completion");
-  assert.doesNotMatch(head.getAttribute("style") || "", /opacity|visibility|transform/, "a finished layer is handed back with no inline residue");
-  const monotonic = trace.every((value, index) => index === 0 || value >= trace[index - 1]);
-  assert.ok(monotonic, `the driver only moves forward: ${trace.join(",")}`);
-  assert.ok(trace.length > 3 && trace[trace.length - 1] > trace[0], "the driver actually interpolates");
 });
 
 test("an ordinary rerender does not replay the startup", async () => {

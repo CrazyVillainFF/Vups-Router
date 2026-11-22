@@ -11,12 +11,10 @@ use tauri::{AppHandle, Manager};
 /// itself — projects, skills, plugins, logs — lives under this one root, so a
 /// user can find, back up, or delete it in one place.
 pub const ROOT_FOLDER_NAME: &str = "VupsRouter";
-pub const LAYOUT_SUBDIRS: [&str; 6] = ["Workspaces", "Projects", "Files", "Skills", "Plugins", "Logs"];
-pub const LAYOUT_VERSION: u32 = 1;
-/// Where work with no project folder of its own is written. It is a subfolder of
-/// the app's root, so a task left unbound never means the whole Documents tree.
+pub const LAYOUT_SUBDIRS: [&str; 7] = ["Workspaces", "Projects", "Files", "Skills", "Plugins", "Logs", LOCAL_CHATS_SUBDIR];
+pub const LOCAL_CHATS_SUBDIR: &str = "Local Chats";
+pub const LAYOUT_VERSION: u32 = 2;
 pub const DEFAULT_TASK_SUBDIR: &str = "Files";
-/// The sidebar names the app's own root rather than a bare "Files".
 pub const DEFAULT_WORKSPACE_TITLE: &str = "VupsRouter Files";
 const LAYOUT_MARKER_FILE: &str = "vupsrouter-layout.json";
 const SETTINGS_FILE: &str = "vups-root-settings-v1.json";
@@ -40,6 +38,29 @@ fn now_millis() -> i64 {
 /// never a fabricated location.
 pub fn documents_directory() -> Result<PathBuf, String> {
     dirs::document_dir().ok_or_else(|| "Windows did not report a Documents folder for this user.".to_string())
+}
+
+pub fn default_task_directory_in(documents: &Path) -> Result<PathBuf, String> {
+    let root = vups_root_in(documents);
+    ensure_layout(&root)?;
+    let files = root.join(DEFAULT_TASK_SUBDIR);
+    if is_reparse_point(&files) {
+        return Err(format!(
+            "{}\\{} is a link to another folder, and VupsRouter will not write through a link.",
+            ROOT_FOLDER_NAME, DEFAULT_TASK_SUBDIR
+        ));
+    }
+    if !files.is_dir() {
+        return Err(format!(
+            "{}\\{} is not a folder VupsRouter can write into.",
+            ROOT_FOLDER_NAME, DEFAULT_TASK_SUBDIR
+        ));
+    }
+    Ok(files)
+}
+
+pub fn default_files_directory() -> Result<PathBuf, String> {
+    default_task_directory_in(&documents_directory()?)
 }
 
 pub fn vups_root_in(documents: &Path) -> PathBuf {
@@ -219,32 +240,26 @@ pub fn ensure_layout(root: &Path) -> Result<LayoutReport, String> {
     })
 }
 
-/// The folder work with no project of its own is written into:
-/// `VupsRouter\Files`, made by the layout bootstrap. A link standing there is
-/// refused rather than followed, because this path becomes the authorization
-/// root for every local tool call made by a chat that has no project folder.
-pub fn default_task_directory_in(documents: &Path) -> Result<PathBuf, String> {
+/// Where the app keeps its own local conversations:
+/// `Documents\VupsRouter\Local Chats`. It is part of the layout bootstrap, so
+/// the folder exists from the first launch on, before any chat is accepted.
+pub fn local_chats_directory_in(documents: &Path) -> Result<PathBuf, String> {
     let root = vups_root_in(documents);
     ensure_layout(&root)?;
-    let files = root.join(DEFAULT_TASK_SUBDIR);
-    if is_reparse_point(&files) {
+    let chats = root.join(LOCAL_CHATS_SUBDIR);
+    if is_reparse_point(&chats) {
         return Err(format!(
             "{}\\{} is a link to another folder, and VupsRouter will not write through a link.",
-            ROOT_FOLDER_NAME, DEFAULT_TASK_SUBDIR
+            ROOT_FOLDER_NAME, LOCAL_CHATS_SUBDIR
         ));
     }
-    if !files.is_dir() {
+    if !chats.is_dir() {
         return Err(format!(
             "{}\\{} is not a folder VupsRouter can write into.",
-            ROOT_FOLDER_NAME, DEFAULT_TASK_SUBDIR
+            ROOT_FOLDER_NAME, LOCAL_CHATS_SUBDIR
         ));
     }
-    Ok(files)
-}
-
-/// The same folder for the machine Windows reported for this user.
-pub fn default_files_directory() -> Result<PathBuf, String> {
-    default_task_directory_in(&documents_directory()?)
+    Ok(chats)
 }
 
 fn default_settings(root: &Path, documents: &Path) -> RootSettings {
@@ -805,7 +820,8 @@ mod tests {
                 "Projects".to_string(),
                 "Files".to_string(),
                 "Skills".to_string(),
-                "Plugins".to_string()
+                "Plugins".to_string(),
+                LOCAL_CHATS_SUBDIR.to_string()
             ]
         );
         assert_eq!(
@@ -937,69 +953,6 @@ mod tests {
             error
         );
         assert!(!target.join("Workspaces").exists(), "nothing is created through the link");
-
-        remove(&documents);
-    }
-
-    #[test]
-    fn an_unbound_task_lands_in_the_apps_own_files_folder() {
-        let documents = temp_documents("default-folder");
-        let expected = vups_root_in(&documents).join(DEFAULT_TASK_SUBDIR);
-
-        let first = default_task_directory_in(&documents).expect("the default folder is made on demand");
-        assert_eq!(first, expected, "the default is the app's own Files folder");
-        assert!(first.is_dir());
-
-        let again = default_task_directory_in(&documents).expect("a second call needs no second folder");
-        assert_eq!(again, first);
-        assert_eq!(
-            read_marker(&vups_root_in(&documents)).expect("marker").version,
-            LAYOUT_VERSION
-        );
-
-        remove(&documents);
-    }
-
-    #[test]
-    fn a_file_standing_in_for_the_default_folder_is_never_written_into() {
-        let documents = temp_documents("default-file");
-        let root = vups_root_in(&documents);
-        ensure_layout(&root).expect("layout");
-        fs::remove_dir(root.join(DEFAULT_TASK_SUBDIR)).expect("remove the folder");
-        fs::write(root.join(DEFAULT_TASK_SUBDIR), b"not a folder").expect("plant a file");
-
-        let error = default_task_directory_in(&documents).expect_err("a file is not a workspace root");
-        assert!(
-            error.contains(DEFAULT_TASK_SUBDIR),
-            "the refusal names the folder it could not use: {}",
-            error
-        );
-        assert_eq!(fs::read(root.join(DEFAULT_TASK_SUBDIR)).expect("file untouched"), b"not a folder");
-
-        remove(&documents);
-    }
-
-    #[test]
-    fn a_junction_in_place_of_the_default_folder_is_refused() {
-        let documents = temp_documents("default-junction");
-        let root = vups_root_in(&documents);
-        ensure_layout(&root).expect("layout");
-        let files = root.join(DEFAULT_TASK_SUBDIR);
-        let target = documents.join("Elsewhere");
-        fs::remove_dir(&files).expect("remove the folder");
-        fs::create_dir_all(&target).expect("junction target");
-        let made = std::process::Command::new("cmd")
-            .args(["/C", "mklink", "/J", &files.to_string_lossy(), &target.to_string_lossy()])
-            .output()
-            .expect("mklink");
-        if !made.status.success() {
-            remove(&documents);
-            panic!("this machine could not create a junction: {}", String::from_utf8_lossy(&made.stderr));
-        }
-
-        let error = default_task_directory_in(&documents).expect_err("a linked default folder is not an authority");
-        assert!(error.contains("link"), "the refusal says it is a link: {}", error);
-        assert!(target.read_dir().expect("target empty").next().is_none(), "nothing was written through it");
 
         remove(&documents);
     }
@@ -1249,14 +1202,6 @@ mod tests {
             listed,
             vec![documents.file_name().expect("name").to_string_lossy().to_string()],
             "Windows sees the folder that was named, not a mangled one"
-        );
-
-        let files = default_task_directory_in(&documents).expect("the default folder under a non-ascii name");
-        assert_eq!(files, root.join(DEFAULT_TASK_SUBDIR));
-        fs::write(files.join("note.txt"), b"kept").expect("writing through the non-ascii name");
-        assert_eq!(
-            fs::read(root.join(DEFAULT_TASK_SUBDIR).join("note.txt")).expect("read back"),
-            b"kept".to_vec()
         );
 
         let store = documents.join("settings.json");

@@ -241,6 +241,7 @@ function upsertEntry(task) {
   const merged = { ...existing.task, ...task };
   // The detail carries the log; a summary must not throw it away.
   merged.events = storedEvents(task).length > 0 ? storedEvents(task) : (existing.task.events || []);
+  // reconcileOutput removed for testing
   // A list row is the weaker read of the question, so it cannot shorten one this
   // client already holds in full. An absent key says nothing at all.
   if ("pendingClarification" in task) {
@@ -284,6 +285,9 @@ function applyEventPage(entry, page) {
   if (incoming.length === 0 && serverLastSeq > entry.lastSeq) return "resync";
   if (applyState(entry, page.state, { stage: page.stage })) changed = true;
   if (applyClarification(entry, page.pendingClarification)) changed = true;
+  // The replay carries the answer as it stands, so a chat reading this run can
+  // show the text arriving without waiting for the record to be re-read.
+  if (applyOutput(entry, page.output)) changed = true;
   entry.offline = false;
   return changed;
 }
@@ -318,6 +322,33 @@ function reconcileClarification(held, incoming) {
  * must leave what this client holds untouched; `null` is the server saying the
  * question has been answered.
  */
+function reconcileOutput(held, incoming) {
+  if (incoming === undefined) return held;
+  if (incoming === null) return null;
+  const next = { ...(held || {}), ...incoming };
+  if (!("text" in incoming) && typeof held?.text === "string") next.text = held.text;
+  return next;
+}
+
+function applyOutput(entry, incoming) {
+  if (incoming === undefined) return false;
+  const held = entry.task?.output ?? null;
+  const next = reconcileOutput(held, incoming);
+  if (next === held) return false;
+  if (
+    held && next &&
+    held.text === next.text &&
+    held.chars === next.chars &&
+    held.updatedAt === next.updatedAt &&
+    held.messageId === next.messageId &&
+    held.finishReason === next.finishReason
+  ) {
+    return false;
+  }
+  entry.task = { ...entry.task, output: next };
+  return true;
+}
+
 function applyClarification(entry, incoming) {
   if (incoming === undefined) return false;
   const held = entry.task?.pendingClarification ?? null;
@@ -355,7 +386,15 @@ async function pollEntry(entry) {
     const page = await api.fetchTaskEvents(entry.taskId, { after: entry.needsLog ? 0 : entry.lastSeq });
     if (page?.taskId && String(page.taskId) !== entry.taskId) return false;
     const result = applyEventPage(entry, page);
-    if (result === "resync") return await resyncTask(entry);
+    if (result === "resync" || isTerminalTaskState(page.state)) {
+      // The row that says "finished" can arrive before the record's final plan
+      // and answer were written, or after this client's last detail read. Only
+      // the single-record read carries them, so a terminal page always forces
+      // one — otherwise the panel shows "Completed" beside a half-done plan.
+      entry.needsFinalRead = true;
+      const changed = await resyncTask(entry);
+      return result === true || changed || result === "resync";
+    }
     // The gap that made this read necessary is closed only once the rows are
     // in hand; a failed resync throws into the catch below and leaves the flag
     // set, so the next pass asks again rather than dropping the missed rows.

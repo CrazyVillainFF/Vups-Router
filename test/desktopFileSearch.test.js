@@ -291,7 +291,15 @@ test("the chat page hands only the chat's own workspace folder to the desktop to
     /const \{[\s\S]*?supported: nativeWorkspaces,[\s\S]*?workspaceForChat,[\s\S]*?bindChatWorkspace[\s\S]*?\} = useWorkspaces\(\);/
   );
   assert.match(source, /const boundChatWorkspace = chatScope \? workspaceForChat\(chatScope\) : null;/);
-  assert.match(source, /const chatWorkspace = boundChatWorkspace \|\| \(draftChat \? activeWorkspace : null\);/);
+  assert.match(
+    source,
+    /const chatWorkspace = boundChatWorkspace \|\| \(missingBoundWorkspace \? null : activeWorkspace\);/
+  );
+  assert.doesNotMatch(
+    source,
+    /draftChat \? activeWorkspace/,
+    "a draft chat never silently claims the globally active folder"
+  );
   assert.match(source, /searchRoots: sendWorkspace\?\.path \? \[sendWorkspace\.path\] : \[\]/);
   assert.doesNotMatch(
     source,

@@ -1,4 +1,7 @@
-export const WINDOWS_PERMISSION_STORAGE_KEY = "vupsrouter.windows.permission-mode";
+export const WINDOWS_PERMISSION_STORAGE_PREFIX = "vupsrouter.windows.permission-mode";
+// The mode picker in older builds stored one device-wide value. It is removed on
+// first read rather than handed to whichever account signs in next.
+export const LEGACY_WINDOWS_PERMISSION_STORAGE_KEY = "vupsrouter.windows.permission-mode";
 export const DEFAULT_PERMISSION_MODE = "ask";
 
 export const WINDOWS_PERMISSION_MODES = Object.freeze([
@@ -24,7 +27,7 @@ export const WINDOWS_PERMISSION_MODES = Object.freeze([
     shortLabel: "Full",
     risk: "Broad",
     description:
-      "All supported local capabilities run without a repeated approval: file edits, deletes, app launches, links, and PowerShell or cmd commands with real output; switch back to Ask or Agent at any time. Protected system locations always ask, force-terminating an app always asks, every action is audited, and Full access never grants administrator rights or bypasses Windows access controls."
+      "All supported local capabilities run without a repeated approval: file edits, deletes, app launches, links, and PowerShell or cmd commands with real output; switch back to Ask or Agent at any time. Protected system locations always ask, force-terminating an app always asks, every action is audited, and Full access never grants administrator rights or bypasses Windows access controls. It is authorized for this app session only: after a restart, or on another account, local access returns to Ask and the warning confirmation must be given again."
   }
 ]);
 
@@ -34,22 +37,78 @@ export function isPermissionMode(value) {
   return MODE_IDS.has(value);
 }
 
-export function loadPermissionMode(storage) {
-  if (!storage) return DEFAULT_PERMISSION_MODE;
+export function permissionModeStorageKey(owner) {
+  return `${WINDOWS_PERMISSION_STORAGE_PREFIX}.${owner || "guest"}.v1`;
+}
+
+function readStoredMode(storage, key) {
   try {
-    const stored = storage.getItem(WINDOWS_PERMISSION_STORAGE_KEY);
-    return isPermissionMode(stored) ? stored : DEFAULT_PERMISSION_MODE;
+    return storage.getItem(key);
   } catch {
-    return DEFAULT_PERMISSION_MODE;
+    return null;
   }
 }
 
-export function savePermissionMode(storage, mode) {
-  if (!storage || !isPermissionMode(mode)) return DEFAULT_PERMISSION_MODE;
+function writeStoredMode(storage, key, value) {
   try {
-    storage.setItem(WINDOWS_PERMISSION_STORAGE_KEY, mode);
+    if (value === null) storage.removeItem(key);
+    else storage.setItem(key, value);
   } catch {
     /* storage is best-effort */
+  }
+}
+
+/**
+ * The mode this account chose on this device, plus the value it was refused.
+ *
+ * `Ask me every time` and `Agent (workspace)` are settings, so they persist per
+ * account. `Full access` is an authorization the user gave against a warning,
+ * and nothing in this app stores a full-access consent, so a saved or inherited
+ * `full` is never adopted: the account starts at Ask and `dropped` reports what
+ * was refused, which is what lets the page say so out loud. The legacy
+ * device-wide value is consumed once and then removed, so a second account on
+ * this device cannot pick it up.
+ */
+export function readPermissionMode(storage, owner) {
+  if (!storage) return { mode: DEFAULT_PERMISSION_MODE, dropped: "" };
+  const stored = readStoredMode(storage, permissionModeStorageKey(owner));
+  if (isPermissionMode(stored)) {
+    return stored === "full"
+      ? { mode: DEFAULT_PERMISSION_MODE, dropped: "full" }
+      : { mode: stored, dropped: "" };
+  }
+  const legacy = readStoredMode(storage, LEGACY_WINDOWS_PERMISSION_STORAGE_KEY);
+  if (legacy !== null) {
+    writeStoredMode(storage, LEGACY_WINDOWS_PERMISSION_STORAGE_KEY, null);
+    if (isPermissionMode(legacy) && legacy !== "full") {
+      writeStoredMode(storage, permissionModeStorageKey(owner), legacy);
+      return { mode: legacy, dropped: "" };
+    }
+    return {
+      mode: DEFAULT_PERMISSION_MODE,
+      dropped: legacy === "full" ? "full" : ""
+    };
+  }
+  return { mode: DEFAULT_PERMISSION_MODE, dropped: "" };
+}
+
+export function loadPermissionMode(storage, owner) {
+  return readPermissionMode(storage, owner).mode;
+}
+
+/**
+ * Records the durable half of the choice. Full access answers for this session
+ * only, so it is written out of the account's storage rather than saved: the
+ * next launch has to meet the warning again.
+ */
+export function savePermissionMode(storage, owner, mode) {
+  if (!isPermissionMode(mode)) return DEFAULT_PERMISSION_MODE;
+  if (storage) {
+    writeStoredMode(
+      storage,
+      permissionModeStorageKey(owner),
+      mode === "full" ? null : mode
+    );
   }
   return mode;
 }

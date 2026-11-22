@@ -1,4 +1,4 @@
-const CACHE_VERSION = "vupsrouter-v3";
+const CACHE_VERSION = "vupsrouter-v4";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const OFFLINE_URL = "/offline.html";
@@ -6,7 +6,14 @@ const OFFLINE_URL = "/offline.html";
 self.addEventListener("install", event => {
   event.waitUntil(
     caches.open(STATIC_CACHE)
-      .then(cache => cache.addAll([OFFLINE_URL, "/manifest.webmanifest", "/vups-logo-192.png"]))
+      .then(cache =>
+        Promise.allSettled([
+          cache.addAll([OFFLINE_URL, "/manifest.webmanifest", "/vups-logo-192.png"]),
+          // The shell is cached on its own so a missing optional asset cannot
+          // fail the whole install.
+          cache.addAll(["/", "/index.html"])
+        ])
+      )
       .then(() => self.skipWaiting())
   );
 });
@@ -43,7 +50,10 @@ self.addEventListener("fetch", event => {
         })
         .catch(async () => {
           const cached = await caches.match(request);
-          return cached || caches.match(OFFLINE_URL);
+          // A missed route can still open the app shell; the router then reads
+          // the real path from the address bar. offline.html is the last resort
+          // for a first visit that never cached the shell.
+          return cached || (await caches.match("/")) || caches.match(OFFLINE_URL);
         })
     );
     return;

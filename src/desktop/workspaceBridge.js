@@ -33,6 +33,17 @@ export async function touchWorkspace(owner, id) {
   }
 }
 
+// Re-checks a saved selection against this owner's registry and the real disk.
+// The native side resolves the id under the calling owner only, so a stale id
+// from another account is reported instead of being followed.
+export async function validateWorkspace(owner, id) {
+  try {
+    return await tauriInvoke("workspace_validate", { owner, id });
+  } catch (error) {
+    throw new Error(bridgeError(error, "That workspace folder is unavailable."));
+  }
+}
+
 export async function pickWorkspace(owner) {
   try {
     return await tauriInvoke("workspace_pick", { owner });
@@ -56,34 +67,6 @@ export async function createWorkspaceFolder(owner, parent, name) {
     return await tauriInvoke("workspace_create", { owner, parent, name });
   } catch (error) {
     throw new Error(bridgeError(error, "Could not create the project folder."));
-  }
-}
-
-// A task's folder is the app's own: the Rust side resolves the Windows Documents
-// known folder, makes VupsRouter\Projects\<name> there, and registers it, so a
-// project task never has to stop and ask where it should live.
-export async function createTaskProject(owner, name) {
-  const signedOwner = String(owner || "").trim();
-  if (!signedOwner) throw new Error("A project task needs a signed-in owner.");
-  const projectName = String(name || "").trim();
-  if (!projectName) throw new Error("A project task needs a project name.");
-  try {
-    return await tauriInvoke("vups_root_project", { owner: signedOwner, name: projectName });
-  } catch (error) {
-    throw new Error(bridgeError(error, "Could not create the project folder."));
-  }
-}
-
-// A machine with no registered folder still has one the app owns: the Rust side
-// resolves Documents through the known-folder API, makes VupsRouter\Files there
-// and registers it, so the panels get a real root without asking anyone.
-export async function defaultTaskWorkspace(owner) {
-  const signedOwner = String(owner || "").trim();
-  if (!signedOwner) throw new Error("A default workspace needs a signed-in owner.");
-  try {
-    return await tauriInvoke("vups_root_default_workspace", { owner: signedOwner });
-  } catch (error) {
-    throw new Error(bridgeError(error, "VupsRouter could not prepare its own folder."));
   }
 }
 

@@ -46,6 +46,26 @@ export function useWorkspaces() { return globalThis.__workspaceStub; }
 const MODEL_CATALOG_REEXPORT = `export * from ${JSON.stringify(pathToFileURL(path.join(root, "src", "chat", "modelCatalog.js")).href)};
 `;
 
+// The pane's permission lines have a durable half (a POST) and a painted half (a
+// row). The recorder harness has no backend to file a row with, so it keeps the
+// real row builder — the wording stays one source of truth — and drops only the
+// network call, which would otherwise leave these tests reaching a live API.
+const APPROVAL_STUB = `
+import { approvalProgressRow } from ${JSON.stringify(
+  pathToFileURL(path.join(root, "src", "chat", "approvalEvents.js")).href
+)};
+
+export async function trackApprovalTransition(prompt, state, options = {}) {
+  const row = approvalProgressRow({
+    requestId: prompt?.requestId,
+    state,
+    path: prompt?.scopePath
+  });
+  if (row) options.paint?.([row]);
+  return [];
+}
+`;
+
 before(async () => {
   mkdirSync(workDir, { recursive: true });
 
@@ -73,6 +93,7 @@ before(async () => {
   writeFileSync(path.join(workDir, "toolsStub.mjs"), TOOLS_STUB);
   writeFileSync(path.join(workDir, "workspaceStub.mjs"), WORKSPACE_STUB);
   writeFileSync(path.join(workDir, "modelCatalog.mjs"), MODEL_CATALOG_REEXPORT);
+  writeFileSync(path.join(workDir, "approvalStub.mjs"), APPROVAL_STUB);
   catalog = await import(pathToFileURL(path.join(workDir, "modelCatalog.mjs")).href);
 
   async function compile(relativePath, rewrite) {
@@ -121,6 +142,7 @@ ${iconClauses.map(clause => {
     code
       .replace(/from "@phosphor-icons\/react"/g, 'from "./iconStub.mjs"')
       .replace(/from "\.\.\/WorkspaceContext\.jsx"/g, 'from "./workspaceStub.mjs"')
+      .replace(/from "\.\.\/\.\.\/chat\/approvalEvents\.js"/g, 'from "./approvalStub.mjs"')
       .replace(/from "[^"]*native\/desktopTools\.js"/g, 'from "./toolsStub.mjs"')
       .replace(/from "\.\.\/sideTaskRun\.js"/g, 'from "./sideTaskRun.mjs"')
   );

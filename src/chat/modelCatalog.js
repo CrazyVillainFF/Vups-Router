@@ -16,6 +16,8 @@ export const PERSONAL_GROUP = "YOUR KEYS";
 export const SHARED_GROUP = "FREE MODELS";
 export const SHARED_PAID_GROUP = "SHARED PAID MODELS";
 export const GATEWAY_GROUP = "OMNIROUTE GATEWAY";
+export const LOCAL_MODELS_GROUP = "LOCAL MODELS";
+export const LOCAL_SOURCE = "local";
 export const OMNIROUTE_SOURCE = "omniroute";
 export const CUSTOM_MODEL_TYPE = "custom";
 export const FREE_MODEL_TYPE = "free";
@@ -138,7 +140,6 @@ function vupsRow() {
     vision: null,
     capabilities: {},
     capabilityLabels: [],
-    capabilityChips: VUPS_CAPABILITIES,
     meta: "First-party model"
   };
 }
@@ -310,6 +311,77 @@ function gatewayRow(entry) {
   };
 }
 
+/**
+ * A model that runs on this device.
+ *
+ * The row carries the name the local runtime knows it by, so the request that
+ * is sent names the model exactly as the runtime does.
+ */
+function localRow(model) {
+  const name = String(model?.name || "").trim();
+  if (!name) return null;
+  const capability = String(model?.capability || "").trim();
+  return {
+    key: `local:${name}`,
+    kind: "local",
+    group: LOCAL_MODELS_GROUP,
+    name,
+    model: name,
+    local: true,
+    localModel: name,
+    configId: "",
+    providerId: "",
+    provider: "On this device",
+    ownedBy: "On this device",
+    apiKeyMasked: "",
+    saved: false,
+    shared: false,
+    vups: false,
+    combo: false,
+    builtin: false,
+    free: false,
+    badge: "Local",
+    vision: capability === "Vision" ? true : null,
+    capabilities: {},
+    capabilityLabels: capability ? [capability] : [],
+    tag: capability || "On this device",
+    meta: "Runs on this device"
+  };
+}
+
+function combinedLocalRow(models) {
+  const count = Array.isArray(models) ? models.length : 0;
+  if (count === 0) return null;
+  return {
+    key: 'local:combined',
+    kind: 'local',
+    group: LOCAL_MODELS_GROUP,
+    name: 'Combined Local AI',
+    model: 'combined-local',
+    local: true,
+    localModel: 'combined-local',
+    combined: true,
+    combinedModels: models.map(m => m.name || m.model),
+    configId: '',
+    providerId: '',
+    provider: 'On this device',
+    ownedBy: 'On this device',
+    apiKeyMasked: '',
+    saved: false,
+    shared: false,
+    vups: false,
+    combo: false,
+    builtin: false,
+    free: false,
+    badge: 'Local',
+    vision: models.some(m => m.capability === 'Vision' || m.vision === true),
+    capabilities: {},
+    capabilityLabels: [],
+    tag: count === 1 ? '1 model' : count + ' models installed',
+    meta: 'Automatically picks the installed local model each task needs'
+  };
+}
+
 export function buildCatalog({
   models = [],
   shared = null,
@@ -317,7 +389,8 @@ export function buildCatalog({
   vups = false,
   modelType = null,
   freeCatalog = null,
-  combo = null
+  combo = null,
+  localModels = []
 } = {}) {
   const entries = cleanEntries(models);
   const saved = new Map();
@@ -401,17 +474,29 @@ export function buildCatalog({
   // models, so neither the Free nor the Your-keys filter hides or claims it.
   const headRows = [...(combo ? [comboRow(combo)] : []), ...(vups ? [vupsRow()] : [])];
 
+  // Models that run on this device are additive: they never replace a cloud
+  // model, and they never make the picker choose one on the user's behalf.
+  const localRows = new Map();
+  for (const model of Array.isArray(localModels) ? localModels : []) {
+    const row = localRow(model);
+    if (row && !localRows.has(row.key)) localRows.set(row.key, row);
+  }
+  const combined = combinedLocalRow(localModels);
+  if (combined) localRows.set(combined.key, combined);
+
   if (modelType === FREE_MODEL_TYPE) {
     const freeRows = new Map();
     for (const row of [...free.values(), ...freeCatalogOnly.values(), ...saved.values()]) {
       if (!row.free) continue;
       freeRows.set(row.key, { ...row, group: SHARED_GROUP });
     }
-    return [...headRows, ...freeRows.values()];
+    // Local models neither spend a cloud plan nor stand in for a free cloud
+    // model, so the Free filter must not hide the models already installed.
+    return [...headRows, ...freeRows.values(), ...localRows.values()];
   }
 
   if (modelType === CUSTOM_MODEL_TYPE) {
-    return [...headRows, ...saved.values(), ...gateways.values()];
+    return [...headRows, ...saved.values(), ...gateways.values(), ...localRows.values()];
   }
 
   return [
@@ -419,7 +504,8 @@ export function buildCatalog({
     ...saved.values(),
     ...free.values(),
     ...freeCatalogOnly.values(),
-    ...gateways.values()
+    ...gateways.values(),
+    ...localRows.values()
   ];
 }
 
@@ -482,6 +568,7 @@ export function chatReference(row) {
   if (!row || row.disabled) return {};
   if (row.combo) return { model: COMBO_MODEL_ID, combo: true };
   if (row.vups) return { model: VUPS_MODEL_ID, vups: true };
+  if (row.local) return { model: row.localModel || row.model, source: LOCAL_SOURCE };
   if (row.gateway) return { model: row.model, source: row.source || OMNIROUTE_SOURCE };
   if (row.shared) return { model: row.model };
   return { model: row.model, configId: row.configId || undefined, providerId: row.providerId || undefined };

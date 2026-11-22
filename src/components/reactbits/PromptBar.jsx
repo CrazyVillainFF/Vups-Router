@@ -42,7 +42,6 @@ import {
   saveSavedModelIds,
   toggleSavedModel
 } from '../../chat/savedModels.js';
-import VupsLogo from '../VupsLogo.jsx';
 import './PromptBar.css';
 
 const ARROW_UP = [12, 4.5, 18.5, 11, 14.25, 11, 14.25, 19.5, 9.75, 19.5, 9.75, 11, 5.5, 11];
@@ -420,6 +419,7 @@ export default function PromptBar({
   const boost = useRef(sparkBoost);
   boost.current = sparkBoost;
   const rowRefs = useRef([]);
+  const modelSearchRef = useRef(null);
   const lastOpen = useRef(null);
   const dictation = useRef(0);
   const lastExternalFiles = useRef(0);
@@ -466,6 +466,7 @@ export default function PromptBar({
   const [pressed, setPressed] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [modelMenuMaxHeight, setModelMenuMaxHeight] = useState(520);
+  const [modelMenuOffset, setModelMenuOffset] = useState(0);
   const [attaching, setAttaching] = useState(0);
   const [scanning, setScanning] = useState(false);
   const [preparing, setPreparing] = useState(null);
@@ -473,6 +474,19 @@ export default function PromptBar({
   const [summary, setSummary] = useState(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [retryingId, setRetryingId] = useState('');
+
+  const dismissKeyboard = useCallback(() => {
+    const active = typeof document !== 'undefined' ? document.activeElement : null;
+    if (
+      active &&
+      active !== inputRef.current &&
+      rootRef.current?.contains(active) &&
+      typeof active.blur === 'function'
+    ) {
+      active.blur();
+    }
+    inputRef.current?.blur();
+  }, []);
 
   const model = models.find(m => m.key === modelKey) ?? models[0];
   useEffect(() => {
@@ -493,15 +507,19 @@ export default function PromptBar({
   useEffect(() => {
     if (!openModelSignal || openModelSignal === lastOpenSignal.current) return;
     lastOpenSignal.current = openModelSignal;
+    dismissKeyboard();
     setPlusOpen(false);
     setEffortOpen(false);
     setDismissed(true);
     setModelQuery('');
     setModelOpen(true);
-  }, [openModelSignal]);
+  }, [openModelSignal, dismissKeyboard]);
   const hasTokenMenus = sources.length > 0 || commands.length > 0;
   const token = dismissed || !hasTokenMenus ? null : parseToken(draft);
-  const open = plusOpen ? 'at' : (token?.kind ?? (modelOpen ? 'model' : effortOpen ? 'effort' : null));
+  // The model menu outranks a slash or mention token: the user asked for the
+  // model list by tapping the model, so a draft that happens to end in "/"
+  // must not leave the slash menu on top of it.
+  const open = plusOpen ? 'at' : (modelOpen ? 'model' : (token?.kind ?? (effortOpen ? 'effort' : null)));
 
   useEffect(() => {
     onModelMenuOpenChange?.(open === 'model');
@@ -510,12 +528,20 @@ export default function PromptBar({
   useLayoutEffect(() => {
     if (open !== 'model' || !rootRef.current) return undefined;
     const update = () => {
-      const top = rootRef.current?.getBoundingClientRect().top ?? 0;
+      const rect = rootRef.current?.getBoundingClientRect();
+      const top = rect?.top ?? 0;
       // The menu grows upward, so it is bounded by the space above the bar as
       // well as by the viewport-wide ceiling; a short column still has to scroll
       // rather than collapse into an unreadable sliver.
       const room = Math.min(520, Math.floor(window.innerHeight * 0.7), Math.floor(top - 20));
       setModelMenuMaxHeight(Math.max(160, room));
+      // The list is anchored to the left of the composer, so on a narrow
+      // screen it would hang past the right edge. It slides back by whatever
+      // it overhangs instead of being cut off by the viewport.
+      const width = Math.min(420, Math.floor((window.innerWidth || 0) * 0.92));
+      const left = rect?.left ?? 0;
+      const overhang = left + width - (window.innerWidth || 0);
+      setModelMenuOffset(overhang > 0 ? -Math.ceil(overhang) : 0);
     };
     update();
     window.addEventListener('resize', update);
@@ -548,6 +574,23 @@ export default function PromptBar({
   const maxed = efforts.length > 1 && effortIndex === efforts.length - 1;
 
   const focusInput = () => inputRef.current?.focus({ preventScroll: true });
+
+  // The field wrapper's own onClick re-focuses the textarea, and a textarea
+  // that takes focus closes every menu. Letting that click through therefore
+  // opened the picker and closed it in the same breath, which is why the
+  // model menu could never be seen. This click owns its focus from here on.
+  const openModelMenu = event => {
+    event?.stopPropagation?.();
+    dismissKeyboard();
+    setPlusOpen(false);
+    setEffortOpen(false);
+    // A draft that ends in "/" or "@" would otherwise keep its own menu open
+    // and hide the model list behind it.
+    setDismissed(true);
+    setModelQuery('');
+    setActive(Math.max(0, models.indexOf(model)));
+    setModelOpen(v => !v);
+  };
 
   const collectFiles = useCallback((fileList, options = {}) => {
     const native = latest.current.attachmentMode === 'native';
@@ -685,10 +728,30 @@ export default function PromptBar({
   }, [pasteView]);
 
   const closeMenus = useCallback(() => {
+    const active = typeof document !== 'undefined' ? document.activeElement : null;
+    if (
+      active &&
+      active !== inputRef.current &&
+      rootRef.current?.contains(active) &&
+      typeof active.blur === 'function'
+    ) {
+      active.blur();
+    }
     setPlusOpen(false);
     setModelOpen(false);
     setEffortOpen(false);
   }, []);
+
+  useEffect(() => {
+    if (open !== 'model' || !showCamera || typeof window === 'undefined') return undefined;
+    window.history.pushState({ promptBarModelMenu: true }, '');
+    const onPopState = () => closeMenus();
+    window.addEventListener('popstate', onPopState);
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+      if (window.history.state?.promptBarModelMenu) window.history.back();
+    };
+  }, [open, showCamera, closeMenus]);
 
   useLayoutEffect(() => {
     const glow = glowRef.current;
@@ -879,6 +942,8 @@ export default function PromptBar({
       setModelKey(row.key);
       latest.current.onModelChange?.(row);
       setModelOpen(false);
+      // The picker is closed, so the prompt may take the caret back: the next
+      // thing the user does is type the message they chose the model for.
       focusInput();
       return;
     }
@@ -896,6 +961,49 @@ export default function PromptBar({
     focusInput();
   };
 
+  // The picker takes the keyboard with it: the prompt textarea is blurred so
+  // the Android keyboard cannot cover the list. That leaves the search field
+  // as the one place typing belongs, so on a desktop it is focused outright.
+  // On Android it stays unfocused, because raising the keyboard there is
+  // exactly what the list must not have to fight.
+  useEffect(() => {
+    if (open !== 'model' || showCamera) return;
+    modelSearchRef.current?.focus({ preventScroll: true });
+  }, [open, showCamera]);
+
+  // Keyboard control of an open list belongs to the list, not to the prompt.
+  // This runs while the model menu is open so Escape, the arrow keys and
+  // Enter work however the picker was opened.
+  const modelMenuRef = useRef({ list, active, pick });
+  modelMenuRef.current = { list, active, pick };
+  useEffect(() => {
+    if (open !== 'model' || typeof window === 'undefined') return undefined;
+    const onKey = event => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        setDismissed(true);
+        closeMenus();
+        return;
+      }
+      const { list: rows, active: cursor, pick: choose } = modelMenuRef.current;
+      if (!rows.length) return;
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        event.stopPropagation();
+        setActive(current => (current + (event.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length);
+        return;
+      }
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        choose(rows[Math.min(cursor, rows.length - 1)]);
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [open, closeMenus]);
+
   const cancelPreparation = () => {
     prepAbortRef.current?.abort();
   };
@@ -911,8 +1019,12 @@ export default function PromptBar({
     try {
       let outgoing = attachments;
       const folders = attachments.filter(item => item?.kind === 'folder');
+      // The folder ids are needed by every send, not only by one that holds a
+      // folder: a send that was refused still has to put the folder cards back
+      // the way they were, and an image with no folder beside it has no ids at
+      // all. Declaring them here keeps that read from ever being undefined.
+      const folderIds = folders.map(item => item.id);
       if (folders.length > 0) {
-        const folderIds = folders.map(item => item.id);
         const controller = new AbortController();
         prepAbortRef.current = controller;
         setPreparing({ processed: 0, total: folders.length });
@@ -991,7 +1103,7 @@ export default function PromptBar({
         );
         return;
       }
-      latest.current.onSend?.(draft.trim(), { attachments: outgoing, model, effort: level });
+      const submission = latest.current.onSend?.(draft.trim(), { attachments: outgoing, model, effort: level });
       setDraft('');
       setAttachments([]);
       setPasteView(null);
@@ -1001,6 +1113,16 @@ export default function PromptBar({
       setDismissed(false);
       closeMenus();
       focusInput();
+      // A submission that could not be made must not take the message with it.
+      // The text and the picture go back into the composer, so a failed send
+      // is something the user can try again instead of something they lost.
+      if (submission && typeof submission.then === "function") {
+        submission.catch(error => {
+          setDraft(current => (current ? current : draft.trim()));
+          setAttachments(current => (current.length ? current : outgoing));
+          setAttachError(error?.message || "That message could not be sent. Try again.");
+        });
+      }
     } catch {
       /* keep the draft when validation cannot be completed */
     } finally {
@@ -1134,7 +1256,7 @@ export default function PromptBar({
             open === 'at' ? 'Sources' : open === 'slash' ? 'Commands' : open === 'model' ? 'Models' : 'Response style'
           }
           data-kind={open}
-          style={open === 'model' ? { maxHeight: `${modelMenuMaxHeight}px` } : undefined}
+          style={open === 'model' ? { maxHeight: `${modelMenuMaxHeight}px`, left: `${modelMenuOffset}px` } : undefined}
         >
           {open === 'effort' ? (
             <>
@@ -1185,6 +1307,7 @@ export default function PromptBar({
                 <>
                   <div className="prompt-bar__model-search-wrap">
                     <input
+                      ref={modelSearchRef}
                       className="prompt-bar__model-search"
                       type="search"
                       value={modelQuery}
@@ -1287,13 +1410,6 @@ export default function PromptBar({
                             {row.meta ? <span className="prompt-bar__model-meta">{row.meta}</span> : null}
                             {row.model && row.model !== row.name ? (
                               <span className="prompt-bar__model-id">{row.model}</span>
-                            ) : null}
-                            {row.capabilityChips?.length > 0 ? (
-                              <span className="prompt-bar__vups-chips">
-                                {row.capabilityChips.map(label => (
-                                  <span key={label} className="prompt-bar__vups-chip">{label}</span>
-                                ))}
-                              </span>
                             ) : null}
                           </span>
                           {!row.disabled && row.model && !row.combo ? (
@@ -1635,19 +1751,8 @@ export default function PromptBar({
               data-on={modelOpen ? '' : undefined}
               data-combo={model.combo ? '' : undefined}
               onMouseDown={e => e.preventDefault()}
-              onClick={() => {
-                focusInput();
-                setPlusOpen(false);
-                setEffortOpen(false);
-                setActive(Math.max(0, models.indexOf(model)));
-                setModelOpen(v => !v);
-              }}
+              onClick={openModelMenu}
             >
-              {model.combo ? (
-                <span className="prompt-bar__pick-mark" aria-hidden="true">
-                  <VupsLogo sizes="16px" loading="lazy" />
-                </span>
-              ) : null}
               <span title={model.name}>{model.name}</span>
               <HugeiconsIcon icon={ArrowDown01Icon} size={12} strokeWidth={2.4} />
             </button>

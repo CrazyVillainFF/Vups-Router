@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   CaretDown,
@@ -6,10 +6,10 @@ import {
   ChatCircle,
   Check,
   CirclesFour,
+  Cpu,
   FolderSimple,
   Folders,
   Gear,
-  ListBullets,
   MagnifyingGlass,
   PencilSimple,
   Plus,
@@ -23,14 +23,22 @@ import {
   Sun,
   Moon,
   Trash,
+  WifiHigh,
+  WifiSlash,
   X
 } from "@phosphor-icons/react";
 import VupsLogo from "../components/VupsLogo.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { detectNativeShell } from "../native/shell.js";
+import { useConnectivity } from "../connectivity/connectivity.js";
 import { getApiErrorMessage, searchConversations } from "../services/api.js";
 import { usePreferences } from "./PreferencesContext.jsx";
 import { useTasks } from "./TaskContext.jsx";
+import { useLocalChatsFolder } from "../localai/localChats.js";
+import { getLocalRunSnapshot, subscribeLocalRuns } from "../localai/localRunStore.js";
+import { useTaskTracker } from "../tasks/TaskTrackerContext.jsx";
+import { conversationTask, tasksByConversation } from "./sidebarTaskStatus.js";
+import SidebarTaskBadge from "./SidebarTaskBadge.jsx";
 import { useWorkspaces } from "./WorkspaceContext.jsx";
 import WorkspaceManagerDialog from "./WorkspaceManagerDialog.jsx";
 import HoldToDeleteDialog from "../components/HoldToDeleteDialog.jsx";
@@ -70,7 +78,23 @@ export default function DesktopSidebar({
   const [searchParams] = useSearchParams();
   const sidebarSearch = useRef(null);
   const { preferences } = usePreferences();
+  const { status: authStatus } = useAuth();
+  const connectivity = useConnectivity();
   const { tasks, renameTask, removeTask, usage, usageError, usageUnsupported } = useTasks();
+  const localChatFolder = useLocalChatsFolder();
+  const localChatIds = useMemo(
+    () => new Set(Object.keys(localChatFolder.chats || {})),
+    [localChatFolder]
+  );
+  const localChatTasks = useMemo(
+    () => tasks.filter(task => localChatIds.has(String(task.id))),
+    [tasks, localChatIds]
+  );
+  const otherTasks = useMemo(
+    () => tasks.filter(task => !localChatIds.has(String(task.id))),
+    [tasks, localChatIds]
+  );
+  const { tasks: trackedTasks } = useTaskTracker();
   const {
     supported: workspaceSupported,
     workspaces,
@@ -81,6 +105,8 @@ export default function DesktopSidebar({
     selectWorkspace
   } = useWorkspaces();
   const nativeShell = detectNativeShell();
+  // Local AI needs a device-side runtime, so it belongs to the native apps only.
+  const localAiAvailable = nativeShell === "windows" || nativeShell === "android";
   const [term, setTerm] = useState("");
   const [results, setResults] = useState(null);
   const [searchBusy, setSearchBusy] = useState(false);
@@ -97,7 +123,23 @@ export default function DesktopSidebar({
   const activeTaskId = location.pathname === "/chat" ? searchParams.get("task") || "" : "";
   const showWorkspaces = workspaceSupported && nativeShell === "windows";
   const searchMode = term.trim().length > 0;
-  const visibleTasks = searchMode ? results || [] : tasks.slice(0, 24);
+  const visibleTasks = searchMode ? results || [] : otherTasks.slice(0, 24);
+  // The tracker knows the tasks this client submitted; the conversation rows
+  // carry the state the server persisted. Either alone is incomplete: a task
+  // started on another device is only in the rows, and a just-submitted one is
+  // only in the tracker until the next list refresh.
+  const trackedByConversation = useMemo(() => tasksByConversation(trackedTasks), [trackedTasks]);
+  // A local run is this device's work, so its badge comes from the local
+  // execution store. Without this a local chat that is still thinking after the
+  // reader leaves it would look idle in the folder.
+  const localRuns = useSyncExternalStore(subscribeLocalRuns, getLocalRunSnapshot, getLocalRunSnapshot);
+  const runningLocalChats = useMemo(() => {
+    const ids = new Set();
+    for (const run of localRuns.runs) {
+      if (run.status === "running" && !run.stopRequested) ids.add(String(run.conversationId));
+    }
+    return ids;
+  }, [localRuns]);
 
   useEffect(() => {
     const query = term.trim();
@@ -148,6 +190,18 @@ export default function DesktopSidebar({
   const usagePercent = usage && usage.dailyQuota > 0
     ? Math.min(100, Math.round((usage.dailyUsed / usage.dailyQuota) * 100))
     : 0;
+  const connectionLabel = !connectivity.online
+    ? "Offline · local only"
+    : authStatus === "local"
+      ? "Online · local profile"
+      : connectivity.checking
+        ? "Checking…"
+        : "Online";
+  const connectionTitle = !connectivity.online
+    ? "Offline. Installed local models and Local Chats keep working; cloud features are unavailable until the connection returns."
+    : authStatus === "local"
+      ? "Connected, but this is a device-local profile. Sign in to use cloud models and sync."
+      : "Connected to VupsRouter.";
 
   const taskHref = id => {
     const params = new URLSearchParams(searchParams);
@@ -242,6 +296,88 @@ export default function DesktopSidebar({
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [collapsed]);
+
+  const renderTaskRow = task => (
+    <li key={task.id} className="vr-conv-row">
+      {renamingId === task.id ? (
+        <form className="vr-task-rename" onSubmit={submitRename}>
+          <input
+            value={renameValue}
+            onChange={event => setRenameValue(event.target.value)}
+            maxLength={60}
+            autoFocus
+            aria-label="Task name"
+            onKeyDown={event => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setRenamingId("");
+                setRenameError("");
+              }
+            }}
+          />
+          <button type="submit" aria-label="Save task name" disabled={renaming === task.id}>
+            <Check size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setRenamingId("");
+              setRenameError("");
+            }}
+            aria-label="Cancel rename"
+          >
+            <X size={13} />
+          </button>
+          {renameError ? <span className="vr-task-rename-error">{renameError}</span> : null}
+        </form>
+      ) : (
+        <>
+          <Link
+            to={taskHref(task.id)}
+            className={`vr-conv-item${task.id === activeTaskId ? " vr-conv-item--active" : ""}`}
+            onClick={onMobileClose}
+            title={task.title}
+          >
+            <ChatCircle size={14} aria-hidden="true" className="vr-conv-icon" />
+            <span className="vr-conv-copy">
+              <span className="vr-conv-title">{task.title || "Untitled task"}</span>
+              {searchMode && task.match ? (
+                <span className="vr-conv-match">{task.match}</span>
+              ) : preferences.showTaskTimestamps ? (
+                <span className="vr-conv-time">{formatTaskTime(task.updatedAt, true)}</span>
+              ) : null}
+            </span>
+            <SidebarTaskBadge
+              task={
+                conversationTask(task, trackedByConversation.get(String(task.id)))
+                || (runningLocalChats.has(String(task.id)) ? { state: "running" } : null)
+              }
+              title={task.title || "Untitled task"}
+            />
+          </Link>
+          <span className="vr-conv-actions">
+            <button
+              type="button"
+              onClick={() => beginRename(task)}
+              aria-label={`Rename ${task.title}`}
+              title="Rename task"
+            >
+              <PencilSimple size={13} />
+            </button>
+            <button
+              type="button"
+              className="vr-conv-delete"
+              onClick={() => requestDeleteTask(task)}
+              aria-label={`Delete ${task.title}`}
+              title="Delete task"
+            >
+              <Trash size={13} />
+            </button>
+          </span>
+        </>
+      )}
+    </li>
+  );
 
   return (
     <>
@@ -363,6 +499,27 @@ export default function DesktopSidebar({
               </section>
             ) : null}
 
+            {!searchMode && localChatFolder.createdAt ? (
+              <section className="vr-sidebar-section vr-tasks-section vr-local-chats" aria-label="Local chats">
+                <div className="vr-sidebar-label-row">
+                  <span className="vr-sidebar-label">
+                    <FolderSimple size={12} aria-hidden="true" />
+                    Local Chats
+                  </span>
+                  {localChatTasks.length > 0 ? (
+                    <span className="vr-sidebar-count">{localChatTasks.length}</span>
+                  ) : null}
+                </div>
+                {localChatTasks.length === 0 ? (
+                  <div className="vr-sidebar-empty">Local chats appear here. Start one from Local AI.</div>
+                ) : (
+                  <ul className="vr-conv-list" role="list">
+                    {localChatTasks.slice(0, 24).map(renderTaskRow)}
+                  </ul>
+                )}
+              </section>
+            ) : null}
+
             <section className="vr-sidebar-section vr-tasks-section" aria-label="Task history">
               <div className="vr-sidebar-label-row">
                 <span className="vr-sidebar-label">{searchMode ? "Search results" : "Recent tasks"}</span>
@@ -375,80 +532,7 @@ export default function DesktopSidebar({
                 </div>
               ) : (
                 <ul className="vr-conv-list" role="list">
-                  {visibleTasks.map(task => (
-                    <li key={task.id} className="vr-conv-row">
-                      {renamingId === task.id ? (
-                        <form className="vr-task-rename" onSubmit={submitRename}>
-                          <input
-                            value={renameValue}
-                            onChange={event => setRenameValue(event.target.value)}
-                            maxLength={60}
-                            autoFocus
-                            aria-label="Task name"
-                            onKeyDown={event => {
-                              if (event.key === "Escape") {
-                                event.preventDefault();
-                                setRenamingId("");
-                                setRenameError("");
-                              }
-                            }}
-                          />
-                          <button type="submit" aria-label="Save task name" disabled={renaming === task.id}>
-                            <Check size={13} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setRenamingId("");
-                              setRenameError("");
-                            }}
-                            aria-label="Cancel rename"
-                          >
-                            <X size={13} />
-                          </button>
-                          {renameError ? <span className="vr-task-rename-error">{renameError}</span> : null}
-                        </form>
-                      ) : (
-                        <>
-                          <Link
-                            to={taskHref(task.id)}
-                            className={`vr-conv-item${task.id === activeTaskId ? " vr-conv-item--active" : ""}`}
-                            onClick={onMobileClose}
-                            title={task.title}
-                          >
-                            <ChatCircle size={14} aria-hidden="true" className="vr-conv-icon" />
-                            <span className="vr-conv-copy">
-                              <span className="vr-conv-title">{task.title || "Untitled task"}</span>
-                              {searchMode && task.match ? (
-                                <span className="vr-conv-match">{task.match}</span>
-                              ) : preferences.showTaskTimestamps ? (
-                                <span className="vr-conv-time">{formatTaskTime(task.updatedAt, true)}</span>
-                              ) : null}
-                            </span>
-                          </Link>
-                          <span className="vr-conv-actions">
-                            <button
-                              type="button"
-                              onClick={() => beginRename(task)}
-                              aria-label={`Rename ${task.title}`}
-                              title="Rename task"
-                            >
-                              <PencilSimple size={13} />
-                            </button>
-                            <button
-                              type="button"
-                              className="vr-conv-delete"
-                              onClick={() => requestDeleteTask(task)}
-                              aria-label={`Delete ${task.title}`}
-                              title="Delete task"
-                            >
-                              <Trash size={13} />
-                            </button>
-                          </span>
-                        </>
-                      )}
-                    </li>
-                  ))}
+                  {visibleTasks.map(renderTaskRow)}
                 </ul>
               )}
             </section>
@@ -466,13 +550,15 @@ export default function DesktopSidebar({
                   <CirclesFour size={16} aria-hidden="true" />
                   {!collapsed && <span>Vups Combo AI</span>}
                 </Link>
+                {localAiAvailable ? (
+                  <Link to="/local-ai" className={navClass("/local-ai")} title="Local AI" onClick={onMobileClose}>
+                    <Cpu size={16} aria-hidden="true" />
+                    {!collapsed && <span>Local AI</span>}
+                  </Link>
+                ) : null}
                 <Link to="/automations" className={navClass("/automations")} title="Automations" onClick={onMobileClose}>
                   <Robot size={16} aria-hidden="true" />
                   {!collapsed && <span>Automations</span>}
-                </Link>
-                <Link to="/tasks" className={navClass("/tasks")} title="Background tasks" onClick={onMobileClose}>
-                  <ListBullets size={16} aria-hidden="true" />
-                  {!collapsed && <span>Tasks</span>}
                 </Link>
                 <Link to="/plugins" className={navClass("/plugins")} title="Plugins" onClick={onMobileClose}>
                   <PuzzlePiece size={16} aria-hidden="true" />
@@ -517,6 +603,16 @@ export default function DesktopSidebar({
                 </button>
               </div>
             ) : null}
+          </div>
+
+          <div
+            className={`vr-connection${connectivity.online ? "" : " vr-connection--offline"}`}
+            role="status"
+            aria-live="polite"
+            title={connectionTitle}
+          >
+            {connectivity.online ? <WifiHigh size={13} aria-hidden="true" /> : <WifiSlash size={13} aria-hidden="true" />}
+            {!collapsed && <span>{connectionLabel}</span>}
           </div>
 
           {!collapsed ? (

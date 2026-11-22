@@ -371,6 +371,64 @@
   color: color-mix(in srgb, var(--text) 72%, transparent);
 }
 
+/* The live state of the task behind a chat. A sibling of the copy, not part of
+   it, so the title keeps its ellipsis and the badge never scrolls out of view
+   with the hover actions. */
+.vr-conv-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 1px 5px 1px 4px;
+  border-radius: 5px;
+  font: 500 9.5px var(--font-mono), monospace;
+  letter-spacing: 0.3px;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.vr-conv-status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentColor;
+}
+
+.vr-conv-status--thinking {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.vr-conv-status--waiting,
+.vr-conv-status--approval {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.vr-conv-status--failed {
+  color: var(--error);
+  background: var(--error-soft);
+}
+
+.vr-conv-status--live .vr-conv-status-dot {
+  animation: vr-conv-status-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes vr-conv-status-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.72); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vr-conv-status--live .vr-conv-status-dot {
+    animation: none;
+  }
+}
+
 .vr-conv-actions {
   display: none;
   align-items: center;
@@ -463,6 +521,31 @@
 .vr-nav-item--active {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.vr-connection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 12px 0;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.vr-connection svg {
+  flex-shrink: 0;
+}
+
+.vr-connection--offline {
+  color: var(--warn);
+}
+
+.vr-sidebar--collapsed .vr-connection {
+  justify-content: center;
+  margin: 4px 0 0;
 }
 
 .vr-usage-card {
@@ -632,6 +715,7 @@
   display: none;
 }
 
+/* The chip is a button: it opens the folder's file picker for this chat. */
 .vr-header-workspace {
   display: inline-flex;
   align-items: center;
@@ -644,10 +728,89 @@
   border-radius: 99px;
   background: color-mix(in srgb, var(--accent) 5%, transparent);
   color: var(--muted);
+  font-family: inherit;
   font-size: 10.5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.vr-header-workspace:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
+}
+
+.vr-header-workspace:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.vr-header-workspace:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The project chip names the folder this chat works in and the Change action
+   opens the native picker for this chat alone. */
+.vr-header-project {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.vr-header-project .vr-header-workspace {
+  margin-left: 0;
+  max-width: 380px;
+}
+
+.vr-header-project__name {
+  flex: none;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.vr-header-project__path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  opacity: 0.75;
+}
+
+.vr-header-project__change {
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: 99px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.vr-header-project__change:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
+}
+
+.vr-header-project__change:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.vr-header-project__change:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.vr-header-project + .vr-header-tool-status {
+  margin-left: 0;
 }
 
 .vr-header-tool-status {
@@ -761,94 +924,8 @@
   color: var(--text);
 }
 
-.vr-workspace-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 9px;
-  max-width: 860px;
-  margin: 0 auto 8px;
-  padding: 7px 10px;
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--accent) 4%, transparent);
-}
-
-.vr-workspace-bar__icon {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  color: var(--muted);
-}
-
-.vr-workspace-bar__copy {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-  line-height: 1.35;
-}
-
-.vr-workspace-bar__copy strong {
-  color: var(--text);
-  font-size: 11.5px;
-  font-weight: 500;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.vr-workspace-bar__copy span {
-  color: var(--muted);
-  font-size: 10px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.vr-workspace-bar button {
-  flex-shrink: 0;
-  padding: 5px 9px;
-  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  color: var(--text);
-  font: 500 10.5px var(--font-sans), sans-serif;
-  cursor: pointer;
-}
-
-.vr-workspace-bar button:hover {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-}
-
-.vr-workspace-bar button:disabled {
-  opacity: 0.5;
-  cursor: wait;
-}
-
-.vr-workspace-select {
-  flex-shrink: 0;
-  max-width: 170px;
-  padding: 5px 8px;
-  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
-  border-radius: 7px;
-  background: var(--bg);
-  color: var(--text);
-  font: 500 10.5px var(--font-sans), sans-serif;
-  cursor: pointer;
-}
-
-.vr-workspace-select:disabled {
-  opacity: 0.5;
-  cursor: wait;
-}
-
-/* The GitHub repository this chat works on. Same shell as the folder bar above
-   the composer, because both name what the assistant is pointed at. */
+/* The GitHub repository this chat works on. Same shell as the row above the
+   composer, because both name what the assistant is pointed at. */
 .vr-chat-repo {
   display: flex;
   align-items: center;
@@ -1807,6 +1884,16 @@
   top: 20px;
 }
 
+/* Starting a task is a form, not a row: same card as the empty state, stacked
+   like the clarification form it borrows its field styles from. */
+.vr-task-start {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  width: 100%;
+}
+
 .vr-task-filters {
   display: flex;
   flex-wrap: wrap;
@@ -2079,6 +2166,17 @@
   margin: 2px 0 0;
   color: var(--text);
   font-size: 11.5px;
+}
+
+/* The same controls inside the conversation that started the run, so a durable
+   turn is stopped, resumed and answered where it was asked for. */
+.vr-task-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  width: 100%;
+  margin-top: 8px;
 }
 
 .vr-task-actions {
@@ -2382,22 +2480,11 @@ html[data-reduce-motion="true"] *::after {
   .vr-workspace-actions {
     margin-left: 42px;
   }
-  .vr-workspace-bar__copy span {
-    display: none;
-  }
   .vr-chat-repo {
     flex-wrap: wrap;
   }
   .vr-chat-repo__copy {
     flex: 1 1 55%;
-  }
-  .vr-workspace-bar button {
-    padding: 5px 7px;
-    font-size: 9.5px;
-  }
-  .vr-workspace-select {
-    max-width: 120px;
-    font-size: 9.5px;
   }
   .vr-modal-foot {
     flex-wrap: wrap;
@@ -2406,6 +2493,9 @@ html[data-reduce-motion="true"] *::after {
   }
   .vr-header-workspace {
     max-width: 120px;
+  }
+  .vr-header-project__path {
+    display: none;
   }
 }
 
@@ -2463,6 +2553,23 @@ html[data-reduce-motion="true"] *::after {
 
 .vr-desktop-sidebar .vr-sidebar-label-row {
   padding: 14px 8px 6px;
+}
+
+.vr-local-chats {
+  border-bottom: 1px solid var(--blocks-line);
+  padding-bottom: 6px;
+}
+
+.vr-local-chats .vr-sidebar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.vr-sidebar-count {
+  color: var(--blocks-muted);
+  font: 500 9px var(--blocks-mono);
+  letter-spacing: 0.06em;
 }
 
 .vr-desktop-sidebar .vr-sidebar-body {

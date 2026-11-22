@@ -494,7 +494,7 @@ test("the three skills tools have labels the progress list can use", async () =>
   assert.equal(tools.DESKTOP_TOOL_LABELS.list_skills, "Listing installed skills");
   assert.equal(tools.DESKTOP_TOOL_LABELS.use_skill, "Reading a skill's instructions");
   assert.equal(tools.DESKTOP_TOOL_LABELS.read_skill_reference, "Reading a skill reference");
-  assert.equal(tools.desktopToolNames().length, 30, "the client table matches the server registry");
+  assert.equal(tools.desktopToolNames().length, 31, "the client table matches the server registry");
   for (const name of ["list_skills", "use_skill", "read_skill_reference"]) {
     assert.notEqual(tools.desktopToolLabel(name), "Using a local Windows tool", `${name} is not left generic`);
   }

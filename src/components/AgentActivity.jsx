@@ -16,7 +16,7 @@ import {
 } from "../chat/activity.js";
 import { generationProgress, pathBaseName, progressBrief } from "../chat/progress.js";
 import ThoughtLine from "./reactbits/ThoughtLine.jsx";
-import { ThinkingBouncy } from "./LoadingVisuals.jsx";
+import LoadingState from "./LoadingState.jsx";
 import "./AgentActivity.css";
 
 const STATUS_TEXT = {
@@ -158,7 +158,7 @@ export default function AgentActivity({
       <span className="vr-activity__chevron" aria-hidden="true">
         <CaretDown size={12} weight="bold" />
       </span>
-      {active ? <ThinkingBouncy className="vr-activity__loader" /> : null}
+      {active ? <LoadingState className="vr-activity__loader" /> : null}
       <ThoughtLine
         className="vr-activity__thought"
         working={active}
@@ -214,7 +214,7 @@ export default function AgentActivity({
       {brief.length > 0 ? (
         <ul className="vr-activity__brief" aria-live="polite" aria-label="Task progress">
           {brief.map(line => (
-            <li key={line.id} className="vr-activity__brief-line">
+            <li key={line.id} className="vr-activity__brief-line" data-kind={line.kind} data-status={line.status || undefined}>
               {line.text}
             </li>
           ))}

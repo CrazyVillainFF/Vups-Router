@@ -39,6 +39,66 @@ test("the chat shell fills the visual viewport without spilling the page", () =>
   assert.match(css, /\.vr-chat-header\s*\{[^}]*padding:\s*env\(safe-area-inset-top, 0px\)/s);
 });
 
+test("the chat shell tracks the Android visual viewport and resize mode", () => {
+  const css = read("src/chat.css");
+  const page = read("src/ChatPage.jsx");
+  const manifest = read("android/app/src/main/AndroidManifest.xml");
+  assert.match(css, /\.vr-chat-layout\s*\{[^}]*height:\s*var\(--vr-viewport-height, 100dvh\)/s);
+  assert.match(css, /\.vr-chat-main\s*\{[^}]*height:\s*var\(--vr-viewport-height, 100dvh\)/s);
+  assert.match(page, /window\.visualViewport/);
+  assert.match(page, /--vr-viewport-height/);
+  assert.match(page, /addEventListener\("resize", onViewportResize\)/);
+  assert.match(page, /if \(isNearBottom\.current\) \{\s*bottomRef\.current\?\.scrollIntoView\(\{ block: "end" \}\);\s*\}/s);
+  assert.match(manifest, /android:windowSoftInputMode="adjustResize"/);
+});
+
+test("assistant replies are not boxed by a logo avatar", () => {
+  const page = read("src/ChatPage.jsx");
+  const css = read("src/chat.css");
+  assert.doesNotMatch(page, /vr-msg-avatar/);
+  assert.doesNotMatch(page, /<VupsLogo \/>/);
+  assert.doesNotMatch(css, /\.vr-msg-avatar/);
+});
+
+test("Vups v3 Galax no longer renders capability chips", () => {
+  const catalog = read("src/chat/modelCatalog.js");
+  const page = read("src/components/reactbits/PromptBar.jsx");
+  const css = read("src/components/reactbits/PromptBar.css");
+  assert.doesNotMatch(catalog, /capabilityChips/);
+  assert.doesNotMatch(page, /prompt-bar__vups-chips/);
+  assert.doesNotMatch(css, /prompt-bar__vups-chips/);
+  assert.match(page, /row\.capabilityLabels/);
+});
+
+test("the model picker dismisses the keyboard instead of reopening it", () => {
+  const page = read("src/components/reactbits/PromptBar.jsx");
+  assert.match(page, /const dismissKeyboard = useCallback\(\(\) => \{[\s\S]*?inputRef\.current\?\.blur\(\)/);
+  assert.match(page, /const openModelMenu = event => \{[\s\S]*?dismissKeyboard\(\)[\s\S]*?setModelOpen\(v => !v\)/);
+  // The press must not reach the field wrapper, whose own click would focus
+  // the prompt again and close the picker it just opened.
+  assert.match(page, /const openModelMenu = event => \{[\s\S]*?stopPropagation\?\.\(\)/);
+  assert.match(page, /onClick=\{focusInput\}/);
+  // While the list is open the prompt is out of the way, so the keyboard
+  // cannot cover the list it is meant to search.
+  assert.match(page, /modelSearchRef\.current\?\.focus/);
+  const pickStart = page.indexOf("const pick = row =>");
+  const pickEnd = page.indexOf("const cancelPreparation", pickStart);
+  const pick = page.slice(pickStart, pickEnd);
+  const modelStart = pick.indexOf("if (open === 'model')");
+  const modelEnd = pick.indexOf("const head = token", modelStart);
+  const modelBranch = pick.slice(modelStart, modelEnd);
+  // The picker is closed before the caret goes back to the prompt, so the
+  // prompt only takes the focus once there is nothing left to cover.
+  assert.match(modelBranch, /setModelOpen\(false\);[\s\S]*?focusInput\(\);/);
+});
+
+test("the model picker yields to Android Back without leaving the chat", () => {
+  const page = read("src/components/reactbits/PromptBar.jsx");
+  assert.match(page, /window\.history\.pushState\(/);
+  assert.match(page, /addEventListener\('popstate'/);
+  assert.match(page, /window\.history\.back\(\)/);
+});
+
 test("the mobile drawer slides in, traps focus, and yields to Escape", () => {
   const css = read("src/chat.css");
   const layout = read("src/desktop/DesktopLayout.jsx");
@@ -60,7 +120,10 @@ test("the mobile composer is compact and hides helper text", () => {
     /@media \(max-width: 650px\)[\s\S]*?\.vr-composer\s*\{\s*padding:\s*6px 10px calc\(8px \+ env\(safe-area-inset-bottom, 0px\)\)/s
   );
   assert.match(css, /@media \(max-width: 650px\)[\s\S]*?\.vr-composer-hint\s*\{\s*display:\s*none/s);
-  assert.match(css, /@media \(max-width: 650px\)[\s\S]*?\.vr-mode-switch__button\s*\{[^}]*padding:\s*4px 9px/s);
+  assert.match(
+    css,
+    /@media \(max-width: 640px\)[\s\S]*?\.vr-permission-card__button\s*\{[^}]*flex:\s*1 1 auto/s
+  );
   assert.match(bar, /\.prompt-bar__field\s*\{[^}]*padding:\s*8px 10px;[^}]*gap:\s*4px/s);
   assert.match(bar, /\.prompt-bar__bar\s*\{[^}]*gap:\s*2px/s);
   assert.doesNotMatch(bar, /@media \(max-width: 560px\)/);

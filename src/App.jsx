@@ -45,8 +45,8 @@ import {
   HelpPage
 } from "./desktop/DesktopPages.jsx";
 import PluginsPage from "./plugins/PluginsPage.jsx";
-import TaskCenterPage from "./tasks/TaskCenterPage.jsx";
 import ComboPage from "./combo/ComboPage.jsx";
+import LocalAiPage from "./localai/LocalAiPage.jsx";
 import ComboSettingsPage from "./combo/ComboSettingsPage.jsx";
 import {
   authFormError,
@@ -88,7 +88,7 @@ function AuthPage({ mode }) {
     detectNativeShell(returnSearch || undefined) ||
     (isTauriRuntime() ? NATIVE_SHELLS.windows : null);
   const browserAuth = usesBrowserAuthHandoff(nativeShell);
-  const { signUp, signIn, status, refreshSession } = useAuth();
+  const { signUp, signIn, status, refreshSession, enterLocalMode } = useAuth();
   const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "", acceptTerms: false });
   const [visibility, setVisibility] = useState(initialPasswordVisibility);
   const [busy, setBusy] = useState(false);
@@ -420,6 +420,25 @@ function AuthPage({ mode }) {
           </p>
         </div>
       )}
+      {!isSignup ? (
+        <>
+          <Button
+            type="button"
+            variant="outlined"
+            fullWidth
+            sx={{ mt: 1.5 }}
+            onClick={() => {
+              enterLocalMode();
+              navigate(redirectTo, { replace: true });
+            }}
+          >
+            Continue on this device
+          </Button>
+          <p className="auth-terms">
+            Uses installed local models and Local Chats. No account, cloud models, or sync.
+          </p>
+        </>
+      ) : null}
     </div><div className="auth-side-note">OPEN MODELS <span>{"\u00b7"}</span> CHECK THE LIMITS</div></div></div>;
 }
 
@@ -470,9 +489,10 @@ export default function App() {
       <Route path="/settings" element={<><PageMeta title="API Settings — VupsRouter" noIndex /><SettingsPage embedded /></>} />
       <Route path="/combo" element={<><PageMeta title="Vups Combo AI — VupsRouter" noIndex /><ComboPage /></>} />
       <Route path="/combo/settings" element={<><PageMeta title="Combo Settings — VupsRouter" noIndex /><ComboSettingsPage /></>} />
+      <Route path="/local-ai" element={<><PageMeta title="Local AI — VupsRouter" noIndex /><LocalAiPage /></>} />
       <Route path="/app-settings" element={<><PageMeta title="Application Settings — VupsRouter" noIndex /><AppSettingsPage /></>} />
       <Route path="/automations" element={<><PageMeta title="Automations — VupsRouter" noIndex /><AutomationsPage /></>} />
-      <Route path="/tasks" element={<><PageMeta title="Background tasks — VupsRouter" noIndex /><TaskCenterPage /></>} />
+      <Route path="/tasks" element={<Navigate to="/chat" replace />} />
       <Route path="/plugins" element={<><PageMeta title="Plugins — VupsRouter" noIndex /><PluginsPage /></>} />
       <Route path="/extensions" element={<Navigate to="/plugins" replace />} />
       <Route path="/help" element={<><PageMeta title="Help — VupsRouter" noIndex /><HelpPage /></>} />

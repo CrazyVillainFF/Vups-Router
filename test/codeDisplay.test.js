@@ -252,8 +252,10 @@ test("generated files render as compact real download rows", () => {
   assert.doesNotMatch(source, /href="#"/);
   assert.doesNotMatch(source, /Available when generation finishes|Open code|Download all \(\.zip\)/);
   const page = read("src/ChatPage.jsx");
-  assert.equal(page.match(/<GeneratedFiles/g)?.length, 1);
-  assert.match(page, /artifact && !isStreaming \? <GeneratedFiles artifact=\{artifact\} \/> : null/);
+  assert.equal(page.match(/<GeneratedFiles/g)?.length, 2);
+  assert.match(page, /artifact && !isStreaming \? \(/);
+  assert.match(page, /nativeWindows && \(message\.local \|\| message\.localPlan\) \?/);
+  assert.match(page, /wantsDownloadDelivery\(prompt\) \? <GeneratedFiles artifact=\{artifact\} \/> : null/);
   assert.doesNotMatch(page, /CodeArtifact|MessageDownloads|ThoughtLine/);
 });
 

@@ -2,20 +2,20 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import * as taskRunModule from "../src/chat/taskRun.js";
+import {
+  taskProgressEvents,
+  taskRunFor,
+  taskRunHasAnswer,
+  taskRunsForConversation,
+  restoreTaskTurn
+} from "../src/chat/taskRun.js";
 import {
   MAX_TASK_PROMPT_CHARS,
-  TASK_RUN_STORAGE_KEY,
-  planTaskSend,
-  readRunAsTask,
-  taskAnswerNote,
-  taskProgressEvents,
-  taskRunBlocker,
-  taskRunFor,
+  durableChatRun,
   taskRunRequest,
-  taskRunsForConversation,
-  taskRunSubmissionKey,
-  writeRunAsTask
-} from "../src/chat/taskRun.js";
+  taskRunSubmissionKey
+} from "../src/tasks/taskSubmission.js";
 import {
   describeTaskState,
   taskErrorLine,
@@ -28,42 +28,19 @@ import {
   createAssistantTurn,
   failTurn,
   recordTurnProgress,
+  syncTurnContent,
   TURN_STATUS
 } from "../src/chat/turnLifecycle.js";
-
-/**
- * Sending a chat message as a durable task (#331).
- *
- * These are behaviour tests over the real modules ChatPage uses — the decision
- * logic, the wire body, the text the reader is shown and the row pipeline that
- * turns a persisted server event into a progress line. The final section reads
- * ChatPage's own source to prove the properties that only exist in how it is
- * wired: a task send makes one task request and no chat request, and the chat's
- * cancellation path never reaches a task.
- */
 
 const chatPageSource = readFileSync(
   fileURLToPath(new URL("../src/ChatPage.jsx", import.meta.url)),
   "utf8"
 ).replace(/\r\n/g, "\n");
 
-function createStorage(initial = {}) {
-  const data = new Map(Object.entries(initial));
-  return {
-    getItem: key => (data.has(key) ? data.get(key) : null),
-    setItem: (key, value) => data.set(key, String(value)),
-    removeItem: key => data.delete(key),
-    dump: () => new Map(data)
-  };
-}
-
-function lockedStorage() {
-  return {
-    getItem() { throw new Error("storage is disabled"); },
-    setItem() { throw new Error("storage is disabled"); },
-    removeItem() { throw new Error("storage is disabled"); }
-  };
-}
+const taskPanelSource = readFileSync(
+  fileURLToPath(new URL("../src/chat/TaskTurnPanel.jsx", import.meta.url)),
+  "utf8"
+).replace(/\r\n/g, "\n");
 
 /** A task record as the tracker holds it: the server row plus the entry's view. */
 function trackedRecord(overrides = {}) {
@@ -104,62 +81,52 @@ function serverEvent(overrides = {}) {
   };
 }
 
-function sourceSlice(startMarker, endMarker) {
-  const start = chatPageSource.indexOf(startMarker);
-  assert.notEqual(start, -1, `${startMarker} is still part of ChatPage.jsx`);
-  const end = chatPageSource.indexOf(endMarker, start);
-  assert.notEqual(end, -1, `${endMarker} still follows ${startMarker} in ChatPage.jsx`);
-  return chatPageSource.slice(start, end);
-}
-
 /** Everything between a function's opening brace and its matching close. */
-function functionBody(name) {
+function functionBody(name, source = chatPageSource) {
   const signature = `function ${name}(`;
-  const start = chatPageSource.indexOf(signature);
-  assert.notEqual(start, -1, `${name} is still part of ChatPage.jsx`);
-  const open = chatPageSource.indexOf("{\n", start);
+  const start = source.indexOf(signature);
+  assert.notEqual(start, -1, `${name} is still part of the source`);
+  const open = source.indexOf("{\n", start);
   let depth = 0;
-  for (let index = open; index < chatPageSource.length; index += 1) {
-    if (chatPageSource[index] === "{") depth += 1;
-    if (chatPageSource[index] !== "}") continue;
+  for (let index = open; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    if (source[index] !== "}") continue;
     depth -= 1;
-    if (depth === 0) return chatPageSource.slice(open, index + 1);
+    if (depth === 0) return source.slice(open, index + 1);
   }
   assert.fail(`${name} never closes`);
 }
 
-test("task mode is a choice, not a default", () => {
-  assert.equal(readRunAsTask(createStorage()), false);
-  assert.equal(readRunAsTask(createStorage({ [TASK_RUN_STORAGE_KEY]: "1" })), true);
-  assert.equal(readRunAsTask(createStorage({ [TASK_RUN_STORAGE_KEY]: "0" })), false);
-  assert.equal(readRunAsTask(createStorage({ [TASK_RUN_STORAGE_KEY]: "yes" })), false);
-  assert.equal(readRunAsTask(null), false);
+test("normal chat, Combo and attachments automatically use durable execution", () => {
+  assert.equal(MAX_TASK_PROMPT_CHARS, 2_000_000);
+  assert.equal(durableChatRun({ prompt: "Do the work" }), true);
+  assert.equal(durableChatRun({ prompt: "go", combo: true }), true);
+  assert.equal(durableChatRun({ prompt: "go", images: [{}], textFiles: [{}] }), true);
+  assert.equal(durableChatRun({ prompt: "", images: [{}] }), true);
+  assert.equal(durableChatRun({ prompt: "x".repeat(MAX_TASK_PROMPT_CHARS) }), true);
+  assert.equal(durableChatRun({ prompt: "x".repeat(MAX_TASK_PROMPT_CHARS + 1) }), false);
+  assert.equal(durableChatRun({ prompt: "go", nativeTools: true }), false);
+  assert.equal(durableChatRun({ prompt: "" }), false);
 });
 
-test("the task switch reports what storage kept, not what was asked", () => {
-  const storage = createStorage();
-  assert.equal(writeRunAsTask(true, storage), true);
-  assert.equal(storage.getItem(TASK_RUN_STORAGE_KEY), "1");
-  assert.equal(writeRunAsTask(false, storage), false);
-  assert.equal(storage.dump().has(TASK_RUN_STORAGE_KEY), false);
-  // A webview with storage disabled must not show an enabled switch.
-  assert.equal(writeRunAsTask(true, lockedStorage()), false);
+test("repeating the same text deliberately creates a new intent", () => {
+  const input = { conversationId: "conv_1", prompt: "Continue", nonce: "send-1" };
+  assert.equal(taskRunSubmissionKey(input), taskRunSubmissionKey({ ...input }));
+  assert.notEqual(taskRunSubmissionKey(input), taskRunSubmissionKey({ ...input, nonce: "send-2" }));
 });
 
-test("a brief a task cannot carry is refused instead of quietly degraded", () => {
-  assert.match(String(taskRunBlocker({ prompt: "   " })), /needs a message/i);
-  assert.equal(taskRunBlocker({ prompt: "Do the work" }), null);
-  assert.equal(taskRunBlocker({ prompt: "x".repeat(MAX_TASK_PROMPT_CHARS) }), null);
-  const tooLong = taskRunBlocker({ prompt: "x".repeat(MAX_TASK_PROMPT_CHARS + 1) });
-  assert.match(tooLong, new RegExp(MAX_TASK_PROMPT_CHARS.toLocaleString("en-US")));
-  assert.match(String(taskRunBlocker({ prompt: "go", combo: true })), /Combo/i);
-  assert.match(String(taskRunBlocker({ prompt: "go", images: 1 })), /images/i);
-  assert.match(String(taskRunBlocker({ prompt: "go", textFiles: 1 })), /attached files/i);
-  // The brief never loses a real limitation: a task body has no attachment field.
-  assert.equal(
-    taskRunBlocker({ prompt: "go", combo: false, images: 0, textFiles: 0, workspacePath: "C:/x" }),
-    null
-  );
+test("replayed full output cannot duplicate or shorten an active answer", () => {
+  const initial = [createAssistantTurn({ id: "a" }), createAssistantTurn({ id: "b" })];
+  const first = syncTurnContent(initial, "a", "Hello");
+  assert.equal(first[0].content, "Hello");
+  assert.equal(first[0].status, TURN_STATUS.STREAMING);
+  assert.equal(first[1], initial[1]);
+  assert.equal(syncTurnContent(first, "a", "Hello"), first);
+  assert.equal(syncTurnContent(first, "a", "He"), first);
+  const next = syncTurnContent(first, "a", "Hello world");
+  assert.equal(next[0].content, "Hello world");
+  const done = completeTurn(next, "a", { content: "Hello world" });
+  assert.equal(syncTurnContent(done, "a", "Late output ignored"), done);
 });
 
 test("one intent names one task, however many times it is sent", () => {
@@ -187,7 +154,7 @@ test("the wire body carries only the fields the task route reads", () => {
     workspacePath: "C:/project/Vups Router"
   });
   assert.deepEqual(Object.keys(body).sort(), [
-    "configId", "conversationId", "mode", "model", "prompt", "providerId",
+    "combo", "configId", "conversationId", "mode", "model", "pluginTools", "prompt", "providerId",
     "source", "temperature", "vups", "workspacePath"
   ].sort());
   assert.equal(body.prompt, "Build the report");
@@ -216,36 +183,34 @@ test("no signal, controller or stream is part of a task submission", () => {
   for (const forbidden of ["signal", "abortSignal", "controller", "messages", "attachments", "images"]) {
     assert.equal(forbidden in body, false, `a task body must not carry ${forbidden}`);
   }
-  assert.equal(
-    /AbortController|\.abort\(|signal:/.test(
-      sourceSlice("async function submitTaskRun", "/**\n   * Adopt the conversation")
-    ),
-    false
-  );
+  const image = { name: "photo.png", dataUrl: "data:image/png;base64,AA==" };
+  const attached = taskRunRequest({ prompt: "Look", images: [image], combo: true, pluginTools: true });
+  assert.deepEqual(attached.images, [image]);
+  assert.equal(attached.combo, true);
+  assert.equal(attached.pluginTools, true);
 });
 
-test("planning a send picks exactly one path", () => {
-  const chat = planTaskSend({ runAsTask: false, prompt: "go", images: 2 });
-  assert.deepEqual(chat, { mode: "chat" });
+test("a retry names the message it repeats, and only then", () => {
+  const retried = taskRunRequest({ prompt: "go", conversationId: "conv_1", retryUserMessageId: "msg_7" });
+  assert.equal(retried.retryUserMessageId, "msg_7");
+  assert.equal("retryUserMessageId" in taskRunRequest({ prompt: "go", conversationId: "conv_1" }), false);
+  const handleRetry = functionBody("handleRetry");
+  assert.match(handleRetry, /lastUser\.messageId/);
+  assert.match(handleRetry, /retryUserMessageId/);
+  assert.match(functionBody("handleSend"), /retryUserMessageId/);
+});
 
-  const blocked = planTaskSend({ runAsTask: true, prompt: "go", images: 2 });
-  assert.equal(blocked.mode, "blocked");
-  assert.match(blocked.notice, /images/i);
-  assert.equal("request" in blocked, false);
-  assert.equal("key" in blocked, false);
-
-  const task = planTaskSend({
-    runAsTask: true,
-    prompt: "go",
-    conversationId: "conv_9",
-    reference: { model: "m-9" },
-    mode: "general",
-    temperature: 0.7
-  });
-  assert.equal(task.mode, "task");
-  assert.equal(task.key, taskRunSubmissionKey({ conversationId: "conv_9", prompt: "go" }));
-  assert.equal(task.request.model, "m-9");
-  assert.equal(task.request.conversationId, "conv_9");
+test("the composer submits a durable run before any request-bound fallback", () => {
+  const send = functionBody("handleSend");
+  assert.match(send, /durableChatRun\(/);
+  assert.match(send, /await submitTaskRun\(/);
+  assert.match(send, /taskRunRequest\(/);
+  assert.match(send, /idempotencyKey: key/);
+  assert.ok(send.indexOf("await submitTaskRun(") < send.indexOf("await streamChatResponse("));
+  assert.match(send, /sendingRef\.current = true/);
+  assert.match(chatPageSource, /const DEFAULT_CHAT_MODE = "general";/);
+  assert.equal(chatPageSource.includes("vr-mode-switch"), false);
+  assert.equal(chatPageSource.includes("chatMode"), false);
 });
 
 test("a watched run is named by its task, so coming back finds the same turn", () => {
@@ -260,7 +225,97 @@ test("a watched run is named by its task, so coming back finds the same turn", (
   assert.deepEqual(taskRunFor("tsk_9", "conv_9"), run);
 });
 
-test("a chat only watches the open tasks that belong to it", () => {
+test("reopening a run reuses its saved assistant and preserves the rest of the conversation", () => {
+  const record = trackedRecord({ assistantMessageId: "saved_a", userMessageId: "saved_u" });
+  const run = taskRunFor(record.taskId, record.conversationId);
+  const messages = [
+    { id: "u", messageId: "saved_u", role: "user", content: "Build it" },
+    { ...createAssistantTurn({ id: "local_a" }), messageId: "saved_a", content: "Partial", status: TURN_STATUS.INTERRUPTED },
+    { id: "other", role: "user", content: "Another message" }
+  ];
+  const restored = restoreTaskTurn(messages, run, record);
+  assert.equal(restored.length, 3);
+  assert.equal(restored[1].id, run.assistantId);
+  assert.equal(restored[1].content, "Partial");
+  assert.equal(restored[1].status, TURN_STATUS.STREAMING);
+  assert.equal(restored[2], messages[2]);
+  assert.equal(restoreTaskTurn(restored, run, record), restored);
+  const absent = restoreTaskTurn([messages[0], messages[2]], run, record);
+  assert.equal(absent[1].id, run.assistantId);
+  assert.equal(absent[2], messages[2]);
+  const stopped = cancelTurn(absent, run.assistantId, { keepEmpty: true });
+  assert.equal(stopped[1].status, TURN_STATUS.CANCELLED);
+  assert.equal(stopped[1].content, "");
+});
+
+test("a saved answer and the run's own placeholder are one turn, not two", () => {
+  // The defect: the placeholder collects the run's progress while the saved
+  // row carries the answer, and both are drawn — each with its own "Thought
+  // for" header. Restoring must collapse them into the saved row.
+  const record = trackedRecord({
+    state: "completed",
+    stage: "done",
+    assistantMessageId: "saved_a",
+    userMessageId: "saved_u",
+    output: { text: "The answer.", messageId: "saved_a" }
+  });
+  const run = taskRunFor(record.taskId, record.conversationId);
+  const saved = {
+    ...createAssistantTurn({ id: "history_a" }),
+    messageId: "saved_a",
+    content: "The answer.",
+    status: TURN_STATUS.COMPLETED,
+    activity: [serverEvent({ seq: 3, message: "Saved the answer.", status: "completed" })]
+  };
+  const placeholder = {
+    ...createAssistantTurn({ id: run.assistantId }),
+    activity: [serverEvent({ seq: 1, message: "Asking the model." })]
+  };
+  const messages = [
+    { id: "u", messageId: "saved_u", role: "user", content: "Build it" },
+    placeholder,
+    saved
+  ];
+  const restored = restoreTaskTurn(messages, run, record);
+  assert.equal(restored.length, 2);
+  assert.equal(restored[1].id, run.assistantId);
+  assert.equal(restored[1].content, "The answer.");
+  assert.equal(restored[1].messageId, "saved_a");
+  assert.deepEqual(restored[1].activity, saved.activity);
+  assert.equal(new Set(restored.map(message => message.id)).size, restored.length);
+  // A remount or a navigation away and back restores the same list.
+  assert.equal(restoreTaskTurn(restored, run, record), restored);
+});
+
+test("a placeholder already renamed to the saved row still merges with it", () => {
+  // The submit path renames the placeholder as soon as the task reports an
+  // assistantMessageId, so the placeholder itself matches the saved row's id.
+  // The lookup must ignore it and find the row the server wrote.
+  const record = trackedRecord({ state: "running", assistantMessageId: "saved_a", userMessageId: "saved_u" });
+  const run = taskRunFor(record.taskId, record.conversationId);
+  const placeholder = { ...createAssistantTurn({ id: run.assistantId }), messageId: "saved_a" };
+  const saved = { ...createAssistantTurn({ id: "history_a" }), messageId: "saved_a", content: "Partial answer" };
+  const restored = restoreTaskTurn([placeholder, saved], run, record);
+  assert.equal(restored.length, 1);
+  assert.equal(restored[0].id, run.assistantId);
+  assert.equal(restored[0].content, "Partial answer");
+  assert.equal(restored[0].status, TURN_STATUS.STREAMING);
+  assert.equal(restoreTaskTurn(restored, run, record), restored);
+});
+
+test("a terminal record settles its turn once, however often it is replayed", () => {
+  // The tracker may report the same completed record on every poll; the
+  // effect must hand it to settleTaskRun once per terminal state, not once
+  // per render.
+  const settleCall = /if \(isTerminalTaskState\(view\.state\) && run\.settledState !== view\.state\) settleTaskRun\(run, view\.task\);/;
+  assert.match(chatPageSource, settleCall);
+  assert.match(functionBody("settleTaskRun"), /settledState: record\.state/);
+  // The completed turn keeps the server's message id, so a later restore
+  // recognizes its own turn instead of inserting another.
+  assert.match(functionBody("settleTaskRun"), /messageId: record\.output\?\.messageId \|\| record\.assistantMessageId \|\| undefined/);
+});
+
+test("a chat restores open and settled runs belonging to it", () => {
   const rows = [
     view(trackedRecord({ taskId: "a", state: "running", conversationId: "conv_1" })),
     view(trackedRecord({ taskId: "b", state: "queued", conversationId: "conv_1" })),
@@ -268,7 +323,7 @@ test("a chat only watches the open tasks that belong to it", () => {
     view(trackedRecord({ taskId: "d", state: "failed", conversationId: "conv_1" })),
     view(trackedRecord({ taskId: "e", state: "running", conversationId: "conv_2" }))
   ];
-  assert.deepEqual(taskRunsForConversation(rows, "conv_1").map(row => row.taskId), ["a", "b"]);
+  assert.deepEqual(taskRunsForConversation(rows, "conv_1").map(row => row.taskId), ["a", "b", "c", "d"]);
   assert.deepEqual(taskRunsForConversation(rows, "conv_2").map(row => row.taskId), ["e"]);
   assert.deepEqual(taskRunsForConversation(rows, ""), []);
   assert.deepEqual(taskRunsForConversation(rows, null), []);
@@ -276,10 +331,14 @@ test("a chat only watches the open tasks that belong to it", () => {
   assert.deepEqual(taskRunsForConversation([null, undefined], "conv_1"), []);
 });
 
-test("a finished task says where its answer is, and never pretends to hold it", () => {
-  assert.match(taskAnswerNote("conv_1", "conv_1"), /this conversation/i);
-  assert.match(taskAnswerNote("conv_1", "conv_2"), /conversation it belongs to/i);
-  assert.match(taskAnswerNote("", "conv_1"), /no conversation was saved/i);
+test("a finished task shows its answer and needs no note of its own", () => {
+  // There is no generic "the run finished" sentence any more: the answer is
+  // the answer, and a run that produced one says nothing more.
+  assert.equal(taskRunModule.taskAnswerNote, undefined);
+  assert.equal(taskRunHasAnswer({ output: { text: "The answer." } }), true);
+  assert.equal(taskRunHasAnswer({ output: { text: "   " } }), false);
+  assert.equal(taskRunHasAnswer({ output: {} }), false);
+  assert.equal(taskRunHasAnswer(null), false);
 });
 
 test("status text comes only from fields the backend wrote", () => {
@@ -544,10 +603,10 @@ test("two tasks in one chat keep their own rows, turns and outcomes", () => {
 
 test("terminal states settle a task turn, and a stop leaves no empty reply", () => {
   const messages = completeTurn([createAssistantTurn({ id: "t" })], "t", {
-    content: taskAnswerNote("conv_1", "conv_1")
+    content: "The answer the model gave."
   });
   assert.equal(messages[0].status, TURN_STATUS.COMPLETED);
-  assert.match(messages[0].content, /this conversation/i);
+  assert.equal(messages[0].content, "The answer the model gave.");
 
   const failed = failTurn([createAssistantTurn({ id: "t" })], "t", {
     error: { title: "Task failed", message: taskErrorLine(trackedRecord({ error: { code: "no_route", message: "" } })) || "", retry: false, canSwitchModel: false }
@@ -563,67 +622,35 @@ test("terminal states settle a task turn, and a stop leaves no empty reply", () 
   assert.equal(cancelTurn(withRows, "t").length, 0);
 });
 
-test("a task send returns before the chat turn begins", () => {
-  const branch = sourceSlice('if (plan.mode === "task") {', "const history = requestHistory");
-  assert.match(branch, /await submitTaskRun\(/);
-  assert.match(branch, /return;/);
-  assert.equal(/beginRequest\(|streamChatResponse|runComboTurn|setLoading\(true\)/.test(branch), false);
-  // A refused task send stops there too — it must not fall through to a chat turn.
-  const blocked = sourceSlice('if (plan.mode === "blocked") {', 'if (plan.mode === "task") {');
-  assert.match(blocked, /return;/);
-  assert.match(blocked, /setComposerWarning\(plan\.notice\)/);
-});
-
-test("submitting a task begins no chat request and keeps nothing to abort", () => {
-  const body = functionBody("submitTaskRun");
-  for (const forbidden of ["beginRequest", "setLoading", "streamingIdRef", "abortRef", "signal", "controller", "streamChatResponse"]) {
-    assert.equal(body.includes(forbidden), false, `submitTaskRun must not touch ${forbidden}`);
-  }
-  assert.match(body, /submitTrackedTask\(plan\.request, \{ key: plan\.key \}\)/);
-  // The uncertain outcome is reported as uncertain, not offered as a resend.
-  assert.match(body, /taskSubmissionUncertain/);
-  assert.match(body, /may already have started/);
-});
-
-test("leaving a chat or pressing Stop cannot interrupt a durable task", () => {
-  // The chat's own cancellation path — the one Stop, a conversation switch and
-  // unmount all run — must not reach into the task watches it does not own.
+test("leaving a chat detaches while explicit Stop cancels its durable run", () => {
   const invalidate = functionBody("invalidateInFlight");
-  for (const forbidden of ["taskRun", "cancelTask", "cancelTrackedTask", "trackedTasks"]) {
-    assert.equal(invalidate.includes(forbidden), false, `invalidateInFlight must not touch ${forbidden}`);
-  }
+  assert.doesNotMatch(invalidate, /cancelTaskRun|cancelTrackedTask/);
   const stop = functionBody("handleStop");
-  assert.equal(stop.includes("taskRun"), false, "Stop ends the chat turn, never a task");
-  // Detaching a watch is the most a conversation switch or a sign-out may do.
+  assert.match(stop, /durableSubmitRef\.current/);
+  assert.match(stop, /cancelTaskRun/);
   assert.match(functionBody("loadTask"), /setTaskRuns\(\{\}\)/);
   assert.match(functionBody("resetConversation"), /setTaskRuns\(\{\}\)/);
 });
 
-test("a finished task re-reads only its own conversation, and only when it is safe", () => {
+test("completed output updates only its turn without reloading another active run", () => {
   const body = functionBody("settleTaskRun");
-  assert.match(body, /conversationId !== String\(activeConvId \|\| ""\)/);
-  assert.match(body, /sendingRef\.current \|\| loading/);
-  assert.match(body, /loadTask\(conversationId\)/);
-  assert.equal(body.includes("loadTask(activeConvId"), false);
-  // The answer itself is never copied out of the task record.
-  assert.equal(body.includes("record.result"), false);
+  assert.match(body, /record\.output\?\.text/);
+  assert.match(body, /loadedTaskRef\.current !== conversationId/);
+  assert.match(body, /completeTurn\(previous, run\.assistantId/);
+  assert.match(body, /finishReason:/);
+  assert.doesNotMatch(body, /loadTask\(/);
+  assert.match(body, /retry: true/);
   const adopt = functionBody("adoptTaskRunConversation");
   assert.match(adopt, /if \(activeConvId \|\| loading \|\| sendingRef\.current\) return;/);
   assert.match(adopt, /messages\.some\(message => message\.id === run\.assistantId\)/);
 });
 
-test("the composer states the mode it will use and the task status it was given", () => {
-  assert.match(chatPageSource, /const watchedTaskLines = Object\.keys\(taskRuns\)/);
-  assert.match(chatPageSource, /taskSummaryLine\(view\.task\)/);
-  // The status line the composer shows is joined from the tracked tasks' own
-  // summaries — the formatters above, reading the backend record — and it is
-  // announced as a live status region, with a way to the page that owns them.
-  assert.match(
-    chatPageSource,
-    /<div className="vr-notice" role="status">\s*<span>\{watchedTaskLines\.join\(" · "\)\}<\/span>\s*<Link to="\/tasks">Tasks<\/Link>/
-  );
-  // The mode switch is a real control group, so the send path is visible and
-  // the state the reader picked is the state reported to assistive tech.
-  assert.match(chatPageSource, /<span className="vr-mode-switch__label">Send as<\/span>/);
-  assert.match(chatPageSource, /Runs on the server and keeps going when you leave this chat/);
+test("progress, questions and controls stay beside the assistant turn", () => {
+  assert.match(chatPageSource, /liveTaskTurnIds/);
+  assert.match(chatPageSource, /<TaskTurnPanel/);
+  assert.match(chatPageSource, /syncTurnContent\(previous, run\.assistantId, partial\)/);
+  assert.match(taskPanelSource, /taskSummaryLine\(task\)/);
+  assert.match(taskPanelSource, /onAnswer\(taskId, clarification\.clarificationId, draft\)/);
+  assert.doesNotMatch(chatPageSource, /<Link to="\/tasks"/);
+  assert.equal(chatPageSource.includes("Send as"), false);
 });

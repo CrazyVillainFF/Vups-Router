@@ -283,25 +283,6 @@
   text-overflow: ellipsis;
 }
 
-.prompt-bar__vups-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  margin-top: 3px;
-  max-width: 100%;
-}
-
-.prompt-bar__vups-chip {
-  border: 1px solid color-mix(in srgb, var(--pb-spark) 22%, transparent);
-  border-radius: 4px;
-  padding: 0 4px;
-  background: color-mix(in srgb, var(--pb-spark) 7%, transparent);
-  color: color-mix(in srgb, var(--pb-spark) 80%, var(--pb-ink));
-  font-size: 9px;
-  line-height: 14px;
-  white-space: nowrap;
-}
-
 .prompt-bar__model-caps {
   display: flex;
   flex-wrap: wrap;
@@ -453,21 +434,8 @@
 }
 
 /* Apex coordinates the user's own models. The row carries no app mark - the name
-   plus the Apex badge say it - while the composer chip keeps the mark so a
-   selected Combo chat is recognisable at a glance. */
-.prompt-bar__pick-mark {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-}
-
-.prompt-bar__pick-mark img {
-  width: 16px;
-  height: 16px;
-  object-fit: contain;
-}
-
+   plus the Apex badge say it - and the composer chip carries none either: the
+   model name is the identity, and no logo or boxed frame sits beside it. */
 .prompt-bar__row--combo {
   box-shadow: inset 2px 0 0 color-mix(in srgb, var(--pb-spark) 65%, transparent);
 }
@@ -483,9 +451,11 @@
   text-transform: none;
 }
 
+/* The selected Combo model is named, not framed: no logo, no orange border and
+   no decorative box sit around the model the user picked. */
 .prompt-bar__pick--combo {
   color: var(--pb-ink);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pb-spark) 45%, transparent);
+  box-shadow: none;
 }
 
 .prompt-bar__group {

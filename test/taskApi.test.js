@@ -88,6 +88,18 @@ test("submitTask refuses an empty brief without touching the network", async () 
   assert.equal(requests.length, 0);
 });
 
+test("image-only submissions and full output snapshots survive the API adapter", async () => {
+  const output = { text: "A durable reply", chars: 15, messageId: "assistant_1", finishReason: "stop" };
+  const requests = stubBackend(request => request.method === "POST"
+    ? { task: { taskId: "tsk_image", state: "queued" } }
+    : { taskId: "tsk_image", state: "running", events: [], output });
+  const images = [{ dataUrl: "data:image/png;base64,AA==", mimeType: "image/png" }];
+  await submitTask({ prompt: "", images, idempotencyKey: "image-intent" });
+  assert.deepEqual(requests[0].data.images, images);
+  assert.equal(requests[0].data.idempotencyKey, "image-intent");
+  assert.deepEqual((await fetchTaskEvents("tsk_image")).output, output);
+});
+
 test("submitTask never sends an abort signal, because the run is not the viewer's to end", async () => {
   const requests = stubBackend(() => ({ task: { taskId: "tsk_bbbbbbbbbbbbbbbbbbbbbbbb", state: "queued" } }));
   await submitTask({ prompt: "keep going" });
@@ -151,6 +163,29 @@ test("fetchTaskEvents defaults to a full replay and never trusts a missing log",
   assert.deepEqual(requests[0].params, { after: 0 });
   assert.deepEqual(page.events, []);
   assert.equal(page.lastSeq, 4);
+});
+
+test("fetchTaskEvents carries the server's own account of a skipped window", async () => {
+  stubBackend(() => ({
+    taskId: "tsk_gap",
+    state: "running",
+    lastSeq: 90,
+    firstSeq: 11,
+    gap: true,
+    events: [{ seq: 89, message: "Late step" }, { seq: 90, message: "Later step" }]
+  }));
+  const page = await fetchTaskEvents("tsk_gap", { after: 4 });
+  assert.equal(page.gap, true);
+  assert.equal(page.firstSeq, 11);
+  assert.equal(page.events.length, 2);
+});
+
+test("a backend that does not report a gap is not read as reporting one", async () => {
+  stubBackend(() => ({ taskId: "tsk_old", state: "running", lastSeq: 3, events: [{ seq: 3, message: "Step" }] }));
+  const page = await fetchTaskEvents("tsk_old", { after: 2 });
+  assert.equal(Object.hasOwn(page, "gap"), false);
+  assert.equal(Object.hasOwn(page, "firstSeq"), false);
+  assert.equal(page.lastSeq, 3);
 });
 
 test("cancel and resume target the task they name and return the backend record", async () => {

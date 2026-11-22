@@ -4,6 +4,7 @@ description = "Allow the VupsRouter desktop tool bridge to set a permission poli
 commands.allow = [
   "desktop_tool_set_policy",
   "desktop_tool_policy_status",
+  "desktop_tool_release_policy",
   "desktop_tool_execute",
   "desktop_tool_respond",
   "desktop_tool_grants_list",

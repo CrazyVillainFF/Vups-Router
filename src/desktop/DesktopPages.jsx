@@ -29,6 +29,8 @@ import {
 } from "./automations.js";
 import { usePreferences } from "./PreferencesContext.jsx";
 import { useTasks } from "./TaskContext.jsx";
+import { useWorkspaces } from "./WorkspaceContext.jsx";
+import WorkspaceSetupDialog from "./WorkspaceSetupDialog.jsx";
 import {
   ensureStorageRoot,
   openStorageRoot,
@@ -208,6 +210,150 @@ function FolderAccessSection() {
           {busyId === "clear" ? "Clearing…" : "Revoke all files"}
         </button>
       ) : null}
+    </section>
+  );
+}
+
+/* The folder the app works in used to be configured above the composer. It is a
+   setting, not part of a message, so it lives here: one default that new chats
+   and tasks inherit, the list of registered folders, and the two native ways to
+   get a folder (pick one that exists, or have Windows create a project). */
+export function ProjectFolderSection() {
+  const {
+    supported,
+    workspaces,
+    activeId,
+    activeWorkspace,
+    loading,
+    busy,
+    error,
+    refresh,
+    addWorkspace,
+    selectWorkspace
+  } = useWorkspaces();
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [localError, setLocalError] = useState("");
+
+  const run = useCallback(async action => {
+    setLocalError("");
+    try {
+      await action();
+    } catch (folderError) {
+      setLocalError(folderError?.message || String(folderError));
+    }
+  }, []);
+
+  if (!supported) {
+    return (
+      <section className="vr-settings-group">
+        <h2>Project folder</h2>
+        <div className="vr-setting-row">
+          <span className="vr-setting-copy">
+            <strong>Default working directory</strong>
+            <span>
+              A website session has no folder of its own, so it attaches files from this device in the
+              composer. The Windows app keeps project folders on this PC and works inside one of them.
+            </span>
+          </span>
+          <span className="vr-setting-badge">Windows app only</span>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="vr-settings-group">
+      <h2>Project folder</h2>
+      {localError || error ? (
+        <p className="vr-inline-error" role="alert">
+          {localError || error}
+        </p>
+      ) : null}
+
+      <label className="vr-setting-row">
+        <span className="vr-setting-copy">
+          <strong>Default working directory</strong>
+          <span title={activeWorkspace?.path || ""}>
+            {activeWorkspace
+              ? "New chats, files, terminal commands and project work start in this folder."
+              : "No folder is registered yet. Add one below."}
+          </span>
+        </span>
+        <select
+          className="vr-select"
+          value={activeId}
+          onChange={event => selectWorkspace(event.target.value)}
+          disabled={Boolean(busy) || workspaces.length === 0}
+          aria-label="Default working directory"
+        >
+          {workspaces.length === 0 ? <option value="">No folder yet</option> : null}
+          {workspaces.map(workspace => (
+            <option key={workspace.id} value={workspace.id}>
+              {workspace.title}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {workspaces.length > 0 ? (
+        <ul className="vr-grant-list">
+          {workspaces.map(workspace => (
+            <li key={workspace.id} className="vr-setting-row">
+              <span className="vr-setting-copy">
+                <strong>{workspace.title}</strong>
+                <span title={workspace.path}>{workspace.path}</span>
+              </span>
+              {workspace.id === activeId ? (
+                <span className="vr-setting-badge">Default</span>
+              ) : (
+                <button
+                  type="button"
+                  className="vr-secondary-small"
+                  disabled={Boolean(busy)}
+                  onClick={() => selectWorkspace(workspace.id)}
+                >
+                  Use as default
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <div className="vr-form-actions">
+        <button
+          type="button"
+          className="vr-primary-small"
+          disabled={Boolean(busy)}
+          onClick={() => run(addWorkspace)}
+        >
+          <Plus size={15} weight="bold" aria-hidden="true" />
+          {busy === "add" ? "Opening picker…" : "Add an existing folder"}
+        </button>
+        <button
+          type="button"
+          className="vr-secondary-small"
+          disabled={Boolean(busy)}
+          onClick={() => setSetupOpen(true)}
+        >
+          Create a project folder
+        </button>
+        <button
+          type="button"
+          className="vr-secondary-small"
+          disabled={loading}
+          onClick={() => run(refresh)}
+        >
+          {loading ? "Checking…" : "Refresh"}
+        </button>
+      </div>
+
+      <p className="vr-setting-hint">
+        Existing chats keep the folder they were started with; changing the default does not move them.
+        Folders are never uploaded — VupsRouter reads and writes the files on this PC.
+      </p>
+
+      <WorkspaceSetupDialog open={setupOpen} onClose={() => setSetupOpen(false)} />
     </section>
   );
 }
@@ -669,6 +815,8 @@ export function AppSettingsPage() {
         />
       </section>
 
+      <ProjectFolderSection />
+
       <WorkspaceStorageSection />
       <SkillsSection />
 
@@ -914,7 +1062,7 @@ export function HelpPage() {
         </article>
         <article className="vr-card">
           <h2>Use workspaces</h2>
-          <p>Add a project folder from the sidebar, select it, then use Attach workspace files above the composer. Files are read on demand and sent only after a permission check.</p>
+          <p>Add a project folder from the Workspaces section in the sidebar, or choose the default working directory in Application Settings under Project folder. The folder chip beside the chat title opens that conversation's files, and every read is checked against your permission mode first.</p>
         </article>
         <article className="vr-card">
           <h2>Permission modes</h2>

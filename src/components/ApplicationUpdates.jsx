@@ -48,6 +48,7 @@ import {
   normalizeDownload
 } from "../download/nativeDownloadState.js";
 import { openExternalUrl } from "../native/externalLinks.js";
+import { isCloudOnline } from "../connectivity/connectivity.js";
 import "./ApplicationUpdates.css";
 
 const UPDATE_DOWNLOAD_KEY = "vupsrouter.updates.androidDownload";
@@ -163,6 +164,15 @@ export default function ApplicationUpdates() {
 
   const runCheck = useCallback(async () => {
     if (checkingRef.current) return;
+    if (!isCloudOnline()) {
+      setAvailability({
+        status: "info",
+        latestVersion: "",
+        message:
+          "You're offline. Update checks need the internet; this build keeps running with its installed version."
+      });
+      return;
+    }
     checkingRef.current = true;
     setChecking(true);
     setActionError("");
@@ -184,6 +194,7 @@ export default function ApplicationUpdates() {
             setAvailability({ status: "current", latestVersion: current.version });
           }
         } catch (error) {
+          // Explicitly handle updater failures without converting them to "current"
           setAvailability({
             status: "error",
             latestVersion: "",

@@ -151,12 +151,11 @@ export default function InChatPermissionCard({ request, busy, error, onRespond }
   return (
     <section className="vr-permission-card" aria-labelledby={`permission-title-${request.requestId}`}>
       <div className="vr-permission-card__head">
-        <ShieldCheck size={16} weight="fill" aria-hidden="true" />
+        <ShieldCheck size={14} weight="fill" aria-hidden="true" />
         <h3 id={`permission-title-${request.requestId}`}>VupsRouter wants permission</h3>
+        <span className="vr-permission-card__action">{actionText(request)}</span>
         {busy ? <span className="vr-permission-card__status">Applying…</span> : null}
       </div>
-
-      <p className="vr-permission-card__action">{actionText(request)}</p>
 
       <dl className="vr-permission-card__rows">
         {target.value ? (
@@ -192,10 +191,6 @@ export default function InChatPermissionCard({ request, busy, error, onRespond }
         </p>
       ) : null}
 
-      {!canRemember ? (
-        <p className="vr-permission-card__hint">{hint}</p>
-      ) : null}
-
       <div className="vr-permission-card__actions">
         <button
           ref={firstButtonRef}
@@ -204,7 +199,7 @@ export default function InChatPermissionCard({ request, busy, error, onRespond }
           disabled={busy}
           onClick={() => onRespond("once")}
         >
-          <Check size={14} aria-hidden="true" />
+          <Check size={13} aria-hidden="true" />
           Allow Once
         </button>
         <button
@@ -213,7 +208,7 @@ export default function InChatPermissionCard({ request, busy, error, onRespond }
           disabled={busy || !canRemember}
           onClick={() => onRespond("always")}
         >
-          <ShieldCheck size={14} aria-hidden="true" />
+          <ShieldCheck size={13} aria-hidden="true" />
           {chatScoped ? "Allow Always (Only for This Chat)" : "Allow Always (Only for This File)"}
         </button>
         <button
@@ -222,9 +217,10 @@ export default function InChatPermissionCard({ request, busy, error, onRespond }
           disabled={busy}
           onClick={() => onRespond("deny")}
         >
-          <X size={14} aria-hidden="true" />
+          <X size={13} aria-hidden="true" />
           Deny
         </button>
+        {!canRemember ? <span className="vr-permission-card__hint">{hint}</span> : null}
       </div>
     </section>
   );

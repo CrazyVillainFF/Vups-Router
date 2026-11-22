@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   ACCEPTED_IMAGE_TYPES,
   ATTACHMENT_LIMITS,
@@ -14,6 +17,7 @@ import {
   isImageFile,
   isErrorAttachment,
   isTextAttachmentFile,
+  readImageAttachment,
   readTextAttachment,
   readyAttachments,
   readyTextAttachments,
@@ -23,6 +27,7 @@ import {
 import { toRequestMessages } from "../src/services/chat.js";
 
 const DATA_URL = "data:image/png;base64,QUJDRA==";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function readyItem(overrides = {}) {
   return {
@@ -51,6 +56,237 @@ test("isImageFile detects images from mime type or file extension", () => {
   assert.equal(isImageFile({ name: "notes.md", type: "" }), false);
   assert.equal(isImageFile({ type: "application/pdf" }), false);
   assert.equal(isImageFile(null), false);
+});
+
+test("camera-sized images retry decode with a scaled bitmap before failing", async () => {
+  const originalCreateImageBitmap = globalThis.createImageBitmap;
+  const originalDocument = globalThis.document;
+  const originalImage = globalThis.Image;
+  const calls = [];
+  const bitmap = { width: 4032, height: 3024, close() {} };
+  const canvas = () => ({
+    width: 0,
+    height: 0,
+    getContext: () => ({
+      imageSmoothingEnabled: false,
+      imageSmoothingQuality: "",
+      drawImage() {}
+    }),
+    toDataURL: () => "data:image/jpeg;base64,QUJDRA=="
+  });
+  globalThis.createImageBitmap = async (_blob, options) => {
+    calls.push(options);
+    if (!options) throw new Error("full-size decode failed");
+    return bitmap;
+  };
+  globalThis.document = { createElement: () => canvas() };
+  globalThis.Image = undefined;
+  try {
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const file = new File([bytes], "camera.jpg", { type: "image/jpeg" });
+    Object.defineProperty(file, "size", { value: 5 * 1024 * 1024 });
+    const item = await readImageAttachment(file, "camera-1");
+    assert.equal(item.status, "ready");
+    assert.equal(item.mimeType, "image/jpeg");
+    assert.equal(calls[0], undefined);
+    assert.equal(calls[1]?.resizeWidth, 2048);
+  } finally {
+    if (originalCreateImageBitmap === undefined) delete globalThis.createImageBitmap;
+    else globalThis.createImageBitmap = originalCreateImageBitmap;
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+    if (originalImage === undefined) delete globalThis.Image;
+    else globalThis.Image = originalImage;
+  }
+});
+
+// A camera photo is decoded at the size it will be used at, so the renderer
+// never holds a full-resolution bitmap. This is the difference between a
+// twelve megabyte picture costing forty six megabytes of pixels and costing
+// twelve: on a phone the larger figure is what kills the renderer.
+test("a camera photo is decoded at the size it will be used at, never whole", async () => {
+  const originalCreateImageBitmap = globalThis.createImageBitmap;
+  const originalDocument = globalThis.document;
+  const originalImage = globalThis.Image;
+  const originalUrl = globalThis.URL;
+  const calls = [];
+  globalThis.createImageBitmap = async (_blob, options) => {
+    calls.push(options);
+    return { width: options?.resizeWidth || 4032, height: options?.resizeHeight || 3024, close() {} };
+  };
+  globalThis.document = {
+    createElement: () => ({
+      width: 0,
+      height: 0,
+      getContext: () => ({
+        imageSmoothingEnabled: false,
+        imageSmoothingQuality: "",
+        drawImage() {}
+      }),
+      toDataURL: () => "data:image/jpeg;base64,QUJDRA=="
+    })
+  };
+  globalThis.Image = class {
+    constructor() {
+      this.naturalWidth = 4032;
+      this.naturalHeight = 3024;
+    }
+    set src(value) {
+      this._src = value;
+      setTimeout(() => this.onload?.(), 0);
+    }
+  };
+  globalThis.URL = { createObjectURL: () => "blob:test", revokeObjectURL: () => {} };
+  try {
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const file = new File([bytes], "camera.jpg", { type: "image/jpeg" });
+    Object.defineProperty(file, "size", { value: 5 * 1024 * 1024 });
+    await readImageAttachment(file, "bounded");
+    assert.ok(calls.length >= 1, "the image was decoded");
+    const first = calls[0];
+    assert.ok(first && first.resizeWidth, "the first decode is a bounded one");
+    assert.equal(first.resizeWidth, 2048, "the decode is capped at the render size");
+    assert.equal(first.resizeHeight, 1536, "the height follows the picture's own shape");
+    assert.ok(
+      first.resizeWidth * first.resizeHeight < 4032 * 3024,
+      "the renderer never holds the whole photograph"
+    );
+  } finally {
+    if (originalCreateImageBitmap === undefined) delete globalThis.createImageBitmap;
+    else globalThis.createImageBitmap = originalCreateImageBitmap;
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+    if (originalImage === undefined) delete globalThis.Image;
+    else globalThis.Image = originalImage;
+    if (originalUrl === undefined) delete globalThis.URL;
+    else globalThis.URL = originalUrl;
+  }
+});
+
+test("a small picture is never blown up to the render size", async () => {
+  const originalCreateImageBitmap = globalThis.createImageBitmap;
+  const originalDocument = globalThis.document;
+  const originalImage = globalThis.Image;
+  const originalUrl = globalThis.URL;
+  const calls = [];
+  globalThis.createImageBitmap = async (_blob, options) => {
+    calls.push(options);
+    return { width: options?.resizeWidth || 500, height: options?.resizeHeight || 400, close() {} };
+  };
+  globalThis.document = {
+    createElement: () => ({
+      width: 0,
+      height: 0,
+      getContext: () => ({
+        imageSmoothingEnabled: false,
+        imageSmoothingQuality: "",
+        drawImage() {}
+      }),
+      toDataURL: () => "data:image/jpeg;base64,QUJDRA=="
+    })
+  };
+  globalThis.Image = class {
+    constructor() {
+      this.naturalWidth = 500;
+      this.naturalHeight = 400;
+    }
+    set src(value) {
+      this._src = value;
+      setTimeout(() => this.onload?.(), 0);
+    }
+  };
+  globalThis.URL = { createObjectURL: () => "blob:test", revokeObjectURL: () => {} };
+  try {
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const file = new File([bytes], "small.jpg", { type: "image/jpeg" });
+    // Big enough to be re-encoded, so the decode path is the one under test.
+    Object.defineProperty(file, "size", { value: 5 * 1024 * 1024 });
+    await readImageAttachment(file, "small");
+    assert.ok(calls.length >= 1);
+    assert.equal(calls[0].resizeWidth, 500, "a small picture keeps its own size");
+    assert.equal(calls[0].resizeHeight, 400);
+  } finally {
+    if (originalCreateImageBitmap === undefined) delete globalThis.createImageBitmap;
+    else globalThis.createImageBitmap = originalCreateImageBitmap;
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+    if (originalImage === undefined) delete globalThis.Image;
+    else globalThis.Image = originalImage;
+    if (originalUrl === undefined) delete globalThis.URL;
+    else globalThis.URL = originalUrl;
+  }
+});
+
+test("the encoder hands the browser a turn instead of blocking it back to back", () => {
+  const source = readFileSync(path.join(root, "src/chat/attachments.js"), "utf8");
+  const render = source.slice(source.indexOf("async function renderImage("), source.indexOf("async function readFileBuffer("));
+  assert.match(render, /await yieldToTheBrowser\(\);/, "each attempt lets the composer paint");
+  assert.match(source, /function yieldToTheBrowser\(\)/);
+});
+
+test("an encoded image is small enough to travel inside one request", () => {
+  const source = readFileSync(path.join(root, "src/chat/attachments.js"), "utf8");
+  assert.match(source, /export const MAX_TRANSMITTED_IMAGE_BYTES = 512 \* 1024;/);
+  // The budget has to bound the whole ladder, not just the first attempt.
+  const render = source.slice(source.indexOf("async function renderImage("), source.indexOf("async function readFileBuffer("));
+  assert.match(render, /const budget = Math\.min\(IMAGE_LIMITS\.bytes, MAX_TRANSMITTED_IMAGE_BYTES\);/);
+  assert.match(render, /if \(bytes <= budget\) break;/);
+  assert.match(render, /if \(best && best\.bytes <= budget\) break;/);
+});
+
+test("the composer keeps the message when the submission fails", () => {
+  const bar = readFileSync(path.join(root, "src/components/reactbits/PromptBar.jsx"), "utf8");
+  const send = bar.slice(bar.indexOf("latest.current.onSend?.("), bar.indexOf("} catch {", bar.indexOf("latest.current.onSend?.(")));
+  assert.match(send, /submission\.catch\(/, "a failed submission is handled");
+  assert.match(send, /setDraft\(current => \(current \? current : draft\.trim\(\)\)\)/, "the typed text comes back");
+  assert.match(send, /setAttachments\(current => \(current\.length \? current : outgoing\)\)/, "the picture comes back");
+  assert.match(send, /setAttachError\(/, "the failure is shown in the composer");
+});
+
+test("the chat page marks a submission that never reached the server", () => {
+  const page = readFileSync(path.join(root, "src/ChatPage.jsx"), "utf8");
+  assert.match(page, /submissionFailedRef\.current = true;/, "a refused submission is marked");
+  assert.match(
+    page,
+    /if \(submissionFailedRef\.current\) \{\s*submissionFailedRef\.current = false;\s*throw error;/,
+    "the composer is told to keep the message"
+  );
+});
+
+test("image decode closes the bitmap it created", async () => {
+  const originalCreateImageBitmap = globalThis.createImageBitmap;
+  const originalDocument = globalThis.document;
+  const originalImage = globalThis.Image;
+  let closed = 0;
+  const bitmap = { width: 4032, height: 3024, close() { closed += 1; } };
+  const canvas = () => ({
+    width: 0,
+    height: 0,
+    getContext: () => ({
+      imageSmoothingEnabled: false,
+      imageSmoothingQuality: "",
+      drawImage() {}
+    }),
+    toDataURL: () => "data:image/jpeg;base64,QUJDRA=="
+  });
+  globalThis.createImageBitmap = async () => bitmap;
+  globalThis.document = { createElement: () => canvas() };
+  globalThis.Image = undefined;
+  try {
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const file = new File([bytes], "camera.jpg", { type: "image/jpeg" });
+    Object.defineProperty(file, "size", { value: 5 * 1024 * 1024 });
+    const item = await readImageAttachment(file, "camera-2");
+    assert.equal(item.status, "ready");
+    assert.equal(closed, 1);
+  } finally {
+    if (originalCreateImageBitmap === undefined) delete globalThis.createImageBitmap;
+    else globalThis.createImageBitmap = originalCreateImageBitmap;
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+    if (originalImage === undefined) delete globalThis.Image;
+    else globalThis.Image = originalImage;
+  }
 });
 
 test("fileIdentity keeps same-named files apart and detects re-picks", () => {

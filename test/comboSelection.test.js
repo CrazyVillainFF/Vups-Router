@@ -2,23 +2,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   availabilityMap,
-  COMBO_MAX_SELECTED,
+  COMBO_MAX_WORKING_MODELS,
   comboCatalogState,
   comboModelKey,
   filterModels,
   formatCheckedAt,
-  hasVisionModels,
   mergeSelectedModels,
   moveSelectedModel,
   normalizeSelectedModel,
   providerOptions,
   removeSelectedModel,
   runPoolSummary,
+  selectAllModels,
   selectionForSave,
   statusFor,
   statusLabel,
   summaryFor,
   toggleSelectedModel,
+  unselectNotWorkingModels,
   withStaleSelected
 } from "../src/combo/comboSelection.js";
 
@@ -97,13 +98,15 @@ test("selection toggles add, remove, and enforce the cap", () => {
   const removed = toggleSelectedModel(second, CATALOG[0]);
   assert.deepEqual(removed.map(entry => entry.key), [CATALOG[1].key]);
 
+  // There is no model count to reach: the selection grows as far as the user
+  // asks it to.
   let full = [];
-  for (let index = 0; index < COMBO_MAX_SELECTED; index += 1) {
+  for (let index = 0; index < 3000; index += 1) {
     full = toggleSelectedModel(full, { kind: "shared", model: `model-${index}`, label: `Model ${index}` });
   }
-  assert.equal(full.length, COMBO_MAX_SELECTED);
-  const unchanged = toggleSelectedModel(full, { kind: "shared", model: "one-too-many" });
-  assert.equal(unchanged, full);
+  assert.equal(full.length, 3000);
+  const oneMore = toggleSelectedModel(full, { kind: "shared", model: "one-more" });
+  assert.equal(oneMore.length, 3001, "a model is never refused for being one too many");
 });
 
 test("search and provider filters preserve selections independently", () => {
@@ -119,8 +122,6 @@ test("search and provider filters preserve selections independently", () => {
     providerOptions(CATALOG).map(option => option.provider),
     ["Anthropic", "OpenAI", "OpenRouter", "Vups"]
   );
-  assert.equal(hasVisionModels(CATALOG), true);
-  assert.equal(hasVisionModels(CATALOG.slice(1)), false);
 });
 
 test("removal and priority moves keep the original selection order", () => {
@@ -141,9 +142,10 @@ test("removal and priority moves keep the original selection order", () => {
 test("status labels expose the exact two-word availability text", () => {
   assert.equal(statusLabel("working"), "Working");
   assert.equal(statusLabel("not_working"), "Not Working");
-  assert.equal(statusLabel("unknown"), "Not checked");
-  assert.equal(statusLabel(undefined), "Not checked");
-  assert.equal(statusLabel("something-else"), "Not checked");
+  assert.equal(statusLabel("unknown"), "Not Checked");
+  assert.equal(statusLabel(undefined), "Not Checked");
+  assert.equal(statusLabel("something-else"), "Not Checked");
+  assert.equal(statusLabel("checking"), "Checking");
 });
 
 test("availability map and summary follow real entries", () => {
@@ -251,7 +253,8 @@ test("comboCatalogState feeds the chat picker only counts a real check proved", 
   assert.deepEqual(comboCatalogState({ selected }), {
     enabled: true,
     selectedCount: 4,
-    workingCount: null
+    workingCount: null,
+    visionCapableCount: 1
   });
 
   const halfWorking = {
@@ -263,7 +266,7 @@ test("comboCatalogState feeds the chat picker only counts a real check proved", 
       { key: "vups:vups-v3-galax", status: "not_working" }
     ]
   };
-  assert.deepEqual(comboCatalogState(halfWorking), { enabled: true, selectedCount: 4, workingCount: 2 });
+  assert.deepEqual(comboCatalogState(halfWorking), { enabled: true, selectedCount: 4, workingCount: 2, visionCapableCount: 1 });
 
   // A check that proved nothing works must say zero, not hide the result.
   assert.equal(
@@ -287,10 +290,11 @@ test("comboCatalogState feeds the chat picker only counts a real check proved", 
   );
 
   assert.equal(comboCatalogState({ enabled: false, selected }).enabled, false);
-  assert.deepEqual(comboCatalogState(undefined), { enabled: true, selectedCount: 0, workingCount: null });
+  assert.deepEqual(comboCatalogState(undefined), { enabled: true, selectedCount: 0, workingCount: null, visionCapableCount: 0 });
   assert.deepEqual(comboCatalogState({ selected: [], availability: [{ key: "ghost", status: "working" }] }), {
     enabled: true,
     selectedCount: 0,
-    workingCount: null
+    workingCount: null,
+    visionCapableCount: 0
   });
 });

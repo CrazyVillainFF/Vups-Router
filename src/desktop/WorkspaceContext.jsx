@@ -2,9 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { useAuth } from "../context/AuthContext.jsx";
 import {
   addWorkspacePath,
-  createTaskProject as createTaskProjectBridge,
   createWorkspaceFolder,
-  defaultTaskWorkspace,
   isTauriRuntime,
   listWorkspaces,
   pickContainerFolder,
@@ -13,7 +11,8 @@ import {
   removeWorkspace as removeWorkspaceBridge,
   renameWorkspace as renameWorkspaceBridge,
   scanWorkspace,
-  touchWorkspace as touchWorkspaceNative
+  touchWorkspace as touchWorkspaceNative,
+  validateWorkspace as validateWorkspaceNative
 } from "./workspaceBridge.js";
 import {
   chatWorkspaceFor,
@@ -74,6 +73,9 @@ export function WorkspaceProvider({ children }) {
   const [activeId, setActiveId] = useState(() => loadActiveId(owner));
   const [chatBindings, setChatBindings] = useState(() => readChatBindings(browserStorage(), owner));
   const [loading, setLoading] = useState(false);
+  // A load that has finished at least once. An empty registry is only proof of
+  // "no project" after this flips; before that, the saved id is still valid.
+  const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   // A folder's contents change from three directions — the panel's own edits, the
@@ -99,26 +101,15 @@ export function WorkspaceProvider({ children }) {
     [applyWorkspaces, owner]
   );
 
-  // An empty registry is not a question for the user. The app owns one folder —
-  // VupsRouter\Files inside the Windows Documents folder — and Rust both makes
-  // it and registers it, so the files panel, the terminal and the agent start
-  // with the same real root on a machine that has never picked a project.
-  const seedDefaultWorkspace = useCallback(async () => {
-    try {
-      const workspace = await defaultTaskWorkspace(owner);
-      if (!workspace) return null;
-      adopt(workspace);
-      setError("");
-      return workspace;
-    } catch (seedError) {
-      setError(seedError.message);
-      return null;
-    }
-  }, [adopt, owner]);
-
+  // An empty registry stays empty. The app never invents a project folder for a
+  // user: the first terminal or agent request asks through the native picker,
+  // and the folder the user chooses is what gets saved for this account on this
+  // device. App storage (Documents\VupsRouter) is not a project and is never
+  // adopted as one.
   useEffect(() => {
     setActiveId(loadActiveId(owner));
     setChatBindings(readChatBindings(browserStorage(), owner));
+    setLoaded(false);
     if (!supported || !owner) {
       applyWorkspaces([]);
       setError("");
@@ -131,29 +122,38 @@ export function WorkspaceProvider({ children }) {
         if (cancelled) return;
         applyWorkspaces(list);
         setError("");
-        if (!list.length) return seedDefaultWorkspace();
       })
       .catch(loadError => {
         if (!cancelled) setError(loadError.message);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setLoaded(true);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [applyWorkspaces, owner, seedDefaultWorkspace, supported]);
+  }, [applyWorkspaces, owner, supported]);
 
   useEffect(() => {
-    // The workspace list is empty while it is still loading. Clearing the saved
-    // id at that moment would erase the folder the user had open and make the
-    // first row the fallback; wait until there is a real list to validate against.
-    if (!workspaces.length) return;
+    // The registry is empty while it is still loading and for a fresh account.
+    // Only a completed load clears a stale id, and an empty registry leaves no
+    // active project: the picker asks instead of the app choosing a folder.
+    if (!loaded) return;
+    if (!workspaces.length) {
+      if (activeId) {
+        setActiveId("");
+        saveActiveId(owner, "");
+      }
+      return;
+    }
     if (workspaces.some(workspace => workspace.id === activeId)) return;
     const next = workspaces[0].id;
     setActiveId(next);
     saveActiveId(owner, next);
-  }, [workspaces, activeId, owner]);
+  }, [activeId, loaded, owner, workspaces]);
 
   const selectWorkspace = useCallback(
     id => {
@@ -175,15 +175,15 @@ export function WorkspaceProvider({ children }) {
       const list = await listWorkspaces(owner);
       applyWorkspaces(list);
       setError("");
-      if (!list.length) await seedDefaultWorkspace();
       return list;
     } catch (loadError) {
       setError(loadError.message);
       throw loadError;
     } finally {
       setLoading(false);
+      setLoaded(true);
     }
-  }, [applyWorkspaces, owner, seedDefaultWorkspace, supported]);
+  }, [applyWorkspaces, owner, supported]);
 
   const requireNative = useCallback(() => {
     if (!supported || !owner) {
@@ -229,26 +229,6 @@ export function WorkspaceProvider({ children }) {
       } catch (createError) {
         setError(createError.message);
         throw createError;
-      } finally {
-        setBusy("");
-      }
-    },
-    [adopt, owner, requireNative]
-  );
-
-  // The folder a project task writes into, made in the location the app owns in
-  // the Windows Documents folder. Nothing is asked of the user: the name comes
-  // from the task, and Rust picks a free spelling of it.
-  const createTaskProject = useCallback(
-    async name => {
-      requireNative();
-      setBusy("task-project");
-      setError("");
-      try {
-        return adopt(await createTaskProjectBridge(owner, name));
-      } catch (taskError) {
-        setError(taskError.message);
-        throw taskError;
       } finally {
         setBusy("");
       }
@@ -329,6 +309,17 @@ export function WorkspaceProvider({ children }) {
     [chatBindings, workspaces]
   );
 
+  // The id a chat was explicitly bound to, even if that workspace is no longer
+  // in this owner's registry. That distinction is what keeps a chat from
+  // silently following the active project when its own folder disappeared.
+  const chatBindingFor = useCallback(
+    chatKey => {
+      const key = typeof chatKey === "string" ? chatKey.trim() : "";
+      return key ? chatBindings[key] || "" : "";
+    },
+    [chatBindings]
+  );
+
   // Attaching or replacing a chat's folder is an explicit user decision. An
   // empty id detaches the chat without touching any other chat or the folder.
   const bindChatWorkspace = useCallback(
@@ -345,6 +336,22 @@ export function WorkspaceProvider({ children }) {
   const scanWorkspaceById = useCallback(
     async id => scanWorkspace(owner, id || activeId),
     [activeId, owner]
+  );
+
+  // Re-checks an existing selection against the native registry before a chat
+  // runs tools in it. A folder that has been deleted or moved fails here, so the
+  // page can ask for a replacement instead of using a stale path.
+  const validateWorkspaceById = useCallback(
+    async id => {
+      const verified = await validateWorkspaceNative(owner, id || activeId);
+      applyWorkspaces(
+        workspacesRef.current.map(workspace =>
+          workspace.id === verified.id ? { ...workspace, ...verified } : workspace
+        )
+      );
+      return verified;
+    },
+    [activeId, applyWorkspaces, owner]
   );
 
   const readFile = useCallback(
@@ -373,14 +380,15 @@ export function WorkspaceProvider({ children }) {
       addWorkspace,
       pickProjectLocation,
       createProject,
-      createTaskProject,
       openFolderPath,
       selectWorkspace,
       renameWorkspace,
       removeWorkspace,
       workspaceForChat,
+      chatBindingFor,
       bindChatWorkspace,
       scanWorkspace: scanWorkspaceById,
+      validateWorkspace: validateWorkspaceById,
       readFile
     }),
     [
@@ -398,14 +406,15 @@ export function WorkspaceProvider({ children }) {
       addWorkspace,
       pickProjectLocation,
       createProject,
-      createTaskProject,
       openFolderPath,
       selectWorkspace,
       renameWorkspace,
       removeWorkspace,
       workspaceForChat,
+      chatBindingFor,
       bindChatWorkspace,
       scanWorkspaceById,
+      validateWorkspaceById,
       readFile
     ]
   );

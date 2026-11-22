@@ -1,0 +1,13 @@
+[[permission]]
+identifier = "allow-local-chats"
+description = "Allow the VupsRouter window to read and write its own on-device Local Chats store so local AI conversations survive navigation and restarts. The store is a single JSON file in this app's own data folder, scoped to one owner id; nothing is sent over the network."
+commands.allow = [
+  "local_chats_list",
+  "local_chats_get",
+  "local_chats_create",
+  "local_chats_append_message",
+  "local_chats_update",
+  "local_chats_delete",
+  "local_chats_import",
+  "local_chats_storage_info"
+]

@@ -24,6 +24,9 @@ const PROCESS_LIST_TIMEOUT: Duration = Duration::from_secs(20);
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+#[cfg(windows)]
+const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+
 #[derive(Debug)]
 pub struct ExecError {
     pub code: String,
@@ -1219,6 +1222,308 @@ pub fn close_app(registry: &ProcessRegistry, key: &str, force: bool) -> Result<V
     registry.close(key, force)
 }
 
+/// A terminal window this app will really open. `resolved` is the executable
+/// found on PATH before the window is created; a name that cannot be resolved
+/// is an error, never a terminal that quietly opens to a command-not-found.
+#[derive(Clone, Debug)]
+pub struct TerminalPlan {
+    pub program: Option<String>,
+    pub resolved: Option<PathBuf>,
+    pub args: Vec<String>,
+    pub cwd: PathBuf,
+}
+
+/// One bare program name (no path, no shell syntax) or an absolute executable
+/// path. Anything else is refused before an approval card is shown.
+pub fn validate_terminal_program(raw: &str) -> Result<(), ExecError> {
+    let value = raw.trim();
+    if value.is_empty() || value.chars().count() > 260 {
+        return Err(ExecError::new(
+            "invalid_arguments",
+            "The terminal tool needs one program name or an absolute executable path.",
+        ));
+    }
+    let path_like = value.contains('\\') || value.contains('/') || value.contains(':');
+    if path_like {
+        if !Path::new(value).is_absolute() {
+            return Err(ExecError::new(
+                "invalid_arguments",
+                "A program path must be absolute. Use a bare name such as opencode for a program on PATH.",
+            ));
+        }
+        return Ok(());
+    }
+    let valid = value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'));
+    if !valid {
+        return Err(ExecError::new(
+            "invalid_arguments",
+            format!(
+                "\"{value}\" is not a program name. Use a single command name such as opencode, or an absolute executable path."
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn terminal_script_path() -> PathBuf {
+    std::env::temp_dir().join(format!("vupsrouter-terminal-{}.ps1", uuid::Uuid::new_v4()))
+}
+
+fn ps_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn program_display_name(plan: &TerminalPlan) -> String {
+    plan.resolved
+        .as_ref()
+        .and_then(|path| path.file_name())
+        .map(|name| name.to_string_lossy().trim_end_matches(".cmd").trim_end_matches(".bat").trim_end_matches(".exe").to_string())
+        .or_else(|| plan.program.clone())
+        .unwrap_or_else(|| "powershell".to_string())
+}
+
+/// Opens a real terminal window running the resolved program in `cwd`, then
+/// waits for a marker the launched PowerShell writes from inside that window.
+/// A window that never confirms is reported as unverified, not as opened.
+pub fn open_terminal_window(plan: &TerminalPlan) -> Result<Value, ExecError> {
+    let marker = std::env::temp_dir().join(format!("vupsrouter-terminal-{}.ok", uuid::Uuid::new_v4()));
+    let script_path = terminal_script_path();
+    let mut lines = vec![
+        "$ErrorActionPreference = 'Continue'".to_string(),
+        format!(
+            "Set-Content -LiteralPath {} -Value 'started' -Encoding utf8",
+            ps_quote(&display_path(&marker))
+        ),
+        format!("Set-Location -LiteralPath {}", ps_quote(&display_path(&plan.cwd))),
+    ];
+    if let Some(program) = &plan.resolved {
+        let mut invoke = format!("& {}", ps_quote(&display_path(program)));
+        for arg in &plan.args {
+            invoke.push(' ');
+            invoke.push_str(&ps_quote(arg));
+        }
+        lines.push(invoke);
+    }
+    lines.push(String::new());
+    std::fs::write(&script_path, lines.join("\r\n")).map_err(|error| {
+        ExecError::new(
+            "terminal_script_failed",
+            format!(
+                "The terminal launch script could not be written. Windows reported: {}.",
+                truncate_chars(&error.to_string(), 220)
+            ),
+        )
+    })?;
+
+    let shell_args = vec![
+        "-NoLogo".to_string(),
+        "-NoExit".to_string(),
+        "-ExecutionPolicy".to_string(),
+        "Bypass".to_string(),
+        "-File".to_string(),
+        display_path(&script_path),
+    ];
+    let wt_path = resolve_program_on_path("wt.exe");
+    let mut terminal = "Windows PowerShell console".to_string();
+    let mut child = None;
+    if let Some(wt) = wt_path.as_ref() {
+        let mut command = Command::new(wt);
+        command
+            .arg("-d")
+            .arg(display_path(&plan.cwd))
+            .arg("powershell.exe")
+            .args(&shell_args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        if let Ok(spawned) = command.spawn() {
+            terminal = "Windows Terminal".to_string();
+            child = Some(spawned);
+        }
+    }
+    if child.is_none() {
+        let mut command = Command::new("powershell.exe");
+        command
+            .args(&shell_args)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(CREATE_NEW_CONSOLE);
+        }
+        child = Some(command.spawn().map_err(|error| {
+            ExecError::new(
+                "terminal_failed",
+                format!(
+                    "Windows could not start a terminal. Windows reported: {}.",
+                    truncate_chars(&error.to_string(), 220)
+                ),
+            )
+        })?);
+    }
+    let child = child.expect("a terminal child was started");
+    let pid = child.id();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    let mut verified = false;
+    while Instant::now() < deadline {
+        if marker.is_file() {
+            verified = true;
+            break;
+        }
+        thread::sleep(Duration::from_millis(150));
+    }
+    let mut early_exit: Option<i32> = None;
+    if let Some(status) = {
+        let mut probe = child;
+        match probe.try_wait() {
+            Ok(value) => value,
+            Err(_) => None,
+        }
+    } {
+        early_exit = status.code();
+    }
+    if !verified {
+        let _ = std::fs::remove_file(&marker);
+        return Err(ExecError::new(
+            "terminal_unverified",
+            format!(
+                "Windows accepted the {terminal} launch, but the terminal never confirmed that its \
+                 PowerShell session started (early exit: {}). VupsRouter is not reporting it as \
+                 opened. Script: {}",
+                early_exit
+                    .map(|code| code.to_string())
+                    .unwrap_or_else(|| "none".into()),
+                display_path(&script_path)
+            ),
+        ));
+    }
+
+    let program_started = match plan.resolved.as_ref() {
+        Some(program) => verify_program_started(program, Duration::from_secs(8)),
+        None => None,
+    };
+    let name = program_display_name(plan);
+    let _ = std::fs::remove_file(&marker);
+    Ok(json!({
+        "terminal": terminal,
+        "terminalPid": pid,
+        "program": plan.program,
+        "name": name,
+        "resolvedExecutable": plan.resolved.as_ref().map(|path| display_path(path)),
+        "arguments": plan.args,
+        "cwd": display_path(&plan.cwd),
+        "shell": "powershell",
+        "terminalVerified": true,
+        "programStarted": program_started,
+        "verified": true,
+        "status": "opened",
+        "verification": format!(
+            "The launched PowerShell wrote its start marker from inside the terminal. {}",
+            match program_started {
+                Some(true) => "A process for the program was observed after launch.",
+                Some(false) => "No separate program process was observed; the terminal stayed open and may show its own error.",
+                None => "No program was requested."
+            }
+        ),
+        "script": display_path(&script_path),
+        "commandLine": format!(
+            "{terminal}: powershell.exe in {} running {}",
+            display_path(&plan.cwd),
+            display_path(&script_path)
+        ),
+        "note": "VupsRouter opened a real terminal window and ran the resolved program in it. It does not drive the program's interface."
+    }))
+}
+
+/// Looks for a process whose command line names this executable and that began
+/// after the launch. The check itself runs in PowerShell, so its own process is
+/// excluded; an unreadable process list is reported as unknown, not as success.
+fn verify_program_started(program: &Path, timeout: Duration) -> Option<bool> {
+    let needle = program
+        .file_name()
+        .map(|name| name.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    if needle.is_empty() {
+        return None;
+    }
+    let since = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|elapsed| elapsed.checked_sub(Duration::from_secs(20)))
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0);
+    let script = format!(
+        r#"$needle = '{needle}'
+$since = [DateTimeOffset]::FromUnixTimeSeconds({since}).LocalDateTime
+$hits = @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {{
+  $_.CommandLine -and $_.CommandLine.ToLower().Contains($needle) -and
+  $_.Name -ne 'powershell.exe' -and $_.Name -ne 'pwsh.exe' -and
+  $_.CreationDate -and $_.CreationDate -gt $since
+}} | Select-Object -First 3 -ExpandProperty Name)
+ConvertTo-Json @($hits) -Compress
+"#
+    );
+    match run_powershell(&script, timeout) {
+        Ok(output) => {
+            let trimmed = output.trim();
+            if trimmed.is_empty() {
+                return Some(false);
+            }
+            match serde_json::from_str::<Value>(trimmed) {
+                Ok(Value::Array(items)) => Some(!items.is_empty()),
+                Ok(Value::String(_)) => Some(true),
+                _ => Some(false),
+            }
+        }
+        Err(_) => None,
+    }
+}
+
+/// Resolves a Windows program the way a shell would: the PATH directories with
+/// PATHEXT first, then the bare name only when it is already an executable
+/// extension. Script shims PowerShell can run (.cmd/.bat/.ps1) count.
+pub fn resolve_program_on_path(name: &str) -> Option<PathBuf> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.contains('\\') || trimmed.contains('/') || trimmed.contains(':') {
+        let path = PathBuf::from(trimmed);
+        return if path.is_file() { Some(path) } else { None };
+    }
+    let extensions = std::env::var("PATHEXT")
+        .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+    let mut candidates: Vec<String> = Vec::new();
+    if Path::new(trimmed).extension().is_some() {
+        candidates.push(trimmed.to_string());
+    }
+    for ext in extensions.split(';').filter(|ext| !ext.trim().is_empty()) {
+        let candidate = format!("{trimmed}{}", ext.to_ascii_lowercase());
+        if !candidates.iter().any(|existing| existing.eq_ignore_ascii_case(&candidate)) {
+            candidates.push(candidate);
+        }
+    }
+    for extra in [".exe", ".cmd", ".bat", ".com", ".ps1"] {
+        if !candidates.iter().any(|candidate| candidate.ends_with(extra)) {
+            candidates.push(format!("{trimmed}{extra}"));
+        }
+    }
+    let path_var = std::env::var_os("PATH")?;
+    for directory in std::env::split_paths(&path_var) {
+        for candidate in &candidates {
+            let path = directory.join(candidate);
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
 pub fn open_target(path: &Path) -> Result<Value, ExecError> {
     tauri_plugin_opener::open_path(path, None::<&str>).map_err(|error| {
         ExecError::new(
@@ -2036,6 +2341,53 @@ mod tests {
                 .unwrap_or(false)),
             "no command is left running after the stop"
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_command_that_outlives_its_timeout_is_stopped_and_says_so() {
+        let registry = ProcessRegistry::default();
+        let args = json!({
+            "command": "Start-Sleep -Seconds 30",
+            "shell": "powershell",
+            "timeoutSeconds": 1
+        });
+        let spec = CommandSpec::parse(&args, std::env::temp_dir()).expect("spec");
+        let started = Instant::now();
+        let outcome = run_command_blocking(&registry, "timeout-op", &spec, &|| false).expect("run");
+        let value = outcome.value;
+        // The deadline, not the sleep, decides when this returns.
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "the command ran {}ms instead of stopping at its one-second timeout",
+            started.elapsed().as_millis()
+        );
+        assert_eq!(value["status"], "timed_out");
+        assert_eq!(value["timedOut"], true);
+        assert!(!outcome.cancelled, "a deadline is not a person pressing stop");
+        // A process that never finished has no exit code, and inventing zero
+        // would turn a timed-out test run into one that reported success.
+        assert!(
+            value["exitCode"].is_null(),
+            "a timed-out command reports no exit code: {}",
+            value["exitCode"]
+        );
+        // The tree is killed and the registry stops calling it running, so no
+        // orphaned process outlives the turn that started it.
+        let stopped_within = Instant::now();
+        let mut cleared = false;
+        while stopped_within.elapsed() < Duration::from_secs(10) {
+            if registry
+                .list()
+                .iter()
+                .all(|process| !process.state.lock().map(|state| state.running).unwrap_or(false))
+            {
+                cleared = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        assert!(cleared, "the timed-out process is still listed as running");
     }
 
     #[cfg(windows)]

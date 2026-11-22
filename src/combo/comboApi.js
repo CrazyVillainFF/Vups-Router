@@ -28,9 +28,16 @@ function axiosError(error, fallback) {
   return new ComboApiError(message, { status, code });
 }
 
-export async function fetchComboState() {
+export async function fetchComboState({ offset = 0, limit = 0, query = "", provider = "" } = {}) {
   try {
-    const { data } = await apiClient.get("/combo");
+    const params = {};
+    if (offset) params.offset = String(offset);
+    if (limit) params.limit = String(limit);
+    if (query) params.q = query;
+    if (provider) params.provider = provider;
+    const { data } = await apiClient.get("/combo", {
+      params: Object.keys(params).length ? params : undefined
+    });
     return data;
   } catch (error) {
     throw axiosError(error, "Could not load Vups Combo AI.");
@@ -46,12 +53,21 @@ export async function saveComboState(payload) {
   }
 }
 
-export async function runComboAvailability({ force = false, keys = null, signal } = {}) {
+// A batch can hold several models, and the server probes them one wave at a
+// time, so the request needs room for the slowest wave. A request that is cut
+// short still leaves the results it earned saved on the server.
+export function comboAvailabilityTimeoutMs(batchSize = 1, probeTimeoutMs = 20000) {
+  const probe = Math.max(5000, Math.min(60000, Number(probeTimeoutMs) || 20000));
+  const models = Math.max(1, Number(batchSize) || 1);
+  return Math.min(300000, probe * models + 30000);
+}
+
+export async function runComboAvailability({ force = false, keys = null, signal, timeoutMs = 0 } = {}) {
   try {
     const { data } = await apiClient.post(
       "/combo/availability",
       { ...(force ? { force: true } : {}), ...(Array.isArray(keys) && keys.length > 0 ? { keys } : {}) },
-      { signal, timeout: 90000 }
+      { signal, timeout: timeoutMs > 0 ? timeoutMs : comboAvailabilityTimeoutMs(Array.isArray(keys) ? keys.length : 1) }
     );
     return data;
   } catch (error) {

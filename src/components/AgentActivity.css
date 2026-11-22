@@ -7,18 +7,16 @@
   color: var(--muted);
 }
 
-/* While the turn is running the head becomes a one-line status bar, not a
-   card: a thin border, subtle fill, and a single truncating row. */
+/* While the turn is running the head is the message's own status line: no
+   container, no fill, nothing that would read as a card sitting on top of the
+   answer. The pixel grid, the real label and the real clock do the work. */
 .vr-activity[data-active] {
   margin: 2px 0 8px;
 }
 
 .vr-activity[data-active] .vr-activity__head {
   min-height: 30px;
-  padding: 0 9px;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--text) 6%, transparent);
+  padding: 0;
 }
 
 /* The whole header row is the toggle, so the steps can be reopened from the
@@ -131,6 +129,37 @@
   color: var(--muted);
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* The request, folder and access lines are the frame around the work, so they
+   sit back; the steps are what the reader is tracking. */
+.vr-activity__brief-line[data-kind="context"] {
+  color: var(--muted-soft);
+}
+
+/* A command or a test run is the result the task turns on, so it is the one
+   line in the brief given full strength. */
+.vr-activity__brief-line[data-kind="result"] {
+  color: var(--text);
+}
+
+/* The model wrote this sentence itself, so it is set as prose rather than as a
+   machine line. */
+.vr-activity__brief-line[data-kind="narration"] {
+  font: 400 12px/1.45 var(--font-sans), sans-serif;
+  color: var(--text);
+}
+
+.vr-activity__brief-line[data-status="running"] {
+  color: var(--text);
+}
+
+.vr-activity__brief-line[data-status="failed"] {
+  color: var(--error);
+}
+
+.vr-activity__brief-line[data-status="cancelled"] {
+  color: var(--muted-soft);
 }
 
 /* Height is animated with the grid 1fr -> 0fr trick: display:none would skip

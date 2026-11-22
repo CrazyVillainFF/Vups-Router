@@ -13,7 +13,7 @@ import {
 } from "../src/native/shell.js";
 import {
   DEFAULT_PERMISSION_MODE,
-  WINDOWS_PERMISSION_STORAGE_KEY,
+  permissionModeStorageKey,
   loadPermissionMode,
   savePermissionMode
 } from "../src/native/permissions.js";
@@ -32,7 +32,8 @@ function memoryStorage(initial = {}) {
   const data = new Map(Object.entries(initial));
   return {
     getItem: key => (data.has(key) ? data.get(key) : null),
-    setItem: (key, value) => data.set(key, String(value))
+    setItem: (key, value) => data.set(key, String(value)),
+    removeItem: key => data.delete(key)
   };
 }
 
@@ -132,14 +133,19 @@ test("external auth opener uses Tauri in native mode and a browser fallback on t
   );
 });
 
-test("Windows permission defaults to ask every time and persists", () => {
+test("Windows permission defaults to ask every time and persists per account", () => {
   const storage = memoryStorage();
   assert.equal(DEFAULT_PERMISSION_MODE, "ask");
-  assert.equal(loadPermissionMode(storage), "ask");
-  assert.equal(savePermissionMode(storage, "workspace"), "workspace");
-  assert.equal(storage.getItem(WINDOWS_PERMISSION_STORAGE_KEY), "workspace");
-  assert.equal(loadPermissionMode(storage), "workspace");
-  assert.equal(savePermissionMode(storage, "invalid"), "ask");
+  assert.equal(loadPermissionMode(storage, "user_a"), "ask");
+  assert.equal(savePermissionMode(storage, "user_a", "workspace"), "workspace");
+  assert.equal(storage.getItem(permissionModeStorageKey("user_a")), "workspace");
+  assert.equal(loadPermissionMode(storage, "user_a"), "workspace");
+  assert.equal(savePermissionMode(storage, "user_a", "invalid"), "ask");
+  assert.equal(
+    loadPermissionMode(memoryStorage(), "user_b"),
+    "ask",
+    "a second account starts at ask, not on the mode user_a saved"
+  );
 });
 
 test("composer file picks never raise a second permission card", () => {

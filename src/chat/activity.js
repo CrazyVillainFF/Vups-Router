@@ -129,12 +129,22 @@ export function applyActivityProgress(events = [], progress = {}, options = {}) 
   return [...closed, event];
 }
 
+/**
+ * A permission wait that reaches the end of its turn with no decision reported
+ * cannot be closed as completed: nothing was granted and nothing ran. The
+ * backend's stored log closes the same row with this exact sentence and a
+ * cancelled status, so a turn watched live and the same turn after a refresh
+ * say the same thing about it.
+ */
+export const UNREPORTED_APPROVAL_LABEL = "The approval wait ended without a reported decision";
+
 export function settleActivity(events = [], status = ACTIVITY_STATUS.COMPLETED, at = Date.now()) {
   let changed = false;
   const next = (Array.isArray(events) ? events : []).map(event => {
     if (event.status !== ACTIVITY_STATUS.RUNNING) return event;
     changed = true;
-    return { ...event, status, endedAt: at };
+    if (event.phase !== "approval") return { ...event, status, endedAt: at };
+    return { ...event, status: ACTIVITY_STATUS.CANCELLED, label: UNREPORTED_APPROVAL_LABEL, endedAt: at };
   });
   return changed ? next : events;
 }
@@ -231,6 +241,33 @@ export function applyProgressRows(events = [], incoming = [], options = {}) {
     next = next.map((item, position) => (position === index ? merged : item));
   }
   return next;
+}
+
+/**
+ * Consecutive tool calls become one group, because a round that asked for four
+ * files is one piece of work to the reader, not four. Everything else — a
+ * command's outcome, the model's own sentence, an approval wait — stays a row of
+ * its own, since each of those states a fact a tool name does not.
+ *
+ * A group keeps the id of its first member, so a round that grows from one call
+ * to three updates the same line instead of remounting it.
+ */
+export function groupActivityRows(rows = []) {
+  const groups = [];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (!row) continue;
+    const last = groups[groups.length - 1];
+    if (last?.kind === "tools" && row.phase === "tool") {
+      last.rows.push(row);
+      continue;
+    }
+    if (row.phase === "tool") {
+      groups.push({ kind: "tools", rows: [row] });
+    } else {
+      groups.push({ kind: "row", rows: [row] });
+    }
+  }
+  return groups;
 }
 
 /** Completed turns restored from history expose their real generated files. */

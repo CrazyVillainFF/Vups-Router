@@ -123,7 +123,9 @@ test("the Combo page keeps the library, visualization, settings and availability
   assert.match(comboPage, /to="\/combo\/settings"/);
   assert.match(comboPage, /to="\/chat"/);
   assert.match(comboPage, /type="search"/);
-  assert.match(comboPage, /Vision only/);
+  assert.match(comboPage, /Select All/);
+  assert.match(comboPage, /Unselect Not Working/);
+  assert.ok(!/Vision only/.test(comboPage), "the Vision only control is gone from the library");
   assert.match(appSource, /path="\/combo" element=\{<><PageMeta title="Vups Combo AI — VupsRouter" noIndex \/><ComboPage \/>/);
   assert.match(appSource, /path="\/combo\/settings"/);
 });
@@ -144,7 +146,7 @@ test("the chat composer is the only prompt interface that runs Combo", () => {
 test("Combo never receives a single-model provider request and never accepts images silently", () => {
   assert.match(catalogSource, /if \(row\.combo\) return \{ model: COMBO_MODEL_ID, combo: true \}/);
   assert.match(chatPage, /if \(selectedRow\?\.combo && imagePayload\.length > 0\)/);
-  assert.match(chatPage, /Remove the images to run this task on Combo/);
+  assert.match(chatPage, /Remove the images to run this task on Combo|None of the models in Vups Combo AI can read images/);
   const beforeComposer = /async function beforeComposerSend[\s\S]*?\n  \}/.exec(chatPage)[0];
   assert.match(beforeComposer, /if \(selectedRow\?\.combo\)/);
   assert.match(beforeComposer, /return false/);

@@ -181,7 +181,7 @@ test("a provider failure keeps the server message and code", async () => {
 test("every model row carries a Test control and a four-state status", () => {
   assert.match(comboPage, /className="combo-test"/);
   assert.match(comboPage, /onTest=\{testModel\}/);
-  assert.match(comboPage, /testing \? "Testing" : statusLabel\(status\)/);
+  assert.match(comboPage, /shown === "checking" \? "Checking" : statusLabel\(status\)/);
   assert.match(comboPage, /Stop the test for/);
   assert.match(comboPage, /Test \$\{modelTitle\(model\)\}/);
 });
@@ -192,7 +192,9 @@ test("a test cannot change the selection, the chat model, or start a Combo run",
   assert.ok(!/setSelected\(/.test(body), "a test must not touch the selection");
   assert.ok(!/persistSelection/.test(body), "a test must not save a selection");
   assert.ok(!/streamComboChat/.test(body), "a test must not start orchestration");
-  assert.match(body, /testComboModel\(/);
+  // The check itself runs through the shared queue, so one model checked by
+  // hand can never push more probes at the provider than the ceiling allows.
+  assert.match(body, /checkQueueRef\.current\.enqueue\(/);
 });
 
 test("a result that names no status is refused instead of invented", () => {
@@ -202,9 +204,13 @@ test("a result that names no status is refused instead of invented", () => {
 
 test("duplicate tests on a row become a stop, and results merge into availability", () => {
   assert.match(comboPage, /if \(stopModelTest\(model\)\) return;/);
-  assert.match(comboPage, /testControllers\.current\.set\(key, controller\)/);
-  assert.match(comboPage, /next\.set\(key, \{/);
-  assert.match(comboPage, /controller\.abort\(\)/);
+  assert.match(comboPage, /checkQueueRef\.current\.cancelKey\(key\)/);
+  assert.match(comboPage, /next\.set\(job\.key, \{/);
+  assert.match(
+    read("src/combo/modelCheckQueue.js"),
+    /job\.controller\?\.abort\(\)/,
+    "a stopped check is told to stop"
+  );
 });
 
 test("the filter select offers All providers, Working Models, then the providers", () => {
@@ -215,10 +221,9 @@ test("the filter select offers All providers, Working Models, then the providers
   assert.match(comboPage, /aria-label="Filter models by provider or status"/);
 });
 
-test("the working filter is applied to the same list the search and Vision toggle use", () => {
+test("the working filter is applied to the same list the search uses", () => {
   const memo = comboPage.slice(comboPage.indexOf("const workingOnly = isWorkingModelsFilter"), comboPage.indexOf("function focusProviderInLibrary"));
   assert.match(memo, /workingOnly,\n\s+availability: displayAvailability/);
-  assert.match(memo, /visionOnly \? list\.filter\(model => model\.vision === true\)/);
   assert.equal((comboPage.match(/filterModels\(/g) || []).length, 1, "the library must filter in exactly one place");
 });
 
@@ -227,7 +232,6 @@ test("a test result is announced outside the canvas", () => {
   assert.match(comboPage, /className="combo-test-notice"/);
   assert.match(comboPage, /is Working\./);
 });
-
 test("the Test control has mobile sizing and stops spinning under reduced motion", () => {
   const mobile = comboCss.slice(comboCss.indexOf("@media (max-width: 980px)"));
   assert.match(mobile, /\.combo-test \{\s*\n\s*min-width: 58px;\s*\n\s*height: 44px;/);

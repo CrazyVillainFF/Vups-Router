@@ -38,7 +38,7 @@ export default function RequireAuth({ children }) {
     );
   }
 
-  if (status !== "authenticated") {
+  if (status !== "authenticated" && status !== "offline" && status !== "local") {
     return <Navigate to="/signin" replace state={{ from: `${location.pathname}${location.search}` }} />;
   }
 

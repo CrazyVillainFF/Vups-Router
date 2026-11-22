@@ -14,8 +14,14 @@ import {
   progressFilePath,
   progressLabel,
   settleActivity,
-  shouldAutoCollapseActivity
+  shouldAutoCollapseActivity,
+  UNREPORTED_APPROVAL_LABEL
 } from "../src/chat/activity.js";
+import {
+  APPROVAL_ROWS,
+  APPROVAL_STATES,
+  approvalProgressRow
+} from "../src/chat/approvalEvents.js";
 import {
   TURN_STATUS,
   beginContinuation,
@@ -368,15 +374,40 @@ test("progress comes from execution events, never from a timer", () => {
 });
 
 test("an approval shows as a real wait and settles on the real decision", () => {
-  const page = read("src/ChatPage.jsx");
-  assert.match(page, /key: `approval:\$\{prompt\.requestId\}`/);
-  assert.match(page, /key: `approval:\$\{request\.requestId\}`/);
-  assert.match(page, /label: "Waiting for approval"/);
-  assert.match(page, /status: decision === "deny" \? "cancelled" : "completed"/);
-  // The waiting line quotes the native request, so a write or a command is
-  // never presented as a read, and no text implies the grant already happened.
-  assert.match(page, /message: `Waiting for approval: \$\{prompt\.summary/);
-  assert.doesNotMatch(page, /Waiting for approval to read/);
+  // The id the native layer really issues for one permission request.
+  const ID = "9b1de4a2-4f77-4a1e-9d2b-0c5e6f7a8b91";
+  // The line the app paints when the native card arrives and the line the
+  // backend stores for the same transition are one timeline row: a reader who
+  // watched the wait is not shown a second row after a reload.
+  const waiting = approvalProgressRow({ requestId: ID, state: "waiting", path: "C:\\work\\a.txt" });
+  let rows = applyProgressRows([], [waiting], { runId: "run-7", at: 1000 });
+  assert.equal(rows[0].id, `run-7:k:approval:${ID}`);
+  assert.equal(rows[0].status, ACTIVITY_STATUS.RUNNING);
+  assert.equal(rows[0].filePath, "C:\\work\\a.txt", "the wait carries the request's own target");
+
+  rows = applyProgressRows(rows, [
+    { key: waiting.key, phase: "approval", status: "completed", seq: 6, message: APPROVAL_ROWS.granted.message }
+  ], { runId: "run-7", at: 2000 });
+  assert.equal(rows.length, 1, "the stored decision moves the wait line instead of adding one");
+  assert.equal(rows[0].status, ACTIVITY_STATUS.COMPLETED);
+
+  // What became of the paused call is a second statement, on its own line.
+  rows = applyProgressRows(rows, [approvalProgressRow({ requestId: ID, state: "resumed" })], { runId: "run-7", at: 3000 });
+  assert.equal(rows.length, 2, "the vote and the outcome it produced are two facts");
+
+  // A wait that reaches the end of its turn unheard cannot close as completed.
+  const open = applyProgressRows([], [approvalProgressRow({ requestId: ID, state: "waiting" })], { runId: "run-8", at: 1000 });
+  const [settled] = settleActivity(open, ACTIVITY_STATUS.CANCELLED, 4000);
+  assert.equal(settled.status, ACTIVITY_STATUS.CANCELLED);
+  assert.equal(settled.label, UNREPORTED_APPROVAL_LABEL);
+
+  // No permission sentence names the operation, so a write or a command can
+  // never be presented as a read; the card the user answers is what names it.
+  for (const state of APPROVAL_STATES) {
+    assert.doesNotMatch(APPROVAL_ROWS[state].message, /\b(read|write|command)\b/i, `${state} describes an operation`);
+    assert.equal(progressLabel("approval", APPROVAL_ROWS[state].message), "Waiting for approval");
+  }
+  assert.doesNotMatch(read("src/chat/approvalEvents.js"), /Waiting for approval to read/);
 });
 
 test("a reloaded turn shows the steps it really ran", () => {
@@ -393,4 +424,40 @@ test("a reloaded turn shows the steps it really ran", () => {
   const rows = applyProgressRows([], [writeCall], { runId: "stored:m-1", at: 1000 });
   assert.equal(rows[0].id, "stored:m-1:call:call-9");
   assert.equal(rows[0].status, ACTIVITY_STATUS.RUNNING);
+});
+
+test("the stored log replays as the same lines, in order, with none left running", () => {
+  // Exactly what the backend keeps for one finished desktop turn: the folder it
+  // worked in, the write it did, the suite that failed, the permission wait that
+  // never heard its decision, and the answer it wrote up.
+  const stored = [
+    { seq: 1, phase: "task", key: "task", status: "completed", path: "C:\\work", message: "Working in C:\\work", at: "2026-11-04T10:00:00.000Z" },
+    { seq: 2, phase: "tool", callId: "call-9", status: "completed", tool: "write_file", path: "C:\\work\\index.html", label: "Writing a local file", message: "write_file completed (C:\\work\\index.html)", at: "2026-11-04T10:00:01.000Z" },
+    { seq: 3, phase: "command", callId: "call-9", status: "failed", tool: "run_command", code: "exit:1", message: "Tests failed: 3 of 716 (713 passed, exit 1).", at: "2026-11-04T10:00:02.000Z" },
+    { seq: 4, phase: "approval", key: "approval:req-1", status: "cancelled", message: "The approval wait ended without a reported decision", at: "2026-11-04T10:00:03.000Z" },
+    { seq: 5, phase: "answer", key: "answer", status: "completed", message: "Writing up what actually happened", at: "2026-11-04T10:00:04.000Z" }
+  ];
+  const first = applyProgressRows([], stored, { runId: "stored:m-9", at: 1000 });
+  assert.equal(first.length, 5, "one call is two statements: what the tool returned and what the process did");
+  assert.deepEqual(first.map(row => row.seq), [1, 2, 3, 4, 5]);
+  assert.equal(new Set(first.map(row => row.id)).size, 5);
+  assert.equal(first.every(row => row.status !== ACTIVITY_STATUS.RUNNING), true, "no reloaded line claims to be working");
+
+  // A reconnect replays the whole log. Same run id, same rows: nothing is added,
+  // nothing reopens, and the list is the identical array, so the transcript does
+  // not repaint a finished turn.
+  const replayed = applyProgressRows(first, stored, { runId: "stored:m-9", at: 9000 });
+  assert.equal(replayed, first, "a replay of the stored log changes nothing");
+
+  // A client that read part of the log and then catches up still gets one line
+  // per operation, in the order the server numbered them.
+  const partial = applyProgressRows([], stored.slice(0, 3), { runId: "stored:m-9", at: 1000 });
+  const caughtUp = applyProgressRows(partial, stored, { runId: "stored:m-9", at: 2000 });
+  assert.equal(caughtUp.length, 5, "the missed rows join their own lines instead of duplicating");
+  assert.deepEqual(caughtUp.map(row => row.id), first.map(row => row.id));
+
+  // A second turn of the same conversation is a different run, so its rows
+  // cannot overwrite the first turn's lines.
+  const secondRun = applyProgressRows(first, stored, { runId: "stored:m-10", at: 3000 });
+  assert.equal(secondRun.length, 10, "the same steps of a new run are new lines");
 });

@@ -33,8 +33,6 @@ import { buildProviderSavePayload, modelIdentity, savedModelIds } from "./settin
 import {
   activateProvider,
   createManagedProvider,
-  fetchFreeModels,
-  fetchProviderModelsDetailed,
   getApiErrorMessage,
   listProviders,
   removeProvider,
@@ -46,6 +44,12 @@ import {
   testProviderConnection,
   testProviderModel
 } from "./services/api.js";
+import {
+  cachedFetchFreeModels,
+  cachedFetchProviderModelsDetailed,
+  cachedListProviders,
+  invalidateSettingsKey,
+} from "./services/settingsCache.js";
 import { RecommendedBadge } from "./settings/RecommendedBadge.jsx";
 import "./settings.css";
 
@@ -226,7 +230,7 @@ export default function SettingsPage({ embedded = false }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   const refresh = useCallback(async () => {
-    const data = await listProviders();
+    const data = await cachedListProviders();
     setProviders(data.providers || []);
     setActiveConfigId(data.activeConfigId ?? data.activeProviderId ?? "");
     if (data.modelType === "free" || data.modelType === "custom") setModelType(data.modelType);
@@ -235,7 +239,7 @@ export default function SettingsPage({ embedded = false }) {
 
   useEffect(() => {
     let cancelled = false;
-    listProviders()
+    cachedListProviders()
       .then(data => {
         if (cancelled) return;
         setProviders(data.providers || []);
@@ -248,7 +252,7 @@ export default function SettingsPage({ embedded = false }) {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    fetchFreeModels()
+    cachedFetchFreeModels()
       .then(data => {
         if (cancelled) return;
         setFreeCatalog(data.catalog || null);
@@ -265,6 +269,8 @@ export default function SettingsPage({ embedded = false }) {
     setBusy("model-type");
     try {
       const data = await saveModelType(next);
+      invalidateSettingsKey('settings/provider');
+      invalidateSettingsKey('settings/providers');
       setModelType(data.modelType || next);
       setAlert({
         severity: "success",
@@ -281,7 +287,7 @@ export default function SettingsPage({ embedded = false }) {
     if (freeCatalogLoading) return;
     setFreeCatalogLoading(true);
     try {
-      const data = await fetchFreeModels({ refresh: true });
+      const data = await cachedFetchFreeModels({ force: true });
       setFreeCatalog(data.catalog || null);
       const count = data.catalog?.counts?.models ?? 0;
       setAlert({
@@ -414,6 +420,8 @@ export default function SettingsPage({ embedded = false }) {
       const result = savedProvider
         ? await saveManagedProvider(savedProvider.configId, payload)
         : await createManagedProvider(payload);
+      invalidateSettingsKey('settings/providers');
+      invalidateSettingsKey('settings/provider');
       await refresh();
       const savedConfig = result.config || {};
       setForm(current => ({
@@ -555,7 +563,7 @@ export default function SettingsPage({ embedded = false }) {
     setBusy("models");
     setModelsWarning("");
     try {
-      const data = await fetchProviderModelsDetailed(savedProvider.configId);
+      const data = await cachedFetchProviderModelsDetailed(savedProvider.configId);
       const list = Array.isArray(data.models) ? data.models : [];
       setModels(list);
       setSelectedModels(current => (current.length > 0 ? current : list.map(model => model.id)));
@@ -596,6 +604,8 @@ export default function SettingsPage({ embedded = false }) {
     setBusy("models-save");
     try {
       const result = await saveProviderModels(savedProvider.configId, { models: selectedModels, defaultModel });
+      invalidateSettingsKey('settings/providers');
+      invalidateSettingsKey('settings/provider');
       await refresh();
       const savedConfig = result.config || {};
       if (Array.isArray(savedConfig.models)) {

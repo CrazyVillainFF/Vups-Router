@@ -17,6 +17,7 @@ const read = relative => readFileSync(path.join(root, relative), "utf8");
 // lifecycle can be rendered for real instead of only pattern-matched.
 const COMPILED = {
   "components/LoadingVisuals.jsx": "LoadingVisuals.mjs",
+  "components/LoadingState.jsx": "LoadingState.mjs",
   "components/AgentActivity.jsx": "AgentActivity.mjs",
   "components/reactbits/ThoughtLine.jsx": "ThoughtLine.mjs"
 };
@@ -177,7 +178,34 @@ test("Bouncy is compact and hidden from assistive tech", async () => {
   assert.equal(cubes.length, 3, "Bouncy's three bouncing cubes are present");
 });
 
-test("Bouncy exists only while the turn is active", async () => {
+test("the pixel grid keeps the supplied Drive wave and owns no timer", async () => {
+  const { default: Grid } = await import(pathToFileURL(path.join(outDir, "LoadingState.mjs")).href);
+  const container = render(React.createElement(Grid, { className: "vr-activity__loader" }));
+  const grid = container.querySelector(".vr-pixel");
+  assert.ok(grid, "the grid renders");
+  assert.equal(grid.getAttribute("aria-hidden"), "true");
+  const cells = [...grid.querySelectorAll(".vr-pixel__cell")];
+  assert.equal(cells.length, 9, "Drive is a three by three grid");
+  // Row-major, so cell (r, c) lights (c + |r - 1|) steps late: the middle row
+  // leads and the outer rows trail it by one step, which reads as an arrow
+  // pointing at the answer.
+  assert.deepEqual(
+    cells.map(cell => cell.style.animationDelay),
+    ["90ms", "180ms", "270ms", "0ms", "90ms", "180ms", "90ms", "180ms", "270ms"]
+  );
+  assert.deepEqual(
+    [...new Set(cells.map(cell => cell.style.animationDuration))],
+    ["650ms"],
+    "one pattern duration for the whole grid"
+  );
+  assert.equal(
+    grid.querySelector("span, div"),
+    null,
+    "the grid moves and says nothing; the row owns the label and the clock"
+  );
+});
+
+test("the thinking loader exists only while the turn is active", async () => {
   const events = [
     {
       id: "step-1",
@@ -196,7 +224,7 @@ test("Bouncy exists only while the turn is active", async () => {
     1,
     "one thinking animation for the active request"
   );
-  assert.match(live.querySelector(".vr-activity__loader").className, /vr-loader--bouncy/);
+  assert.match(live.querySelector(".vr-activity__loader").className, /vr-pixel/);
 
   const settled = render(
     React.createElement(AgentActivity, { events, active: false, status: "completed" })
@@ -241,17 +269,17 @@ test("page-level loading states render Quantum and retire it with the real state
   assert.match(plugins, /className="vr-plugin-loading" role="status"/);
 });
 
-test("the chat wires Bouncy to the single real streaming turn", () => {
+test("the chat wires one pixel-grid marker to the single real streaming turn", () => {
   const page = read("src/ChatPage.jsx");
   const agent = read("src/components/AgentActivity.jsx");
 
-  assert.match(agent, /import \{ ThinkingBouncy \} from "\.\/LoadingVisuals\.jsx";/);
-  assert.match(agent, /\{active \? <ThinkingBouncy className="vr-activity__loader" \/> : null\}/);
+  assert.match(agent, /import LoadingState from "\.\/LoadingState\.jsx";/);
+  assert.match(agent, /\{active \? <LoadingState className="vr-activity__loader" \/> : null\}/);
   // AgentActivity is rendered once per assistant turn and only the current turn
   // receives isStreaming, so a request can never stack two thinking animations.
   assert.equal((page.match(/<AgentActivity/g) || []).length, 1);
   assert.match(page, /active=\{isStreaming\}/);
-  assert.doesNotMatch(page, /ThinkingBouncy/, "the animation lives in one component only");
+  assert.doesNotMatch(page, /ThinkingBouncy|LoadingState/, "the animation lives in one component only");
 
   const visuals = read("src/components/LoadingVisuals.jsx");
   assert.match(visuals, /import \{ Quantum \} from "ldrs\/react";/);
@@ -270,4 +298,14 @@ test("reduced motion pauses both loaders on a visible frame", () => {
   assert.match(reduce, /animation-play-state: paused !important/);
   assert.match(reduce, /animation-duration: var\(--uib-speed, 1\.75s\) !important/);
   assert.doesNotMatch(reduce, /display:\s*none|visibility:\s*hidden|opacity:\s*0/);
+
+  /* The pixel grid has its own stylesheet, and its end frame is the dim one, so
+     freezing it on a real frame is the same rule expressed as a held opacity. */
+  const sheet = read("src/components/LoadingState.css");
+  assert.match(sheet, /background: var\(--accent\)/, "the grid takes the accent token, no hex");
+  const gridReduce =
+    sheet.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/)?.[0] || "";
+  assert.match(gridReduce, /animation:\s*none/, "the grid stops moving");
+  assert.match(gridReduce, /opacity:\s*0\.55/, "and holds a lit frame rather than an empty one");
+  assert.doesNotMatch(gridReduce, /display:\s*none|visibility:\s*hidden/);
 });

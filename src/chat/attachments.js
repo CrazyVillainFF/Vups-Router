@@ -57,6 +57,14 @@ export const IMAGE_LIMITS = {
 // A source larger than this is rejected before decoding: handing a 100 MB
 // bitmap to the renderer would stall the composer even if the result is small.
 export const MAX_SOURCE_IMAGE_BYTES = 20 * 1024 * 1024;
+
+// How large the image may be on the wire. The server keeps more, but the
+// request that carries it has to survive a proxy, a gateway and a phone's
+// connection: a picture sent as base64 inside one JSON body costs a third
+// again, and a body of several megabytes is one that gets cut off in
+// transit. A model reads a picture of this size perfectly well.
+export const MAX_TRANSMITTED_IMAGE_BYTES = 512 * 1024;
+
 const MAX_RENDER_DIMENSION = 2048;
 const RENDER_DIMENSIONS = [2048, 1600, 1280, 1024, 768];
 const THUMB_DIMENSION = 96;
@@ -448,12 +456,85 @@ function canvasToDataUrl(canvas, mimeType, quality) {
   return "";
 }
 
-async function decodeImageBlob(blob) {
+/** The size that fits inside a box, never larger than the source. */
+function fitInside(width, height, maxDimension) {
+  const scale = Math.min(1, maxDimension / Math.max(width, height));
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale))
+  };
+}
+
+/**
+ * The intrinsic size of an image, read without holding its pixels.
+ *
+ * A camera photo decodes to tens of megabytes. The browser can report the
+ * size on its own - it parses the header - and let the pixels go again, so
+ * the renderer never has to hold a full-resolution bitmap just to learn how big
+ * the picture is.
+ */
+async function readImageSize(blob) {
+  if (typeof Image !== "function" || typeof URL === "undefined") return null;
+  const url = URL.createObjectURL(blob);
+  try {
+    const element = new Image();
+    element.decoding = "async";
+    await new Promise((resolve, reject) => {
+      element.onload = () => resolve();
+      element.onerror = () => reject(new Error("decode"));
+      element.src = url;
+    });
+    const width = element.naturalWidth || element.width || 0;
+    const height = element.naturalHeight || element.height || 0;
+    return width && height ? { width, height } : null;
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** Gives the browser a turn to paint between two expensive steps. */
+function yieldToTheBrowser() {
+  return new Promise(resolve => {
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => resolve());
+    else setTimeout(resolve, 0);
+  });
+}
+
+async function decodeImageBlob(blob, target = null) {
   if (typeof createImageBitmap === "function") {
+    // A bounded decode downsamples while it decodes. Decoding the whole picture
+    // first and shrinking it afterwards is what used to stall the composer: a
+    // twelve megapixel photo is forty six megabytes of pixels held by the
+    // renderer, and a twenty four megapixel one is ninety six.
+    if (target && target.width > 0 && target.height > 0) {
+      try {
+        const source = await createImageBitmap(blob, {
+          resizeWidth: target.width,
+          resizeHeight: target.height,
+          resizeQuality: "high"
+        });
+        return { source, close: () => source.close?.() };
+      } catch {
+        /* this browser cannot resize while decoding; fall through */
+      }
+    }
     try {
-      return { source: await createImageBitmap(blob), close: bitmap => bitmap.close?.() };
+      const source = await createImageBitmap(blob);
+      return { source, close: () => source.close?.() };
     } catch {
-      /* fall through to an <img> decode */
+      // The size was unknown, or the browser cannot decode this picture at
+      // full size. A scaled decode is the last cheap try before giving up.
+      try {
+        const source = await createImageBitmap(blob, {
+          resizeWidth: MAX_RENDER_DIMENSION,
+          resizeQuality: "high"
+        });
+        return { source, close: () => source.close?.() };
+      } catch {
+        /* fall through to an <img> decode */
+      }
     }
   }
   if (typeof Image === "function" && typeof URL !== "undefined") {
@@ -502,26 +583,38 @@ function preferredOutputType(mimeType) {
 async function renderImage(file, mimeType) {
   if (typeof document === "undefined") throw new Error("Image conversion needs a browser.");
   const blob = file instanceof Blob ? file : new Blob([await file.arrayBuffer()], { type: mimeType });
-  const decoded = await decodeImageBlob(blob.type ? blob : new Blob([blob], { type: mimeType }));
+  // The size is read first so the picture can be decoded at the size it will
+  // actually be used at, rather than decoded whole and shrunk afterwards.
+  const intrinsic = await readImageSize(blob);
+  const target = intrinsic ? fitInside(intrinsic.width, intrinsic.height, MAX_RENDER_DIMENSION) : null;
+  const decoded = await decodeImageBlob(blob.type ? blob : new Blob([blob], { type: mimeType }), target);
   try {
     const width = decoded.source.width || decoded.source.naturalWidth || 0;
     const height = decoded.source.height || decoded.source.naturalHeight || 0;
     if (!width || !height) throw new Error("empty");
     const outputType = preferredOutputType(mimeType);
+    // The picture has to fit what the request can carry, not only what the
+    // server will store. The ladder keeps going until the encoded image is
+    // small enough to travel.
+    const budget = Math.min(IMAGE_LIMITS.bytes, MAX_TRANSMITTED_IMAGE_BYTES);
     let best = null;
     for (const dimension of RENDER_DIMENSIONS) {
+      // Encoding is synchronous and a big canvas can take a moment. Handing the
+      // browser a turn between the attempts keeps the composer alive instead of
+      // freezing on a big photo.
+      await yieldToTheBrowser();
       const rendered = drawScaled(decoded.source, width, height, Math.min(MAX_RENDER_DIMENSION, dimension));
       const candidates = outputType === "image/png"
-        ? [["image/png", undefined], ["image/jpeg", 0.9]]
-        : [["image/jpeg", 0.92], ["image/jpeg", 0.84]];
+        ? [["image/png", undefined], ["image/jpeg", 0.9], ["image/jpeg", 0.78]]
+        : [["image/jpeg", 0.92], ["image/jpeg", 0.84], ["image/jpeg", 0.74]];
       for (const [type, quality] of candidates) {
         const dataUrl = canvasToDataUrl(rendered.canvas, type, quality);
         if (!dataUrl) continue;
         const bytes = dataUrlBytes(dataUrl);
         if (!best || bytes < best.bytes) best = { dataUrl, bytes, width: rendered.width, height: rendered.height, mimeType: type };
-        if (bytes <= IMAGE_LIMITS.bytes) break;
+        if (bytes <= budget) break;
       }
-      if (best && best.bytes <= IMAGE_LIMITS.bytes) break;
+      if (best && best.bytes <= budget) break;
     }
     if (!best) throw new Error("encode");
     const thumb = drawScaled(decoded.source, width, height, THUMB_DIMENSION);

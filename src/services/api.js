@@ -1,5 +1,12 @@
 import axios from "axios";
 import { resolveApiBaseURL } from "../config/apiBaseUrl.js";
+import {
+  isCloudOnline,
+  isOfflineError,
+  offlineError,
+  reportNetworkFailure,
+  reportNetworkSuccess
+} from "../connectivity/connectivity.js";
 
 export {
   assertProductionApiUrl,
@@ -16,6 +23,26 @@ export const apiClient = axios.create({
   withCredentials: true,
   headers: { Accept: "application/json", "Content-Type": "application/json" }
 });
+
+// Every cloud feature in the client goes through this instance, so one gate
+// here is what keeps an offline screen from firing its own retries at a backend
+// it cannot reach. Local runtime traffic uses fetch directly and is untouched.
+apiClient.interceptors.request.use(config => {
+  if (!isCloudOnline()) return Promise.reject(offlineError());
+  return config;
+});
+
+apiClient.interceptors.response.use(
+  response => {
+    reportNetworkSuccess();
+    return response;
+  },
+  error => {
+    if (isOfflineError(error)) return Promise.reject(error);
+    reportNetworkFailure(error);
+    return Promise.reject(error);
+  }
+);
 
 function ensureApiBaseURL() {
   if (!apiClient.defaults.baseURL) {
@@ -221,10 +248,26 @@ export async function renameConversation(id, title) {
   return data.conversation;
 }
 
-export async function createConversation({ handoff, title }) {
+export async function createConversation({ handoff, title, messageId } = {}) {
   ensureApiBaseURL();
-  const { data } = await apiClient.post("/conversations", { handoff, title });
+  const { data } = await apiClient.post("/conversations", {
+    handoff,
+    title,
+    ...(messageId ? { messageId } : {})
+  });
   return data.conversation;
+}
+
+// A turn the device produced itself — a model that runs on this computer — is
+// stored in the conversation like any other turn, and only once.
+export async function appendConversationMessage(conversationId, { role, content, messageId } = {}) {
+  ensureApiBaseURL();
+  const { data } = await apiClient.post(`/conversations/${conversationId}/messages`, {
+    role,
+    content,
+    ...(messageId ? { messageId } : {})
+  });
+  return data.message;
 }
 
 // Older deployments predate the create endpoint. Callers fall back to the
@@ -353,6 +396,9 @@ export function isUnauthorizedError(error) {
 }
 
 export function getApiErrorMessage(error) {
+  if (isOfflineError(error)) {
+    return error.message;
+  }
   if (axios.isAxiosError(error)) {
     if (typeof error.response?.data?.message === "string") return error.response.data.message;
     if (error.response) return `The backend request failed (HTTP ${error.response.status}).`;

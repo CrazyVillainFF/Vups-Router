@@ -99,11 +99,18 @@ npm run tauri:build
 
 Outputs are produced under `src-tauri/target/release/bundle/`.
 
-### Windows code signing
+### Windows code signing — current status (unsigned)
 
-Signing is wired up and gated, but **no certificate is configured yet**, so every installer published to date is unsigned. Nothing in this repository generates, self-signs, or implies a publisher identity: the workflow only signs when real credentials exist, and the release notes describe the actual result.
+**No Windows code signing is currently configured.** Installers built from this repository are **unsigned**, which means:
 
-Two options, either of which the `windows` job picks up automatically:
+- SmartScreen shows "Windows protected your PC" on first run
+- Users must click "More info → Run anyway" to install
+- The publisher appears as "Unknown publisher" in file properties
+- Release notes explicitly state the installers are unsigned
+
+This is intentional while code signing credentials are being procured. The CI/CD pipeline will **not** proceed with unsigned builds if `WINDOWS_SIGNING_REQUIRED=true` is set.
+
+Two configuration paths exist for when signing is ready:
 
 **Azure Artifact Signing** (formerly Trusted Signing; needs an Azure subscription and a verified publisher identity — an OV certificate is issued by a CA after business validation):
 

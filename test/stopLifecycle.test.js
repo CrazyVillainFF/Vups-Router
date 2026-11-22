@@ -302,7 +302,12 @@ test("an aborted send is cancelled, not retried or turned into an error card", (
 test("a permission card that belongs to a stopped or foreign turn is denied natively", () => {
   const listenerAt = chatPageSource.indexOf("return onDesktopToolApproval(prompt => {");
   assert.ok(listenerAt > 0);
-  const listener = chatPageSource.slice(listenerAt, listenerAt + 900);
+  // Read to the end of the effect, not a fixed number of characters: the
+  // handler grew with the durable permission log, and a window that stops
+  // mid-body would test a slice instead of the code.
+  const listenerEnd = chatPageSource.indexOf("}, [nativeShell, activeConvId]);", listenerAt);
+  assert.ok(listenerEnd > listenerAt, "the approval listener is one effect body");
+  const listener = chatPageSource.slice(listenerAt, listenerEnd);
   assert.match(listener, /const activeOperation = streamingIdRef\.current;/);
   assert.match(listener, /if \(!activeOperation \|\| \(prompt\.operationId && prompt\.operationId !== activeOperation\)\)/);
   assert.match(listener, /respondDesktopToolApproval\(prompt\.requestId, "deny"\)/);

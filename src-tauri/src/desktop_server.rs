@@ -12,7 +12,14 @@ use tauri::AppHandle;
 
 const API_ORIGIN: &str = "https://vups-router-be.onrender.com";
 const MAX_PROXY_BODY: usize = 64 * 1024 * 1024;
-const HTML_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost https://api.github.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+// The local AI runtime lives on this computer and is reached over its own
+// loopback port, so the window is allowed to talk to it and to nothing else
+// on the machine.
+// script-src carries the hash of index.html's pre-first-paint theme bootstrap:
+// without it the packaged window blocks that inline script and paints the
+// default palette before the module path applies the stored theme.
+// test/desktop-csp.test.js pins the hash to the script it authorizes.
+const HTML_CSP: &str = "default-src 'self'; script-src 'self' 'sha256-8PLmEGZAECILlX6UldsCCMCciPlvJZ33M6voS1auKJo='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost https://api.github.com http://127.0.0.1:11434 http://localhost:11434; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 
 // The window is served from a loopback origin, and a browser keeps one storage
 // area per origin, port included. An OS-allocated port therefore threw the

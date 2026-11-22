@@ -13,6 +13,7 @@ import {
   sideTaskOperationId,
   taskIdFromOperation
 } from "../sideTaskRun.js";
+import { trackApprovalTransition } from "../../chat/approvalEvents.js";
 
 const ACTIVITY_LIMIT = 40;
 
@@ -131,6 +132,32 @@ export default function SideTaskPane() {
     dispatch({ type: "create", id: nextTaskId(state.order) });
   }, [supported, state.order.length]);
 
+  // A side task's permission lines belong to its own run: the operation id is the
+  // run id the backend filed the turn under, so the row lands on the TaskRun this
+  // turn's progress stream is already reading, and nothing has to be looked up.
+  const noteApproval = useCallback((prompt, state, { paint } = {}) => {
+    return trackApprovalTransition(prompt, state, {
+      runId: prompt?.operationId,
+      paint:
+        paint ||
+        (rows => {
+          const id = taskIdFromOperation(prompt?.operationId);
+          if (!stateRef.current.tasks[id]) return;
+          for (const entry of rows) dispatch({ type: "activity", id, entry });
+        })
+    });
+  }, []);
+
+  // The native layer answers a cancel with the exact ids it closed, so a withdrawn
+  // card is recorded from that list instead of from a guess about which ones were
+  // still open when the turn was stopped.
+  const noteWithdrawn = useCallback((ids, prompts, options) => {
+    for (const requestId of Array.isArray(ids) ? ids : []) {
+      const prompt = (prompts || []).find(entry => entry?.requestId === requestId);
+      if (prompt) noteApproval(prompt, "cancelled", options);
+    }
+  }, [noteApproval]);
+
   useEffect(() => {
     if (!supported) return undefined;
     return onDesktopToolApproval(prompt => {
@@ -140,8 +167,9 @@ export default function SideTaskPane() {
       const id = taskIdFromOperation(prompt.operationId);
       if (!stateRef.current.tasks[id]) return;
       dispatch({ type: "approval", id, prompt });
+      noteApproval(prompt, "waiting");
     });
-  }, [supported]);
+  }, [supported, noteApproval]);
 
   useEffect(() => {
     const node = logRef.current;
@@ -153,13 +181,15 @@ export default function SideTaskPane() {
     return () => {
       // A pane that goes away stops its own runs: no orphaned approval stays
       // open and no native call keeps working behind an unmounted surface.
-      for (const [, run] of active) {
+      for (const [id, run] of active) {
         run.controller.abort();
-        cancelDesktopToolOperation(run.operationId).catch(() => {});
+        cancelDesktopToolOperation(run.operationId)
+          .then(ids => noteWithdrawn(ids, stateRef.current.tasks[id]?.approvals, { paint: () => {} }))
+          .catch(() => {});
       }
       active.clear();
     };
-  }, []);
+  }, [noteWithdrawn]);
 
   const runTurn = useCallback(
     async (id, turn, text, messages) => {
@@ -233,13 +263,29 @@ export default function SideTaskPane() {
     const run = runs.current.get(id);
     if (!run) return;
     run.controller.abort();
-    cancelDesktopToolOperation(run.operationId).catch(() => {});
-  }, []);
+    const waiting = stateRef.current.tasks[id]?.approvals || [];
+    cancelDesktopToolOperation(run.operationId)
+      .then(ids => noteWithdrawn(ids, waiting))
+      .catch(() => {});
+  }, [noteWithdrawn]);
 
   const answer = useCallback((id, prompt, decision) => {
     dispatch({ type: "approval", id, requestId: prompt.requestId, remove: true });
-    respondDesktopToolApproval(prompt.requestId, decision).catch(() => {});
-  }, []);
+    respondDesktopToolApproval(prompt.requestId, decision)
+      .then(() => noteApproval(prompt, decision === "deny" ? "denied" : "granted"))
+      .then(() => noteApproval(prompt, decision === "deny" ? "stopped" : "resumed"))
+      .catch(error => {
+        // The native request expired or was answered elsewhere. The card is gone
+        // either way; only an expired one whose own deadline has passed is
+        // recorded here, because an "already answered" line belongs to whichever
+        // surface answered it, and that one owns the decision row.
+        const message = String(error?.message || "");
+        const deadline = Number(prompt.expiresAt);
+        if (/no longer pending/i.test(message) && Number.isFinite(deadline) && Date.now() > deadline) {
+          noteApproval(prompt, "expired");
+        }
+      });
+  }, [noteApproval]);
 
   if (!supported) {
     return <div className="vr-pane-note">Side Task runs in the Windows app, where the local tools live.</div>;

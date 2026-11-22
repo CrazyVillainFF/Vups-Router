@@ -1,10 +1,17 @@
-export const COMBO_MAX_SELECTED = 32;
+/**
+ * How many working models may join one run. This is the execution depth, not
+ * the selection size: the two were the same number only while the selection
+ * was small, and raising the selection must not let a single run fan out
+ * across the whole library.
+ */
+export const COMBO_MAX_WORKING_MODELS = 32;
 
 const KINDS = ["saved", "shared", "vups"];
 const STATUS_LABELS = {
   working: "Working",
   not_working: "Not Working",
-  unknown: "Not checked"
+  unknown: "Not Checked",
+  checking: "Checking"
 };
 
 export function comboModelKey(model) {
@@ -31,7 +38,10 @@ export function normalizeSelectedModel(model) {
     provider: String(model.provider || "").trim() || (kind === "shared" ? "Shared" : kind === "vups" ? "Vups" : "Provider"),
     providerType: String(model.providerType || "").trim(),
     model: modelId,
-    label: String(model.label || "").trim() || modelId
+    label: String(model.label || "").trim() || modelId,
+    // What the model can do with a picture. `null` means the capability is
+    // not known, and an unknown model is never asked to read one.
+    vision: model.vision === true ? true : model.vision === false ? false : null
   };
 }
 
@@ -42,12 +52,89 @@ export function toggleSelectedModel(selected, model) {
   if (current.some(entry => entry.key === normalized.key)) {
     return current.filter(entry => entry.key !== normalized.key);
   }
-  if (current.length >= COMBO_MAX_SELECTED) return current;
   return [...current, normalized];
 }
 
 export function removeSelectedModel(selected, key) {
   return (Array.isArray(selected) ? selected : []).filter(entry => entry.key !== key);
+}
+
+/**
+ * Every model in the library, selected.
+ *
+ * Availability is not a condition: a model that is currently unavailable is
+ * still part of the library and stays selected, exactly as it would if the
+ * user had picked it by hand. The selection is capped at the limit, and a
+ * model that is already selected keeps its place and its stored identity.
+ */
+export function selectAllModels(selected, catalogModels) {
+  const current = Array.isArray(selected) ? selected : [];
+  const known = new Set(current.map(entry => entry.key));
+  const next = [...current];
+  for (const model of Array.isArray(catalogModels) ? catalogModels : []) {
+    const normalized = normalizeSelectedModel(model);
+    if (!normalized || known.has(normalized.key)) continue;
+    known.add(normalized.key);
+    next.push(normalized);
+  }
+  return next;
+}
+
+// How many models one availability request carries. A sweep over a thousand
+// models is split into batches of this size so each request can finish, and
+// each finished batch is already saved when the next one starts.
+export const COMBO_AVAILABILITY_BATCH = 20;
+
+/**
+ * The batches a sweep is split into.
+ *
+ * One request for a thousand models cannot finish, and a request that is cut
+ * short leaves the page with nothing. Splitting the work keeps every finished
+ * batch on the server and in the page as it lands, so the counters move while
+ * the sweep runs instead of jumping at the end.
+ */
+export function availabilityBatches(targets, size = COMBO_AVAILABILITY_BATCH) {
+  const list = Array.isArray(targets) ? targets : [];
+  const width = Math.max(1, Number(size) || 1);
+  const batches = [];
+  for (let index = 0; index < list.length; index += width) {
+    batches.push(list.slice(index, index + width));
+  }
+  return batches;
+}
+
+/**
+ * Every model the account holds.
+ *
+ * A sweep works from this list, so a search, a provider filter, or a page of
+ * the library can never decide which models are checked. Selected or not, on
+ * screen or not, every configured model is in here.
+ */
+export function libraryModelKeys(catalogModels) {
+  const list = Array.isArray(catalogModels) ? catalogModels : [];
+  const keys = [];
+  const seen = new Set();
+  for (const model of list) {
+    const key = String(model?.key || "");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    keys.push(key);
+  }
+  return keys;
+}
+
+/**
+ * Keep only the models a real check proved are working.
+ *
+ * A model with no availability record is not working as far as this app can
+ * tell, so it goes too: an unchecked model is not evidence of a working one,
+ * and keeping it would put a model that never answered into the run.
+ */
+export function unselectNotWorkingModels(selected, availability) {
+  const map = availability instanceof Map ? availability : availabilityMap(availability);
+  return (Array.isArray(selected) ? selected : []).filter(
+    entry => statusFor(map, entry.key) === "working"
+  );
 }
 
 export function moveSelectedModel(selected, key, offset) {
@@ -106,10 +193,6 @@ export function providerOptions(models) {
     .map(([provider, count]) => ({ provider, count }));
 }
 
-export function hasVisionModels(models) {
-  return (Array.isArray(models) ? models : []).some(model => model?.vision === true);
-}
-
 export function availabilityMap(entries) {
   const map = new Map();
   for (const entry of Array.isArray(entries) ? entries : []) {
@@ -147,10 +230,15 @@ export function comboCatalogState(config) {
   const selected = Array.isArray(config?.selected) ? config.selected : [];
   const summary = summaryFor(selected, availabilityMap(config?.availability));
   const checked = summary.working + summary.notWorking;
+  // How many of the selected models are known to read pictures. A model whose
+  // capability is unknown is not counted: an unknown model is never asked to
+  // read one.
+  const visionCapableCount = selected.filter(entry => entry?.vision === true).length;
   return {
     enabled: config?.enabled !== false,
     selectedCount: summary.selected,
-    workingCount: checked === 0 ? null : summary.working
+    workingCount: checked === 0 ? null : summary.working,
+    visionCapableCount
   };
 }
 
@@ -158,7 +246,10 @@ export function mergeSelectedModels(selected, catalogModels) {
   const byKey = new Map((Array.isArray(catalogModels) ? catalogModels : []).map(model => [model.key, model]));
   return (Array.isArray(selected) ? selected : []).map(entry => {
     const catalog = byKey.get(entry.key) || null;
-    return { ...entry, catalog };
+    // The catalogue knows what a model can do with a picture; the saved
+    // selection keeps that fact with the model.
+    const vision = entry?.vision === true ? true : entry?.vision === false ? false : catalog?.vision === true ? true : catalog?.vision === false ? false : null;
+    return { ...entry, vision, catalog };
   });
 }
 

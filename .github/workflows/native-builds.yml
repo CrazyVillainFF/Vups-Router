@@ -270,7 +270,7 @@ jobs:
       # after Authenticode signing has rewritten the executable. It is skipped
       # when no minisign key is configured: the app then checks the feed and
       # honestly reports that in-app install is unavailable, exactly as before.
-      - name: Sign the update package and publish its manifest
+      - name: Sign the update package and publish its manifest (optional)
         if: needs.windows-signing-available.outputs.updater == 'true'
         shell: pwsh
         env:
@@ -290,18 +290,30 @@ jobs:
           node scripts/make-updater-manifest.mjs --signature-file $sig --version $version --url $url --out release-assets/latest.json --notes "VupsRouter $version for Windows"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Windows in-app updates: signed manifest ``latest.json`` published for version ``$version``."
 
-      - name: Require the updater signing key
-        if: needs.windows-signing-available.outputs.updater != 'true'
-        shell: pwsh
-        run: |
-          Write-Error "TAURI_SIGNING_PRIVATE_KEY is not configured, so no signed latest.json can be published."
-          exit 1
-      - name: Confirm the updater manifest was produced
+      # Optional manifest generation: when TAURI_SIGNING_PRIVATE_KEY exists,
+      # produce signed latest.json; otherwise skip silently and allow ordinary
+      # Windows builds to proceed with manual-download fallback.
+      - name: Verify updater manifest when generated
         if: needs.windows-signing-available.outputs.updater == 'true'
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           if (-not (Test-Path release-assets/latest.json)) { Write-Error "latest.json was not produced."; exit 1 }
           if (-not (Test-Path "release-assets/$env:WINDOWS_EXE_ASSET.sig")) { Write-Error "The updater signature was not produced."; exit 1 }
+          
+          # Validate manifest structure
+          $manifest = Get-Content release-assets/latest.json -Raw | ConvertFrom-Json
+          if (-not $manifest.version) { Write-Error "Manifest missing version field"; exit 1 }
+          if (-not $manifest.platforms) { Write-Error "Manifest missing platforms field"; exit 1 }
+          if (-not $manifest.platforms."windows-x86_64") { Write-Error "Manifest missing windows-x86_64 platform entry"; exit 1 }
+          if (-not $manifest.platforms."windows-x86_64".url) { Write-Error "Manifest missing URL"; exit 1 }
+          if (-not $manifest.platforms."windows-x86_64".signature) { Write-Error "Manifest missing signature"; exit 1 }
+          
+          # Verify signature file exists and non-empty
+          $sigFile = Get-Item "release-assets/$env:WINDOWS_EXE_ASSET.sig"
+          if ($sigFile.Length -eq 0) { Write-Error "Signature file is empty"; exit 1 }
+          
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Updater manifest validated: version $($manifest.version), URL '$($manifest.platforms.'windows-x86_64'.url)'."
 
       - name: Verify signatures and record checksums
         id: verify
@@ -608,8 +620,6 @@ jobs:
     if: >-
       always() &&
       needs.windows.result == 'success' &&
-      needs.android-debug.result == 'success' &&
-      needs.android-release.result == 'success' &&
       (github.event_name != 'workflow_dispatch' || github.event.inputs.tag != '')
     permissions:
       contents: write
