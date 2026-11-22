@@ -11,6 +11,7 @@ import com.vupsrouter.app.downloads.DownloadService;
 import com.vupsrouter.app.downloads.DownloadStore;
 import com.vupsrouter.app.downloads.VupsDownloadsPlugin;
 import com.vupsrouter.app.updates.VupsAppInfoPlugin;
+import com.vupsrouter.app.storage.VupsStoragePlugin;
 
 public class MainActivity extends BridgeActivity {
 
@@ -18,6 +19,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(VupsDownloadsPlugin.class);
         registerPlugin(VupsAppInfoPlugin.class);
+        registerPlugin(VupsStoragePlugin.class);
         super.onCreate(savedInstanceState);
         DownloadStore.init(this);
         WebView webView = bridge == null ? null : bridge.getWebView();

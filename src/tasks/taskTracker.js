@@ -241,7 +241,13 @@ function upsertEntry(task) {
   const merged = { ...existing.task, ...task };
   // The detail carries the log; a summary must not throw it away.
   merged.events = storedEvents(task).length > 0 ? storedEvents(task) : (existing.task.events || []);
-  // reconcileOutput removed for testing
+  // List rows intentionally carry only output metadata, while detail and
+  // replay rows carry the actual answer. Reconcile the two shapes instead of
+  // letting a later list refresh replace a persisted answer with its metadata
+  // projection. That used to make a live answer disappear until reload.
+  if ("output" in task) {
+    merged.output = reconcileOutput(existing.task.output, task.output);
+  }
   // A list row is the weaker read of the question, so it cannot shorten one this
   // client already holds in full. An absent key says nothing at all.
   if ("pendingClarification" in task) {
@@ -326,7 +332,14 @@ function reconcileOutput(held, incoming) {
   if (incoming === undefined) return held;
   if (incoming === null) return null;
   const next = { ...(held || {}), ...incoming };
-  if (!("text" in incoming) && typeof held?.text === "string") next.text = held.text;
+  if (
+    typeof held?.text === "string" &&
+    held.text.trim() &&
+    (!("text" in incoming) || !String(incoming.text || "").trim())
+  ) {
+    next.text = held.text;
+    next.chars = Math.max(Number(held.chars) || held.text.length, Number(next.chars) || 0);
+  }
   return next;
 }
 

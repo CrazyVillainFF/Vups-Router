@@ -60,6 +60,12 @@ function createBackend(seed = []) {
       retry: record.retry || { attempts: 0, maxAttempts: 0, nextAttemptAt: null, lastCode: "", lastCategory: "" },
       error: record.error || { code: "", message: "", kind: "", retryable: false, providerStatus: null },
       waitingOn: record.waitingOn ?? null,
+      output: {
+        chars: String(record.output?.text || "").length,
+        updatedAt: record.output?.updatedAt || null,
+        messageId: record.output?.messageId || "",
+        finishReason: record.output?.finishReason || ""
+      },
       // The real routes attach this to every read. A list row gets the truncated
       // question, exactly like `clarificationPayload(row, { full: false })`.
       pendingClarification: clarificationPayload(record, { full: false })
@@ -88,6 +94,7 @@ function createBackend(seed = []) {
       completedSteps: plan.filter(step => step?.status === "completed").length,
       pendingSteps: plan.filter(step => step?.status === "pending" || step?.status === "blocked").length,
       result: record.result || {},
+      output: record.output || { text: "", updatedAt: null, messageId: "", finishReason: "" },
       modelRequests: record.modelRequests || [],
       toolOperations: record.toolOperations || [],
       events: (record.events || []).slice(),
@@ -620,6 +627,34 @@ test("a finished record is not resurrected by weaker evidence than the record it
   backend.setState("tsk_done", "completed");
   await refreshTrackedTask("tsk_done");
   assert.equal(getTrackedTask("tsk_done").state, "completed");
+});
+
+test("a list refresh never erases the persisted answer from a live task", async () => {
+  const backend = begin([
+    {
+      taskId: "tsk_answer",
+      state: "running",
+      description: "answer the question",
+      output: {
+        text: "The persisted answer.",
+        updatedAt: SEED_AT,
+        messageId: "assistant_answer",
+        finishReason: "stop"
+      },
+      events: [{ seq: 1, message: "Saved the answer." }]
+    }
+  ]);
+
+  await hydrateTaskTracker();
+  await refreshTrackedTask("tsk_answer");
+  assert.equal(getTrackedTask("tsk_answer").task.output.text, "The persisted answer.");
+
+  // The next list response is only the metadata projection. It must not
+  // replace the answer text that the detail read already delivered.
+  await hydrateTaskTracker();
+  const output = getTrackedTask("tsk_answer").task.output;
+  assert.equal(output.text, "The persisted answer.");
+  assert.equal(output.chars, "The persisted answer.".length);
 });
 
 test("cancellation reports what the backend actually did", async () => {

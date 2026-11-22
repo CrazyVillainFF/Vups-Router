@@ -80,7 +80,9 @@
 }
 
 .vr-activity[data-active] .vr-activity__thought {
-  color: var(--accent);
+  /* The live status must remain readable on both palettes. The accent is
+     reserved for the glyph; the label follows the theme's primary ink. */
+  color: var(--text);
 }
 
 .vr-activity__dot {

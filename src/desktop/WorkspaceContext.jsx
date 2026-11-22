@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import {
   addWorkspacePath,
   createWorkspaceFolder,
+  ensureDefaultWorkspace,
   isTauriRuntime,
   listWorkspaces,
   pickContainerFolder,
@@ -101,11 +102,10 @@ export function WorkspaceProvider({ children }) {
     [applyWorkspaces, owner]
   );
 
-  // An empty registry stays empty. The app never invents a project folder for a
-  // user: the first terminal or agent request asks through the native picker,
-  // and the folder the user chooses is what gets saved for this account on this
-  // device. App storage (Documents\VupsRouter) is not a project and is never
-  // adopted as one.
+  // A first Windows session gets the app-owned Files folder as its default
+  // workspace. This is deterministic, safe and durable: the native command
+  // creates/reuses Documents\VupsRouter\Files and registers it for this
+  // account. Users can still replace it with an explicitly selected folder.
   useEffect(() => {
     setActiveId(loadActiveId(owner));
     setChatBindings(readChatBindings(browserStorage(), owner));
@@ -118,8 +118,12 @@ export function WorkspaceProvider({ children }) {
     let cancelled = false;
     setLoading(true);
     listWorkspaces(owner)
-      .then(list => {
+      .then(async list => {
         if (cancelled) return;
+        return list.length > 0 ? list : [await ensureDefaultWorkspace(owner)].filter(Boolean);
+      })
+      .then(list => {
+        if (cancelled || !list) return;
         applyWorkspaces(list);
         setError("");
       })
@@ -173,7 +177,8 @@ export function WorkspaceProvider({ children }) {
     setLoading(true);
     try {
       const list = await listWorkspaces(owner);
-      applyWorkspaces(list);
+      const next = list.length > 0 ? list : [await ensureDefaultWorkspace(owner)].filter(Boolean);
+      applyWorkspaces(next);
       setError("");
       return list;
     } catch (loadError) {
@@ -183,13 +188,22 @@ export function WorkspaceProvider({ children }) {
       setLoading(false);
       setLoaded(true);
     }
-  }, [applyWorkspaces, owner, supported]);
+  }, [applyWorkspaces, ensureDefaultWorkspace, owner, supported]);
 
   const requireNative = useCallback(() => {
     if (!supported || !owner) {
       throw new Error("Workspace folders are available in the Windows app.");
     }
   }, [owner, supported]);
+
+  // A tool request can arrive before the first registry load has painted. The
+  // send path uses this same native default instead of opening a picker or
+  // allowing a no_workspace request through with an empty folder.
+  const ensureDefault = useCallback(async () => {
+    requireNative();
+    const workspace = await ensureDefaultWorkspace(owner);
+    return adopt(workspace);
+  }, [adopt, ensureDefaultWorkspace, owner, requireNative]);
 
   const addWorkspace = useCallback(async () => {
     requireNative();
@@ -377,6 +391,7 @@ export function WorkspaceProvider({ children }) {
       revisions,
       touchWorkspace,
       refresh,
+      ensureDefault,
       addWorkspace,
       pickProjectLocation,
       createProject,
@@ -403,6 +418,7 @@ export function WorkspaceProvider({ children }) {
       revisions,
       touchWorkspace,
       refresh,
+      ensureDefault,
       addWorkspace,
       pickProjectLocation,
       createProject,

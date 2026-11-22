@@ -462,6 +462,32 @@ function pickVision(models, exclude = new Set()) {
   return models.find(model => model.caps.has("vision") && !exclude.has(model.name.toLowerCase())) || null;
 }
 
+/**
+ * Return whether a model can perform one planner role.  This is deliberately
+ * based on the runtime-provided capability flags; the router never promotes a
+ * model to a specialist fallback from its display name.
+ */
+export function modelSupportsRole(model, role) {
+  const rows = normalizeModels([model]);
+  const row = rows[0];
+  if (!row) return false;
+  if (role === "vision") return row.caps.has("vision");
+  if (role === "reasoning") return row.caps.has("thinking") || row.caps.has("reasoning");
+  if (role === "coding") return row.caps.has("coding");
+  return row.caps.has("chat");
+}
+
+/**
+ * Find a compatible installed model that has not already been attempted.
+ * Selection order is stable so a retry is deterministic and remains local.
+ */
+export function fallbackModelForRole(role, models, excluded = new Set()) {
+  const blocked = new Set([...excluded].map(value => String(value).toLowerCase()));
+  return (Array.isArray(models) ? models : [])
+    .map(value => ({ value, name: String(typeof value === "string" ? value : value?.name || value?.model || "").trim() }))
+    .find(row => row.name && !blocked.has(row.name.toLowerCase()) && modelSupportsRole(row.value, role))?.name || "";
+}
+
 function previewOf(task) {
   const flat = String(task || "").replace(/\s+/g, " ").trim();
   if (!flat) return "";

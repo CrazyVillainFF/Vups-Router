@@ -199,10 +199,14 @@ fn normalize_owner(owner: &str) -> Result<String, String> {
     if owner.len() > MAX_OWNER_LEN {
         return Err("This account cannot use Local Chats.".into());
     }
-    if !owner
-        .chars()
-        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
-    {
+    // The authenticated owner is normally the account email address. Keep the
+    // value safe for use as a map key and storage data, while allowing the
+    // email characters used by the identity service. Path separators and
+    // control characters remain rejected so the owner cannot affect a file
+    // path.
+    if !owner.chars().all(|character| {
+        character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.' | '@' | '+')
+    }) {
         return Err("This account cannot use Local Chats.".into());
     }
     Ok(owner.to_string())
@@ -731,9 +735,17 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_owner_and_rejects_unknown_chat_ids() {
+    fn normalizes_account_owner_and_rejects_unknown_chat_ids() {
         assert_eq!(normalize_owner(" owner_1-a ").unwrap(), "owner_1-a");
-        assert!(normalize_owner("owner@example.com").is_err());
+        assert_eq!(
+            normalize_owner(" owner@example.com ").unwrap(),
+            "owner@example.com"
+        );
+        assert_eq!(
+            normalize_owner("owner+desktop@example.com").unwrap(),
+            "owner+desktop@example.com"
+        );
+        assert!(normalize_owner("owner@example.com\\..\\secret").is_err());
         assert!(normalize_chat_id("local-1234").is_err());
         assert!(normalize_chat_id("lcn_abc-123").is_ok());
     }

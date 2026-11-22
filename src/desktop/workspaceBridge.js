@@ -25,6 +25,17 @@ export async function listWorkspaces(owner) {
   }
 }
 
+// First-run Windows chats use the app-owned Files folder. The native command
+// creates/reuses the managed directory and registers it for this account;
+// callers still receive the same workspace record as an explicit selection.
+export async function ensureDefaultWorkspace(owner) {
+  try {
+    return await tauriInvoke("vups_root_default_workspace", { owner });
+  } catch (error) {
+    throw new Error(bridgeError(error, "Could not prepare the default project folder."));
+  }
+}
+
 export async function touchWorkspace(owner, id) {
   try {
     return await tauriInvoke("workspace_touch", { owner, id });

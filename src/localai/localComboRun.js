@@ -14,6 +14,7 @@
 import {
   buildRoutingPlan,
   buildStageMessages,
+  fallbackModelForRole,
   planSummary,
   stageRoleLabel
 } from "./localRouter.js";
@@ -84,10 +85,13 @@ export async function runLocalCombo({
   const completed = [];
   const failures = [];
   const traces = [];
-  for (let index = 0; index < plan.stages.length; index += 1) {
-    const stage = plan.stages[index];
-    const total = plan.stages.length;
+  const stages = plan.stages.map(stage => ({ ...stage }));
+  const attemptedModels = new Set();
+  for (let index = 0; index < stages.length; index += 1) {
+    const stage = stages[index];
+    const total = stages.length;
     if (signal?.aborted) throw abortError();
+    attemptedModels.add(String(stage.model).toLowerCase());
     const label = stageRoleLabel(stage.role);
     onEvent({
       type: "stage-start",
@@ -106,6 +110,20 @@ export async function runLocalCombo({
       streamed += piece;
       onEvent({
         type: "stage-chunk",
+        index,
+        total,
+        role: stage.role,
+        label,
+        model: stage.model,
+        final: Boolean(stage.final),
+        chunk: piece
+      });
+    };
+    const onThought = chunk => {
+      const piece = String(chunk || "");
+      if (!piece) return;
+      onEvent({
+        type: "stage-thought",
         index,
         total,
         role: stage.role,
@@ -146,7 +164,8 @@ export async function runLocalCombo({
           : await callModel(stage.model, {
               messages: stageMessages,
               signal,
-              onChunk
+              onChunk,
+              onThought
             });
       const text = String((typeof result === "string" ? result : result?.content) || streamed || "").trim();
       if (!text) throw new Error("returned no text");
@@ -177,7 +196,27 @@ export async function runLocalCombo({
         final: Boolean(stage.final),
         error: message
       });
-      const isFinalStage = index === total - 1;
+      const fallback = fallbackModelForRole(stage.role, models, attemptedModels);
+      if (fallback) {
+        attemptedModels.add(fallback.toLowerCase());
+        stages.splice(index + 1, 0, {
+          ...stage,
+          model: fallback,
+          detail: `Fallback ${stageRoleLabel(stage.role)} model`
+        });
+        onEvent({
+          type: "stage-fallback",
+          index,
+          total: stages.length,
+          role: stage.role,
+          label,
+          failedModel: stage.model,
+          model: fallback,
+          error: message
+        });
+        continue;
+      }
+      const isFinalStage = index === stages.length - 1;
       // A picture that is the only source for the answer cannot be skipped.
       // A reference image that only guides the look can be skipped safely, so
       // the later coding stage still runs and the failure stays in the record.

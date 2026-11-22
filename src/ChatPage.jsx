@@ -1598,6 +1598,7 @@ export default function ChatPage() {
     workspaceForChat,
     chatBindingFor,
     bindChatWorkspace,
+    ensureDefault: ensureDefaultWorkspaceForOwner,
     validateWorkspace,
     addWorkspace,
     openFolderPath,
@@ -2460,25 +2461,38 @@ export default function ChatPage() {
   }
 
   async function settleTaskRun(run, record) {
-    // Commit the settled state on the run object synchronously so a second
-    // tracker emit arriving before the React state commit cannot re-enter
-    // settleTaskRun and replay the completion cycle.
-    if (run) run.settledState = record.state;
-    setTaskRuns(previous => previous[run.taskId] ? {
-      ...previous, [run.taskId]: { ...previous[run.taskId], settledState: record.state }
-    } : previous);
+    // A terminal event is a notification, not the final payload. The worker
+    // persists the answer before completing the task, but a client can still
+    // observe the completion event while its replay/detail read contains an
+    // empty or partial output (especially across a reconnect). Always perform
+    // one authoritative detail read before settling the turn. This closes the
+    // race where the task is marked settled with an empty answer and a later
+    // refresh is the only thing that makes the real response appear.
+    if (!run || run.settledState === record.state || run.settlingState === record.state) return;
+    run.settlingState = record.state;
     const conversationId = String(record.conversationId || run.conversationId || "");
-    if (record.state === "completed") {
-      if (typeof record.output?.text !== "string") {
-        try {
-          record = await refreshTaskRun(run.taskId);
-        } catch (error) {
-          if (loadedTaskRef.current === conversationId) {
-            setTaskActionError({ taskId: run.taskId, message: getApiErrorMessage(error) });
-          }
-          return;
-        }
+    try {
+      record = await refreshTaskRun(run.taskId);
+    } catch (error) {
+      run.settlingState = "";
+      if (loadedTaskRef.current === conversationId) {
+        setTaskActionError({ taskId: run.taskId, message: getApiErrorMessage(error) });
       }
+      return;
+    }
+    if (record.state !== "completed" && record.state !== "failed" && record.state !== "cancelled") {
+      run.settlingState = "";
+      return;
+    }
+    // Commit only after the authoritative read succeeds. If that read failed,
+    // the next tracker poll is allowed to retry instead of leaving the turn
+    // permanently stuck in its pre-refresh state.
+    run.settledState = record.state;
+    run.settlingState = "";
+    setTaskRuns(previous => previous[run.taskId] ? {
+      ...previous, [run.taskId]: { ...previous[run.taskId], settledState: record.state, settlingState: "" }
+    } : previous);
+    if (record.state === "completed") {
       if (loadedTaskRef.current !== conversationId) return;
       const answer = record.output?.text || "";
       setMessages(previous =>
@@ -2653,7 +2667,11 @@ export default function ChatPage() {
       detectLocalRuntime(nativeShell)
         .then(next => {
           if (cancelled) return;
-          setLocalModels(next.state === LOCAL_AI_STATES.ready ? next.models : []);
+          // A failed probe is a temporary runtime-health result, not evidence
+          // that models were uninstalled. Keep the last discovered catalog so
+          // a busy/cold Ollama process cannot replace a local selection with a
+          // cloud fallback while a chat is in progress.
+          if (next.state === LOCAL_AI_STATES.ready) setLocalModels(next.models);
           setLocalModelsSettled(true);
         })
         .catch(() => {
@@ -3248,7 +3266,12 @@ export default function ChatPage() {
     setWorkspaceProvisionError("");
     try {
       const named = await openTypedFolder(text);
-      const workspace = named || (await addWorkspace());
+      // A first-run project request must use the same managed Files folder the
+      // workspace provider advertises. Only an explicitly missing chat binding
+      // goes to the picker; it must never silently follow another workspace.
+      const workspace = named ||
+        (boundChatId ? null : await ensureDefaultWorkspaceForOwner()) ||
+        (await addWorkspace());
       if (!workspace?.id) {
         setNotice("No project folder was selected, so nothing was sent. Choose a project folder and try again.");
         return false;
@@ -4031,7 +4054,9 @@ export default function ChatPage() {
       desktopRequestOpensTerminal(requestText)
     ) {
       try {
-        const picked = await addWorkspace();
+        const picked = boundChatId
+          ? await addWorkspace()
+          : await ensureDefaultWorkspaceForOwner();
         if (picked?.path) {
           sendWorkspace = picked;
           const scopeId = currentChatScope();
@@ -4316,6 +4341,13 @@ export default function ChatPage() {
           refreshConversations().catch(() => {});
         } catch (error) {
           submissionFailedRef.current = true;
+          console.error("[local-ai] local chat handoff failed", {
+            model: "Local Combo AI",
+            name: error?.name || "Error",
+            code: error?.code || "",
+            message: error?.message || String(error || "Unknown local chat handoff error"),
+            stack: error?.stack || ""
+          });
           throw error;
         }
         let answer = "";
@@ -4392,6 +4424,12 @@ export default function ChatPage() {
                 if (!event.final) return;
                 answer += event.chunk;
                 noteLocalRunStage(localConversationId, answer);
+                paintStream();
+              } else if (event.type === "stage-thought") {
+                // Ollama reasoning models stream `message.thinking` for a long
+                // time before their first answer token. Keep the real activity
+                // visible without putting hidden reasoning into the reply.
+                status = `_${selectedLine} · ${event.label} (${event.model}) is thinking…_`;
                 paintStream();
               } else if (event.type === "stage-failed" && !event.final) {
                 status = `_${selectedLine} · ${event.label} (${event.model}) could not finish; continuing…_`;
@@ -4641,6 +4679,13 @@ export default function ChatPage() {
           if (String(activeConvId || "").startsWith("local-")) removeTask(activeConvId).catch(() => {});
           refreshConversations().catch(() => {});
         } catch (error) {
+          console.error("[local-ai] local chat handoff failed", {
+            model: localModel,
+            name: error?.name || "Error",
+            code: error?.code || "",
+            message: error?.message || String(error || "Unknown local chat handoff error"),
+            stack: error?.stack || ""
+          });
           submissionFailedRef.current = true;
           throw error;
         }
@@ -4756,6 +4801,13 @@ export default function ChatPage() {
           }
           return;
         } catch (error) {
+          console.error("[local-ai] local run failed", {
+            model: localModel,
+            name: error?.name || "Error",
+            code: error?.code || "",
+            message: error?.message || String(error || "Unknown local runtime error"),
+            stack: error?.stack || ""
+          });
           const stopped = error?.name === "AbortError";
           const settled = localPartial.trim()
             ? stopped

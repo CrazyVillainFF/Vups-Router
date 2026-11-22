@@ -18,6 +18,33 @@ export const LOCAL_AI_STATES = Object.freeze({
 
 const TAGS_TIMEOUT_MS = 4000;
 const PULL_TIMEOUT_MS = 30 * 60 * 1000;
+export const LOCAL_AI_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
+
+function localRequestTimeoutMs(value) {
+  const configured = Number(value ?? import.meta.env?.VITE_LOCAL_AI_TIMEOUT_MS);
+  if (!Number.isFinite(configured) || configured <= 0) return LOCAL_AI_REQUEST_TIMEOUT_MS;
+  return Math.min(Math.max(Math.round(configured), 60 * 1000), 30 * 60 * 1000);
+}
+
+function requestSignal(signal, timeoutMs) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const abort = () => controller.abort();
+  if (signal?.aborted) abort();
+  else signal?.addEventListener("abort", abort, { once: true });
+  return {
+    signal: controller.signal,
+    timedOut: () => timedOut,
+    dispose: () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+    }
+  };
+}
 
 function runtimeBaseUrl() {
   const configured = (import.meta.env?.VITE_LOCAL_AI_URL || "").trim();
@@ -220,7 +247,16 @@ function toolUnsupportedError() {
   return error;
 }
 
-async function streamChat(name, { messages, tools, onChunk, signal, request } = {}) {
+async function streamChat(name, {
+  messages,
+  tools,
+  onChunk,
+  onThought,
+  onProgress,
+  signal,
+  request,
+  timeoutMs
+} = {}) {
   const base = runtimeBaseUrl();
   const body = {
     model: name,
@@ -228,12 +264,14 @@ async function streamChat(name, { messages, tools, onChunk, signal, request } = 
     stream: true
   };
   if (Array.isArray(tools) && tools.length) body.tools = tools;
-  const response = await (request || fetch)(`${base}/api/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal
-  });
+  const requestState = requestSignal(signal, localRequestTimeoutMs(timeoutMs));
+  try {
+    const response = await (request || fetch)(`${base}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: requestState.signal
+    });
   if (!response.ok) {
     let detail = "";
     try {
@@ -244,7 +282,14 @@ async function streamChat(name, { messages, tools, onChunk, signal, request } = 
     if (response.status === 400 && /does not support tools|tools are not supported|tool calling/i.test(detail)) {
       throw toolUnsupportedError();
     }
-    throw new Error(`The local runtime could not answer (${response.status}).`);
+    let message = "";
+    try {
+      const payload = detail ? JSON.parse(detail) : null;
+      message = typeof payload?.error === "string" ? payload.error.trim() : "";
+    } catch {
+      message = "";
+    }
+    throw new Error(message || `The local runtime could not answer (${response.status}).`);
   }
   if (!response.body) throw new Error(`The local runtime could not answer (${response.status}).`);
   const reader = response.body.getReader();
@@ -252,35 +297,65 @@ async function streamChat(name, { messages, tools, onChunk, signal, request } = 
   let buffer = "";
   let content = "";
   const toolCalls = [];
+  const handleEvent = event => {
+    if (!event || typeof event !== "object") return;
+    onProgress?.(event);
+    if (event.error) {
+      const message = String(event.error);
+      if (/does not support tools|tools are not supported|tool calling/i.test(message)) throw toolUnsupportedError();
+      throw new Error(message);
+    }
+    const piece = event?.message?.content;
+    if (typeof piece === "string" && piece) {
+      content += piece;
+      if (typeof onChunk === "function") onChunk(piece);
+    }
+    const thought = event?.message?.thinking;
+    if (typeof thought === "string" && thought && typeof onThought === "function") {
+      onThought(thought);
+    }
+    if (Array.isArray(event?.message?.tool_calls)) toolCalls.push(...event.message.tool_calls);
+  };
+  const handleLine = line => {
+    const text = String(line || "").trim();
+    if (!text) return;
+    let event;
+    try {
+      event = JSON.parse(text);
+    } catch {
+      // A malformed line is not a complete response record. Keep the old
+      // tolerant behavior for transport noise.
+      return;
+    }
+    // Provider and tool-capability errors from valid records must propagate.
+    handleEvent(event);
+  };
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
     buffer = lines.pop() || "";
-    for (const line of lines) {
-      const text = line.trim();
-      if (!text) continue;
-      let event;
-      try {
-        event = JSON.parse(text);
-      } catch {
-        continue;
-      }
-      if (event.error) {
-        const message = String(event.error);
-        if (/does not support tools|tools are not supported|tool calling/i.test(message)) throw toolUnsupportedError();
-        throw new Error(message);
-      }
-      const piece = event?.message?.content;
-      if (typeof piece === "string" && piece) {
-        content += piece;
-        if (typeof onChunk === "function") onChunk(piece);
-      }
-      if (Array.isArray(event?.message?.tool_calls)) toolCalls.push(...event.message.tool_calls);
-    }
+    for (const line of lines) handleLine(line);
   }
+  // Ollama normally terminates every record with a newline, but its HTTP
+  // response is still valid if the final record is delivered without one.
+  // Flush both the decoder and the pending line so the answer/done event is
+  // never lost at EOF.
+  buffer += decoder.decode();
+  handleLine(buffer);
   return { content, toolCalls };
+  } catch (error) {
+    if (requestState.timedOut() && error?.name === "AbortError") {
+      const timeout = new Error(`The local model did not answer within ${Math.round(localRequestTimeoutMs(timeoutMs) / 1000)} seconds.`);
+      timeout.name = "TimeoutError";
+      timeout.code = "local_ai_timeout";
+      throw timeout;
+    }
+    throw error;
+  } finally {
+    requestState.dispose();
+  }
 }
 
 /**

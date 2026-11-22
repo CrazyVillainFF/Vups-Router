@@ -68,7 +68,18 @@ export function TaskTrackerProvider({ children, intervalMs }) {
       if (document.visibilityState === "visible") pollTaskTrackerOnce().catch(() => {});
     };
     document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
+    let removeResume = () => {};
+    const capacitor = typeof window !== "undefined" ? window.Capacitor : null;
+    const app = capacitor?.Plugins?.App;
+    if (capacitor?.isNativePlatform?.() && app?.addListener) {
+      app.addListener("appStateChange", state => {
+        if (state?.isActive) pollTaskTrackerOnce().catch(() => {});
+      }).then(handle => { removeResume = () => handle?.remove?.(); }).catch(() => {});
+    }
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      removeResume();
+    };
   }, [ownerId]);
 
   const submit = useCallback((input, options = {}) => {

@@ -1,6 +1,6 @@
 [[permission]]
 identifier = "allow-workspace-commands"
-description = "Allow the VupsRouter desktop shell to list, pick, create, rename, remove, validate, scan, read, tree, search, and Git-review the user's registered local workspaces, and to create, save, rename, move, and delete items inside one from the Files panel. Creation registers a real Windows folder; every other path is a workspace-relative path re-checked against the workspace root, so nothing reaches outside the folder the user selected. Validation resolves an id under the calling owner only and re-checks that the folder still exists. The vups_root commands create, open, and report only the app's own storage folder inside the Windows Documents known folder; that folder is never registered as a project workspace."
+description = "Allow the VupsRouter desktop shell to list, pick, create, rename, remove, validate, scan, read, tree, search, and Git-review the user's registered local workspaces, and to create, save, rename, move, and delete items inside one from the Files panel. Creation registers a real Windows folder; every other path is a workspace-relative path re-checked against the workspace root, so nothing reaches outside the folder the user selected. Validation resolves an id under the calling owner only and re-checks that the folder still exists. The vups_root commands create, open, report, and register the app's own storage folder inside the Windows Documents known folder as the first-run default workspace."
 commands.allow = [
   "workspace_list",
   "workspace_validate",
@@ -26,5 +26,6 @@ commands.allow = [
   "vups_root_status",
   "vups_root_ensure",
   "vups_root_open",
-  "vups_root_reveal"
+  "vups_root_reveal",
+  "vups_root_default_workspace"
 ]

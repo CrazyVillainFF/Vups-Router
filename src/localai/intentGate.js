@@ -39,7 +39,7 @@ const SMALL_TALK =
 // A question or an explanation. These are answered with words; they are not a
 // instruction to touch the machine.
 const QUESTION_OR_EXPLANATION =
-  /^(?:what|why|when|where|which|who|whose|whom|explain|define|describe|meaning\s+of|difference\s+between|is\s+it\s+possible|help\s+me\s+(?:understand|explain|figure\s+out|grasp|know)|tell\s+me\s+(?:about|what|how|why|whether|if)|walk\s+me\s+through|show\s+me\s+(?:how|why|what)|how\s+(?:do|does|did|can|should|would|is|are|to)|can\s+you\s+(?:explain|describe|define|tell|walk|show|help|clarify)|could\s+you\s+(?:explain|describe|tell|show))\b/i;
+  /^(?:what|why|when|where|which|who|whose|whom|explain|define|describe|compare|contrast|analy[sz]e|discuss|summari[sz]e|calculate|solve|meaning\s+of|difference\s+between|trade[- ]offs?|is\s+it\s+possible|help\s+me\s+(?:understand|explain|figure\s+out|grasp|know)|tell\s+me\s+(?:about|what|how|why|whether|if)|walk\s+me\s+through|show\s+me\s+(?:how|why|what)|how\s+(?:do|does|did|can|should|would|is|are|to)|can\s+you\s+(?:explain|describe|define|tell|walk|show|help|clarify)|could\s+you\s+(?:explain|describe|tell|show))\b/i;
 
 // Asking for code to read is ordinary coding: the answer belongs in the chat,
 // not in a file the user never named.

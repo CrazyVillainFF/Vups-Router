@@ -4,6 +4,7 @@ mod composer_files;
 mod desktop_exec;
 mod desktop_server;
 mod desktop_tools;
+mod local_chats;
 mod panel_browser;
 mod panel_terminal;
 mod skills;
@@ -16,6 +17,7 @@ fn main() {
     tauri::Builder::default()
         .manage(desktop_tools::DesktopToolState::default())
         .manage(composer_files::ComposerFileState::default())
+        .manage(local_chats::LocalChatState::default())
         .manage(panel_browser::BrowserState::default())
         .manage(panel_terminal::TerminalState::default())
         .plugin(tauri_plugin_opener::init())
@@ -100,6 +102,14 @@ fn main() {
             composer_files::composer_pick_folder,
             composer_files::composer_release_folder,
             composer_files::composer_read_files,
+            local_chats::local_chats_list,
+            local_chats::local_chats_get,
+            local_chats::local_chats_create,
+            local_chats::local_chats_append_message,
+            local_chats::local_chats_update,
+            local_chats::local_chats_delete,
+            local_chats::local_chats_import,
+            local_chats::local_chats_storage_info,
             skills::skills_status,
             skills::skills_scan,
             skills::skills_install,
