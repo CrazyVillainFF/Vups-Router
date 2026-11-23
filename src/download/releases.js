@@ -62,7 +62,7 @@ export const DOWNLOADS = {
     status: "available",
     title: "VupsRouter Web App",
     description: "Install the web experience on supported devices.",
-    version: "2.1.9",
+    version: "2.1.11",
     architecture: "Web",
     format: "PWA",
     fileSize: null,
