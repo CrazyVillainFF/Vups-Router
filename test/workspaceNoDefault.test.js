@@ -31,8 +31,8 @@ test("the desktop policy resolves only the selected workspace, for every mode", 
   assert.match(builder, /workspace_error = Some\(message\)/, "an unreadable folder is reported");
   assert.match(
     builder,
-    /mode == ToolMode::Workspace && workspace_root\.is_none\(\)/,
-    "workspace mode without a folder is an error, not a silent grant"
+    /matches!\(mode, ToolMode::Workspace \| ToolMode::Full\)/,
+    "scoped modes without a folder are an error, not a silent grant"
   );
   assert.doesNotMatch(builder, /default_working_directory\(\)/, "no fabricated root is consulted");
 });

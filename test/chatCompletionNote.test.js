@@ -44,6 +44,18 @@ test("terminal settlement re-reads the durable answer before fencing the turn", 
   assert.match(settle, /run\.settlingState === record\.state/);
   assert.match(settle, /run\.settlingState = \"\"/);
   assert.match(settle, /record\.state !== \"completed\"/);
+  assert.match(settle, /conversationId = String\(record\.conversationId \|\| run\.conversationId \|\| conversationId \|\| \"\"\)/,
+    "the authoritative read can supply the conversation binding");
+  assert.match(settle, /if \(!answer && conversationId\)/,
+    "a terminal task with metadata-only output reconciles the saved conversation");
+});
+
+test("active tasks keep an authoritative detail fallback when events are missed", () => {
+  assert.match(chatPage, /authoritative detail read alive/);
+  assert.match(chatPage, /refreshTaskRun\(taskId\)\.catch\(\(\) => \{\}\)/);
+  assert.match(chatPage, /setInterval\(reconcile, 3000\)/);
+  assert.match(chatPage, /isOpenTaskState\(view\.state\)/);
+  assert.match(chatPage, /import \{ isOpenTaskState, isTerminalTaskState \} from "\.\/services\/taskApi\.js"/);
 });
 
 test("a run that answered needs no completion card of its own", () => {

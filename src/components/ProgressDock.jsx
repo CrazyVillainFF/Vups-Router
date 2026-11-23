@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CaretDown, Check } from "@phosphor-icons/react";
 import { formatDuration } from "../chat/progress.js";
+import "./ProgressDock.css";
 
 export default function ProgressDock({ steps = [], startedAt, isGenerating = false }) {
   const [open, setOpen] = useState(true);

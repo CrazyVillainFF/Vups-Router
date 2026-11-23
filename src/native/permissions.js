@@ -7,27 +7,24 @@ export const DEFAULT_PERMISSION_MODE = "ask";
 export const WINDOWS_PERMISSION_MODES = Object.freeze([
   {
     id: "ask",
-    label: "Ask me every time",
+    label: "Ask for approval",
     shortLabel: "Ask",
     risk: "Review",
-    description:
-      "Every protected local operation waits for an in-chat card naming the action, target and risk; switching here from a broader mode clears saved grants first. \"Allow Once\" covers that one call, and \"Allow Always (Only for This Chat)\" answers repeats for that target in the same chat only, held in memory until the chat or app ends. Deletes, shell commands, process control and links always ask; exact-file grants stay revocable in Settings."
+    description: "Request my permission before protected file operations."
   },
   {
     id: "workspace",
-    label: "Agent (workspace)",
-    shortLabel: "Workspace",
+    label: "Approve for me",
+    shortLabel: "Approve",
     risk: "Scoped",
-    description:
-      "File reads and edits stay inside the authorized project folders, resolved against the real path. Deleting, app launches, opening files or links, and terminal commands ask once with the exact target; a path outside it is blocked with a clear reason and is never prompted into a wider grant, and switching here from Full access clears saved file permissions."
+    description: "Automatically approve eligible operations within your authorized workspace."
   },
   {
     id: "full",
     label: "Full access",
     shortLabel: "Full",
     risk: "Broad",
-    description:
-      "All supported local capabilities run without a repeated approval: file edits, deletes, app launches, links, and PowerShell or cmd commands with real output; switch back to Ask or Agent at any time. Protected system locations always ask, force-terminating an app always asks, every action is audited, and Full access never grants administrator rights or bypasses Windows access controls. It is authorized for this app session only: after a restart, or on another account, local access returns to Ask and the warning confirmation must be given again."
+    description: "Allow file operations within your configured workspace without repeated approval."
   }
 ]);
 
@@ -61,21 +58,17 @@ function writeStoredMode(storage, key, value) {
 /**
  * The mode this account chose on this device, plus the value it was refused.
  *
- * `Ask me every time` and `Agent (workspace)` are settings, so they persist per
- * account. `Full access` is an authorization the user gave against a warning,
- * and nothing in this app stores a full-access consent, so a saved or inherited
- * `full` is never adopted: the account starts at Ask and `dropped` reports what
- * was refused, which is what lets the page say so out loud. The legacy
- * device-wide value is consumed once and then removed, so a second account on
- * this device cannot pick it up.
+ * All three choices persist per account. The native engine still revalidates
+ * the selected policy on every launch; Full access remains workspace-scoped,
+ * audited, and subject to its protected-location and destructive-operation
+ * safeguards. The legacy device-wide value is consumed once and then removed,
+ * so a second account on this device cannot pick it up.
  */
 export function readPermissionMode(storage, owner) {
   if (!storage) return { mode: DEFAULT_PERMISSION_MODE, dropped: "" };
   const stored = readStoredMode(storage, permissionModeStorageKey(owner));
   if (isPermissionMode(stored)) {
-    return stored === "full"
-      ? { mode: DEFAULT_PERMISSION_MODE, dropped: "full" }
-      : { mode: stored, dropped: "" };
+    return { mode: stored, dropped: "" };
   }
   const legacy = readStoredMode(storage, LEGACY_WINDOWS_PERMISSION_STORAGE_KEY);
   if (legacy !== null) {
@@ -86,7 +79,7 @@ export function readPermissionMode(storage, owner) {
     }
     return {
       mode: DEFAULT_PERMISSION_MODE,
-      dropped: legacy === "full" ? "full" : ""
+      dropped: ""
     };
   }
   return { mode: DEFAULT_PERMISSION_MODE, dropped: "" };
@@ -97,9 +90,8 @@ export function loadPermissionMode(storage, owner) {
 }
 
 /**
- * Records the durable half of the choice. Full access answers for this session
- * only, so it is written out of the account's storage rather than saved: the
- * next launch has to meet the warning again.
+ * Records the account's selected mode. Native policy installation still
+ * validates the owner and workspace on every launch before local tools run.
  */
 export function savePermissionMode(storage, owner, mode) {
   if (!isPermissionMode(mode)) return DEFAULT_PERMISSION_MODE;
@@ -107,7 +99,7 @@ export function savePermissionMode(storage, owner, mode) {
     writeStoredMode(
       storage,
       permissionModeStorageKey(owner),
-      mode === "full" ? null : mode
+      mode
     );
   }
   return mode;

@@ -222,9 +222,11 @@ test("neither the Apex picker row nor the composer chip carries an app mark", ()
 
 test("the welcome screen opens on text instead of a brand graphic", () => {
   const chat = read("src/ChatPage.jsx");
-  const welcome = chat.slice(chat.indexOf("function WelcomeScreen"), chat.indexOf("{configured && onStarter ?"));
+  const welcome = chat.slice(chat.indexOf("function WelcomeScreen"), chat.indexOf("function MessageList"));
   assert.ok(!/vr-welcome-art|vr-welcome-icon|vr-welcome-ring/.test(welcome), "no oversized logo block");
-  assert.match(welcome, /vr-welcome-eyebrow/, "the eyebrow still leads");
+  assert.match(welcome, /vr-welcome-brand/, "the brand still leads");
+  assert.match(welcome, /vr-welcome-connect/, "the connection message still follows it");
+  assert.match(welcome, /vr-welcome-free/, "the free label remains visible");
   assert.match(welcome, /vr-welcome-title/, "the heading still follows it");
 
   const css = read("src/chat.css");

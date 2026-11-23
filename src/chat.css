@@ -402,106 +402,6 @@
   margin: 0 0 14px;
   color: var(--text);
 }
-.vr-welcome-title span { color: var(--accent); }
-
-.vr-welcome-eyebrow {
-  margin: 0 0 12px;
-  color: var(--text-tertiary, var(--muted));
-  font: 10px var(--mono);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.vr-welcome-desc {
-  font-size: 15px;
-  line-height: 1.75;
-  color: var(--text-secondary, var(--muted));
-  max-width: 430px;
-  margin: 0;
-}
-
-.vr-welcome-start {
-  width: 100%;
-  margin-top: 32px;
-}
-
-.vr-welcome-start-label {
-  margin: 0 0 10px;
-  color: var(--text-tertiary, var(--muted));
-  font-size: 12px;
-  text-align: left;
-}
-
-.vr-welcome-starters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
-}
-
-.vr-welcome-starter {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 13px 14px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
-  color: var(--text-primary, var(--ink));
-  text-align: left;
-  cursor: pointer;
-  transition: border-color var(--duration-base, 200ms) var(--ease-standard, ease),
-    background var(--duration-base, 200ms) var(--ease-standard, ease),
-    transform var(--duration-fast, 120ms) var(--ease-standard, ease);
-}
-
-.vr-welcome-starter:hover {
-  border-color: var(--accent-line, color-mix(in srgb, var(--accent) 32%, transparent));
-  background: var(--surface-raised, var(--bg));
-}
-
-.vr-welcome-starter:active {
-  transform: translateY(1px);
-}
-
-.vr-welcome-starter:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.vr-welcome-starter-title {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.vr-welcome-starter-hint {
-  color: var(--text-tertiary, var(--muted));
-  font-size: var(--text-xs, 11.5px);
-  line-height: 1.5;
-}
-
-.vr-welcome-cta {
-  display: inline-flex;
-  align-items: center;
-  min-height: 38px;
-  margin-top: 26px;
-  padding: 0 18px;
-  border: 1px solid var(--accent-line, color-mix(in srgb, var(--accent) 32%, transparent));
-  border-radius: 999px;
-  background: var(--accent-soft, color-mix(in srgb, var(--accent) 12%, transparent));
-  color: var(--accent);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.vr-welcome-cta:hover {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-}
-
-.vr-welcome-cta:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
 
 /* ── Message List ─────────────────────────────────── */
 .vr-message-list {
@@ -1080,6 +980,12 @@
   color: var(--muted);
   font-weight: 400;
 }
+.vr-permission-card__explanation {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
 .vr-permission-card__rows { display: flex; flex-wrap: wrap; column-gap: 14px; row-gap: 2px; margin: 5px 0 0; }
 .vr-permission-card__row {
   display: grid;
@@ -1561,20 +1467,20 @@
   }
 
   .vr-welcome {
-    padding: 24px 16px;
+    justify-content: flex-start;
+    padding: 32px 16px 18px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    overflow-anchor: none;
   }
 
   .vr-welcome-title {
-    font-size: 2rem;
+    max-width: 18ch;
+    font-size: clamp(26px, 8vw, 36px);
+    line-height: 1.05;
   }
 
-  .vr-welcome-start {
-    margin-top: 24px;
-  }
-
-  .vr-welcome-starters {
-    grid-template-columns: 1fr;
-  }
+  .vr-welcome-brand { margin-bottom: 8px; }
 }
 
 @media (pointer: coarse) and (max-width: 650px) {
@@ -1583,6 +1489,15 @@
   .vr-prompt-bar .prompt-bar__input {
     font-size: 16px;
   }
+
+  .vr-chat-layout,
+  .vr-chat-main {
+    height: var(--vr-viewport-height, 100dvh);
+    max-height: var(--vr-viewport-height, 100dvh);
+  }
+
+  .vr-chat-main { min-height: 0; }
+  .vr-welcome-inner { flex: none; }
 }
 
 /* Conversation row with delete action (server-backed history) */
@@ -2197,199 +2112,113 @@ button.vr-nav-item {
 
 /* ── Welcome: asymmetric editorial hero ──────────────────────────── */
 .vr-welcome {
+  position: relative;
+  isolation: isolate;
   padding: clamp(24px, 5vh, 56px) clamp(20px, 4vw, 48px) 24px;
   overflow-y: auto;
   text-align: center;
   justify-content: center;
 }
 
+.vr-welcome::before {
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  left: 50%;
+  width: min(72vw, 760px);
+  height: min(34vw, 360px);
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--accent-soft), transparent 68%);
+  content: "";
+  opacity: 0.7;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  filter: blur(18px);
+}
+
+.vr-welcome-brand {
+  margin: 0 0 14px;
+  color: var(--blocks-muted);
+  font: 600 12px/1.2 var(--blocks-ui);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .vr-welcome-inner {
+  position: relative;
   max-width: var(--vr-composer-width, 860px);
   margin: auto;
   align-items: center;
   display: flex;
   flex-direction: column;
-}
-
-.vr-welcome-eyebrow {
-  margin: 0 0 16px;
-  color: var(--blocks-muted);
-  font: 500 10px var(--blocks-mono);
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-}
-
-.vr-welcome-eyebrow em {
-  font-family: var(--blocks-display);
-  font-style: italic;
-  font-weight: 400;
-  font-size: 13px;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--blocks-ink);
-  margin-left: 6px;
+  animation: vr-welcome-fade-up 600ms ease-out both;
 }
 
 .vr-welcome-title {
-  margin: 0 0 16px;
-  font-family: var(--blocks-display);
-  font-weight: 400;
-  font-size: clamp(40px, 4.6vw, 72px);
-  line-height: 0.98;
-  letter-spacing: -0.02em;
+  margin: 0;
+  font-family: var(--blocks-ui);
+  font-weight: 700;
+  font-size: clamp(2.25rem, 5vw, 4rem);
+  line-height: 1.12;
+  letter-spacing: -0.025em;
   text-align: center;
   color: var(--blocks-ink);
-  max-width: none;
+  max-width: 900px;
+  text-wrap: balance;
 }
 
 .vr-welcome-title span {
-  color: var(--blocks-accent);
-  font-style: italic;
+  display: inline;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
-.vr-welcome-desc {
-  margin: 0;
-  max-width: none;
+.vr-welcome-connect { color: var(--blocks-ink); }
+
+.vr-welcome-model,
+.vr-welcome-free {
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.vr-welcome-model {
+  background-image: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--blocks-accent) 94%, white),
+    color-mix(in srgb, var(--blocks-accent) 68%, white)
+  );
+}
+
+.vr-welcome-free {
+  background-image: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--blocks-success) 78%, white),
+    var(--blocks-success)
+  );
+}
+
+.vr-welcome-subtitle {
+  max-width: 560px;
+  margin: 18px 0 0;
   color: var(--blocks-muted);
-  font: 400 12px/1.7 var(--blocks-mono);
-  font-variant-numeric: tabular-nums;
+  font: 400 16px/1.5 var(--blocks-ui);
+  text-wrap: balance;
 }
 
-.vr-welcome-note {
-  margin: 16px 0 0;
-  max-width: none;
-  color: var(--blocks-ink);
-  font-size: 14px;
-  line-height: 1.6;
+@keyframes vr-welcome-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-.vr-welcome-cta {
-  min-height: 36px;
-  margin-top: 24px;
-  padding: 0 16px;
-  border: 1px solid var(--blocks-line-strong);
-  border-radius: 6px;
-  background: var(--blocks-raised);
-  color: var(--blocks-ink);
-  font: 500 12.5px var(--blocks-mono);
-  letter-spacing: 0.02em;
-}
-
-.vr-welcome-cta:hover {
-  background: var(--blocks-surface);
-  border-color: var(--blocks-accent);
-  color: var(--blocks-accent);
-}
-
-.vr-welcome-cta:focus-visible {
-  outline: 1px solid var(--blocks-accent);
-  outline-offset: 2px;
-}
-
-/* ── Suggestions: numbered editorial list ────────────────────────── */
-.vr-welcome-start {
-  width: 100%;
-  max-width: 100%;
-  margin-top: 40px;
-}
-
-.vr-welcome-start-label {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin: 0 0 8px;
-  color: var(--blocks-muted);
-  font: 400 10px var(--blocks-mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.vr-welcome-start-keys {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 11px;
-}
-
-.vr-welcome-kbd {
-  padding: 2px 5px;
-  border: 1px solid var(--blocks-line-strong);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  background: var(--blocks-raised);
-  color: var(--blocks-ink);
-  font: 500 10px var(--blocks-mono);
-}
-
-.vr-welcome-starters {
-  grid-template-columns: repeat(auto-fit, minmax(100%, 1fr));
-  gap: 0;
-  border-top: 1px solid var(--blocks-line);
-}
-
-.vr-welcome-starter {
-  flex-direction: row;
-  align-items: baseline;
-  justify-content: center;
-  gap: 16px;
-  padding: 14px 8px;
-  border: 0;
-  border-bottom: 1px solid var(--blocks-line);
-  border-radius: 0;
-  background: transparent;
-  color: var(--blocks-ink);
-  transition: background 180ms ease-out, border-color 180ms ease-out;
-}
-
-.vr-welcome-starter:hover {
-  border-bottom-color: var(--blocks-line-strong);
-  background: var(--blocks-raised);
-}
-
-.vr-welcome-starter:active {
-  transform: none;
-}
-
-.vr-welcome-starter:focus-visible {
-  outline: 1px solid var(--blocks-accent);
-  outline-offset: -1px;
-}
-
-.vr-welcome-starter-num {
-  flex: none;
-  width: 24px;
-  color: var(--blocks-muted);
-  font: 500 11px var(--blocks-mono);
-  font-variant-numeric: tabular-nums;
-}
-
-.vr-welcome-starter-body {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 2px;
-  min-width: 0;
-}
-
-.vr-welcome-starter-title {
-  font-family: var(--blocks-ui);
-  font-size: 15px;
-  font-weight: 500;
-  letter-spacing: -0.015em;
-}
-
-.vr-welcome-starter:hover .vr-welcome-starter-title {
-  color: var(--blocks-accent);
-}
-
-.vr-welcome-starter-hint {
-  color: var(--blocks-muted);
-  font: 400 11.5px/1.5 var(--blocks-mono);
+@media (prefers-reduced-motion: reduce) {
+  .vr-welcome-inner { animation: none; }
 }
 
 /* ── Composer: solid rectangle, crisp focus ────────────────────────── */
@@ -2758,7 +2587,6 @@ button.vr-nav-item {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .vr-welcome-starter,
   .vr-blocks-list__row,
   .vr-blocks[data-dim="on"],
   .vr-block-cursor {

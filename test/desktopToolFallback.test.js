@@ -209,6 +209,34 @@ test("the chat page resends a tool turn as a plain chat when tools are unavailab
   assert.match(block, /result = await streamChatResponse\(requestOptions\);/);
 });
 
+test("an explicit Windows action is routed natively before a model can refuse it", async () => {
+  const original = apiClient.post;
+  let posted = false;
+  apiClient.post = async () => {
+    posted = true;
+    return { data: { type: "final", content: "I cannot access your computer." } };
+  };
+  try {
+    const calls = [];
+    const result = await runDesktopToolChat({
+      messages: [{ role: "user", content: "Open Notepad" }],
+      userText: "Open Notepad",
+      workspacePath: "C:\\Users\\test\\Documents\\VupsRouter\\Files",
+      operationId: "native_action_test",
+      executeTool: async (tool, args) => {
+        calls.push({ tool, args });
+        return { ok: true, data: { name: "Notepad", pid: 1234, running: true } };
+      }
+    });
+    assert.equal(posted, false, "a direct action does not depend on provider tool calling");
+    assert.deepEqual(calls, [{ tool: "launch_app", args: { name: "Notepad" } }]);
+    assert.match(result.content, /Notepad launched/);
+    assert.match(result.content, /PID 1234/);
+  } finally {
+    apiClient.post = original;
+  }
+});
+
 test("a plain question on a server without the endpoint sends no warning card", () => {
   const source = chatPageSource.replace(/\r\n/g, "\n");
   // The card is only owed to the user when a project folder made tools the
@@ -218,15 +246,16 @@ test("a plain question on a server without the endpoint sends no warning card", 
   assert.doesNotMatch(source, /\n\s*setComposerWarning\(reason\);/);
 });
 
-test("a server without the tool endpoint is probed once per app session", () => {
+test("a server without the tool endpoint is remembered, but explicit actions still retry it", () => {
   const source = chatPageSource.replace(/\r\n/g, "\n");
   assert.match(source, /const DESKTOP_TOOLS_MISSING_KEY = "vr\.desktopToolsMissing";/);
 
-  const gate = source.slice(source.indexOf("const useDesktopTools ="), source.indexOf("const useDesktopTools =") + 320);
+  const gate = source.slice(source.indexOf("const useDesktopTools ="), source.indexOf("const useDesktopTools =") + 700);
   assert.match(gate, /nativeShell === NATIVE_SHELLS\.windows/);
   assert.match(gate, /Boolean\(workspaceOwner\)/);
   assert.match(gate, /imagePayload\.length === 0/);
-  assert.match(gate, /!serverLacksToolEndpoint/);
+  assert.match(gate, /looksLikeDesktopActionRequest\(requestText\)/);
+  assert.match(gate, /looksLikeDesktopActionRequest\(requestText\) \|\| !serverLacksToolEndpoint/);
 
   // Only the missing-endpoint code is a server-wide fact; a model that cannot
   // call tools must not disable the endpoint for the rest of the session.

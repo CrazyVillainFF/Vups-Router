@@ -4,8 +4,8 @@
 // that says it is not running.
 
 const MODE_LABELS = {
-  ask: "Ask me every time",
-  workspace: "Agent (workspace)",
+  ask: "Ask for approval",
+  workspace: "Approve for me",
   full: "Full access"
 };
 
@@ -35,7 +35,7 @@ export function effectivePolicyProblem(
   }
   if (mode === "workspace" && workspaceId && !status.workspaceRoot) {
     return (
-      "The project folder for this chat could not be resolved, so Agent (workspace) has no folder " +
+      "The project folder for this chat could not be resolved, so Approve for me has no folder " +
       "to stay inside and every local file call is blocked."
     );
   }

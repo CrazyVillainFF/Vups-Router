@@ -150,10 +150,11 @@ export default function NativeChatControls({
                 <strong>{item.label}</strong>
                 {item.id === selected.id ? <Check size={13} weight="bold" aria-hidden="true" /> : null}
               </span>
+              <span className="vr-permission__option-copy">{item.description}</span>
               {item.id === "full" ? (
                 <span className="vr-permission__option-warning">
                   <Warning size={12} weight="fill" aria-hidden="true" />
-                  Confirmation required; ends when this app session does
+                  Protected and destructive operations still require confirmation
                 </span>
               ) : null}
             </button>
@@ -165,7 +166,7 @@ export default function NativeChatControls({
               onClick={() => choose("ask")}
             >
               <ShieldCheck size={13} aria-hidden="true" />
-              Return to Ask me every time
+              Return to Ask for approval
             </button>
           ) : null}
           {notice ? (

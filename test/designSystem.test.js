@@ -49,29 +49,19 @@ test("reduced motion is honoured globally without freezing progress indicators",
   assert.match(block, /animation-iteration-count:\s*infinite\s*!important/);
 });
 
-test("the chat welcome offers starting prompts that only fill the composer", () => {
+test("the chat welcome keeps only the free-model brand message", () => {
   const page = read("src/ChatPage.jsx");
   const css = read("src/chat.css");
 
-  assert.match(page, /const STARTER_PROMPTS = \[/);
-  const starters = page.slice(page.indexOf("const STARTER_PROMPTS"), page.indexOf("function WelcomeScreen"));
-  assert.equal((starters.match(/title:/g) || []).length, 3, "expected three starter prompts");
-
-  // The handler must be the draft-insertion path, never the send path.
-  assert.match(page, /onClick=\{\(\) => onStarter\(item\.prompt\)\}/);
-  assert.match(
-    page,
-    /onStarter=\{text => setDraftInsertion\(\{ text, key: Date\.now\(\) \}\)\}/
-  );
-  assert.doesNotMatch(
-    page.slice(page.indexOf("function WelcomeScreen"), page.indexOf("function MessageList")),
-    /handleSend/
-  );
-  assert.match(page, /nothing is sent until you press Enter/);
-
-  assert.match(css, /\.vr-welcome-starters\s*\{/);
-  assert.match(css, /\.vr-welcome-starter:focus-visible\s*\{/);
-  assert.match(css, /\.vr-welcome-starters\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit/);
+  const welcome = page.slice(page.indexOf("function WelcomeScreen"), page.indexOf("function MessageList"));
+  assert.match(welcome, /VupsRouter/);
+  assert.match(welcome, /Connect Your/);
+  assert.match(welcome, /Free Model/);
+  assert.match(welcome, /100% Free/);
+  assert.match(welcome, /Route every request to the best free AI model/);
+  assert.doesNotMatch(welcome, /Ask once|The blocks are|START WITH A PROMPT|Explain a codebase|Draft a bug report|Plan a release/);
+  assert.doesNotMatch(css, /\.vr-welcome-starters\s*\{/);
+  assert.doesNotMatch(css, /\.vr-welcome-starter\b/);
 });
 
 test("the sidebar fold is signposted instead of slicing the last task", () => {

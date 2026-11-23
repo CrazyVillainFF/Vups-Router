@@ -1,0 +1,132 @@
+.vr-progress-dock {
+  width: 100%;
+  --vr-generation-ink: var(--text, #f4f7fb);
+  color: var(--text);
+}
+
+.vr-progress-dock__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: 500 12.5px/1.25 var(--font-sans), sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vr-progress-dock__head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.vr-progress-dock__title {
+  color: var(--vr-generation-ink);
+}
+
+.vr-progress-dock__meta,
+.vr-progress-dock__chevron {
+  color: var(--muted);
+}
+
+.vr-progress-dock__meta {
+  display: inline-flex;
+  gap: 5px;
+  margin-left: auto;
+  font: 10px var(--mono);
+  white-space: nowrap;
+}
+
+.vr-progress-dock__chevron {
+  flex: none;
+  transition: transform 180ms ease;
+}
+
+.vr-progress-dock__chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.vr-progress-spinner,
+.vr-progress-step__spinner {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: vr-progress-spin 800ms linear infinite;
+}
+
+.vr-progress-step__spinner {
+  width: 11px;
+  height: 11px;
+}
+
+.vr-progress-dock__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 4px 0 0 19px;
+  padding: 0;
+  list-style: none;
+}
+
+.vr-progress-step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--muted);
+  font: 11.5px/1.35 var(--font-sans), sans-serif;
+}
+
+.vr-progress-step[data-status="active"] {
+  color: var(--text);
+}
+
+.vr-progress-step__mark {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--success);
+}
+
+.vr-progress-step[data-status="active"] .vr-progress-step__mark {
+  color: var(--accent);
+}
+
+.vr-progress-step__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vr-progress-step__duration {
+  margin-left: auto;
+  color: var(--muted);
+  font: 10px var(--mono);
+  white-space: nowrap;
+}
+
+@keyframes vr-progress-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vr-progress-spinner,
+  .vr-progress-step__spinner {
+    animation: none;
+  }
+
+  .vr-progress-dock__chevron {
+    transition: none;
+  }
+}

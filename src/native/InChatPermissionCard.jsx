@@ -152,12 +152,20 @@ export default function InChatPermissionCard({ request, busy, error, onRespond }
     <section className="vr-permission-card" aria-labelledby={`permission-title-${request.requestId}`}>
       <div className="vr-permission-card__head">
         <ShieldCheck size={14} weight="fill" aria-hidden="true" />
-        <h3 id={`permission-title-${request.requestId}`}>VupsRouter wants permission</h3>
+        <h3 id={`permission-title-${request.requestId}`}>Permission request</h3>
         <span className="vr-permission-card__action">{actionText(request)}</span>
         {busy ? <span className="vr-permission-card__status">Applying…</span> : null}
       </div>
 
+      <p className="vr-permission-card__explanation">
+        VupsRouter is asking before this local operation runs. Review the exact target below.
+      </p>
+
       <dl className="vr-permission-card__rows">
+        <div className="vr-permission-card__row">
+          <dt>Operation</dt>
+          <dd className="vr-permission-card__value">{actionText(request)}</dd>
+        </div>
         {target.value ? (
           <div className="vr-permission-card__row">
             <dt>{target.label}</dt>

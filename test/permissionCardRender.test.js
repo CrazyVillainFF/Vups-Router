@@ -104,7 +104,8 @@ test("the compact card names the action, the file and its location", async () =>
   const container = render(React.createElement(Card, { request: fileRequest, busy: false, error: "", onRespond() {} }));
 
   const text = container.textContent;
-  assert.match(text, /VupsRouter wants permission/);
+  assert.match(text, /Permission request/);
+  assert.match(text, /VupsRouter is asking before this local operation runs/);
   assert.match(text, /Read a file/);
   assert.match(text, /File/);
   assert.match(text, /notes\.txt/);
@@ -169,7 +170,8 @@ test("without a chat, a folder request cannot use the exact-file action", async 
   assert.deepEqual(buttons(container), ["Allow Once", "Allow Always (Only for This File)", "Deny"]);
   assert.deepEqual(buttonStates(container), [false, true, false], "a folder is never a saved grant without a chat");
 
-  const [folderLabel] = [...container.querySelectorAll(".vr-permission-card__row dt")].map(node => node.textContent);
+  const labels = [...container.querySelectorAll(".vr-permission-card__row dt")].map(node => node.textContent);
+  const folderLabel = labels.find(label => label === "Folder");
   assert.equal(folderLabel, "Folder");
 });
 

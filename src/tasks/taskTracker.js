@@ -376,7 +376,17 @@ async function resyncTask(entry) {
   const before = `${entry.state}|${entry.lastSeq}`;
   const record = { ...detail, events: storedEvents(detail) };
   const heldCursor = entry.lastSeq;
-  entry.task = record;
+  // Detail is normally authoritative, but older deployments and reconnect
+  // responses can still omit fields that were present on an earlier read. Do
+  // not let that weaker shape erase the answer or the conversation binding the
+  // tracker already holds. A terminal read must be monotonic from the viewer's
+  // point of view just like a list/event merge is.
+  const merged = { ...entry.task, ...record };
+  merged.events = record.events.length > 0 ? record.events : (entry.task?.events || []);
+  if ("output" in record) {
+    merged.output = reconcileOutput(entry.task?.output, record.output);
+  }
+  entry.task = merged;
   // The single-record read is the backend speaking plainly about this one task,
   // so it is the one thing allowed to state the terminal answer — and the
   // running answer — over what this client holds. The guard in applyState
@@ -384,7 +394,7 @@ async function resyncTask(entry) {
   // page) resurrecting a finished task on its own.
   entry.state = record.state;
   entry.stage = record.stage || "";
-  entry.conversationId = record.conversationId || null;
+  entry.conversationId = record.conversationId || entry.conversationId || null;
   // The retained window can start above or below what this client holds; the
   // cursor never goes backwards either way.
   entry.lastSeq = Math.max(heldCursor, cursorOf(record));

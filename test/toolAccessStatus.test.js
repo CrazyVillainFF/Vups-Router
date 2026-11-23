@@ -24,7 +24,7 @@ test("the diagnostics show the live session, model, mode and folder", () => {
   assert.equal(ready.session.tone, "ok");
   assert.equal(ready.server.value, "Available");
   assert.equal(ready.model.value, "claude-sonnet-4 · Anthropic");
-  assert.equal(ready.permission.value, "Ask me every time");
+  assert.equal(ready.permission.value, "Ask for approval");
   assert.equal(ready.workspace.value, "demo");
   assert.equal(ready.workspace.hint, "C:\\work\\demo");
   assert.equal(ready.tools.value, "31 tools");
@@ -63,7 +63,7 @@ test("full access is called out as the broad mode", () => {
   assert.equal(full.permission.value, "Full access");
   assert.equal(full.permission.tone, "warn");
   const workspace = rowsByKey(toolAccessRows({ windowsShell: true, tauriAvailable: true, permissionMode: "workspace" }));
-  assert.equal(workspace.permission.value, "Agent (workspace)");
+  assert.equal(workspace.permission.value, "Approve for me");
   assert.equal(workspace.permission.tone, "ok");
 });
 

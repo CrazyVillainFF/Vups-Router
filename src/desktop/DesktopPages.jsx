@@ -1066,7 +1066,7 @@ export function HelpPage() {
         </article>
         <article className="vr-card">
           <h2>Permission modes</h2>
-          <p>Ask me every time prompts before each local operation, Agent allows reads inside the selected workspace and asks outside it, and Full access allows broad filesystem tools but still asks for protected system locations and never bypasses Windows permissions. Switching modes cancels any waiting card, and switching to a stricter mode clears saved file permissions for good.</p>
+          <p>Ask for approval requests permission before protected file operations, Approve for me automatically approves eligible operations within the selected workspace, and Full access allows workspace file operations without repeated approval while still protecting sensitive locations and never bypassing Windows permissions. Switching modes cancels any waiting card and rechecks the workspace boundary.</p>
         </article>
         <article className="vr-card">
           <h2>Search and organize</h2>

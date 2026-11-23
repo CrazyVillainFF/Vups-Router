@@ -37,25 +37,30 @@ function memoryStorage() {
   };
 }
 
-test("the three modes keep their ids and labels", () => {
+test("the permission picker exposes exactly three modes with short descriptions", () => {
   assert.deepEqual(
     WINDOWS_PERMISSION_MODES.map(mode => [mode.id, mode.label]),
     [
-      ["ask", "Ask me every time"],
-      ["workspace", "Agent (workspace)"],
+      ["ask", "Ask for approval"],
+      ["workspace", "Approve for me"],
       ["full", "Full access"]
     ]
   );
+  assert.equal(WINDOWS_PERMISSION_MODES.length, 3);
+  assert.deepEqual(
+    WINDOWS_PERMISSION_MODES.map(mode => mode.description),
+    [
+      "Request my permission before protected file operations.",
+      "Automatically approve eligible operations within your authorized workspace.",
+      "Allow file operations within your configured workspace without repeated approval."
+    ]
+  );
   assert.equal(DEFAULT_PERMISSION_MODE, "ask");
-  assert.match(permissionModeInfo("workspace").description, /outside it is blocked/i);
-  assert.match(permissionModeInfo("full").description, /protected system locations always ask/i);
-  assert.match(permissionModeInfo("ask").description, /Allow once.*one call/i);
-  // The page has to say what Full access really is: an authorization for one
-  // app session, not a setting that comes back on the next launch.
-  assert.match(permissionModeInfo("full").description, /this app session only/i);
+  assert.match(permissionModeInfo("workspace").description, /authorized workspace/i);
+  assert.match(permissionModeInfo("full").description, /configured workspace/i);
 });
 
-test("Ask and Agent persist per account and never cross to another one", () => {
+test("all three choices persist per account and never cross to another one", () => {
   const storage = memoryStorage();
   assert.equal(loadPermissionMode(storage, "user_a"), "ask");
   assert.equal(savePermissionMode(storage, "user_a", "workspace"), "workspace");
@@ -63,26 +68,23 @@ test("Ask and Agent persist per account and never cross to another one", () => {
   assert.equal(loadPermissionMode(storage, "user_b"), "ask", "an account never reads another's mode");
   assert.equal(savePermissionMode(storage, "user_a", "root"), "ask");
   assert.equal(loadPermissionMode(storage, "user_a"), "workspace", "an invalid write never overwrites the saved mode");
+  assert.equal(savePermissionMode(storage, "user_a", "full"), "full");
+  assert.equal(loadPermissionMode(storage, "user_a"), "full");
   storage.setItem(permissionModeStorageKey("user_a"), "everything");
   assert.equal(loadPermissionMode(storage, "user_a"), "ask", "an unknown stored value falls back to ask");
 });
 
-test("Full access is a session authorization and is never restored", () => {
+test("legacy full access values remain readable and are not silently discarded", () => {
   const storage = memoryStorage();
   assert.equal(savePermissionMode(storage, "user_a", "full"), "full");
-  assert.equal(storage.getItem(permissionModeStorageKey("user_a")), null, "full is never written out");
-  assert.deepEqual(readPermissionMode(storage, "user_a"), { mode: "ask", dropped: "" });
-  // Even a `full` that reached storage from an older build is refused, and the
-  // refusal is reported so the UI can say the restart happened.
-  storage.setItem(permissionModeStorageKey("user_a"), "full");
-  assert.deepEqual(readPermissionMode(storage, "user_a"), { mode: "ask", dropped: "full" });
-  assert.equal(storage.getItem(permissionModeStorageKey("user_a")), "full", "the refused value is not rewritten");
+  assert.equal(storage.getItem(permissionModeStorageKey("user_a")), "full");
+  assert.deepEqual(readPermissionMode(storage, "user_a"), { mode: "full", dropped: "" });
 });
 
 test("the legacy device-wide mode is consumed once and cannot reach the next account", () => {
   const storage = memoryStorage();
   storage.setItem(LEGACY_WINDOWS_PERMISSION_STORAGE_KEY, "full");
-  assert.deepEqual(readPermissionMode(storage, "user_a"), { mode: "ask", dropped: "full" });
+  assert.deepEqual(readPermissionMode(storage, "user_a"), { mode: "ask", dropped: "" });
   assert.equal(storage.getItem(LEGACY_WINDOWS_PERMISSION_STORAGE_KEY), null);
   assert.deepEqual(readPermissionMode(storage, "user_b"), { mode: "ask", dropped: "" });
   // A durable half of the legacy value migrates to the reading account only, once.
@@ -95,13 +97,12 @@ test("the legacy device-wide mode is consumed once and cannot reach the next acc
 
 test("the page reads the mode under the owning account and reports what it refused", () => {
   const load = chatPageSource.slice(
-    chatPageSource.indexOf("const { mode, dropped } = readPermissionMode"),
+    chatPageSource.indexOf("const { mode } = readPermissionMode"),
     chatPageSource.indexOf("useEffect(() => {\n    if (nativeShell !== NATIVE_SHELLS.windows || !workspaceOwner)")
   );
   assert.match(load, /readPermissionMode\(localBrowserStorage\(\), workspaceOwner\)/);
   assert.match(load, /setPermissionMode\(mode\)/);
-  assert.match(load, /dropped/);
-  assert.match(load, /was not restored/);
+  assert.match(load, /setPermissionNotice\(""\)/);
   // Nothing device-wide is adopted at mount, and no stale selector state is
   // trusted: the native reply is compared with what the chat asked for.
   assert.match(chatPageSource, /useState\(DEFAULT_PERMISSION_MODE\)/);
@@ -113,7 +114,7 @@ test("the page reads the mode under the owning account and reports what it refus
 });
 
 test("the effective policy is reconciled before local tools are treated as available", () => {
-  const installed = { owner: "user_a", mode: "ask", label: "Ask me every time", workspaceRoot: null };
+  const installed = { owner: "user_a", mode: "ask", label: "Ask for approval", workspaceRoot: null };
   assert.equal(effectivePolicyProblem(installed, { owner: "user_a", mode: "ask" }), "");
   // A policy that belongs to an account which signed out is not this chat's
   // access, even when the mode matches.
@@ -123,19 +124,19 @@ test("the effective policy is reconciled before local tools are treated as avail
   );
   assert.match(
     effectivePolicyProblem({ ...installed, mode: "full", label: "Full access" }, { owner: "user_a", mode: "ask" }),
-    /running Full access, not the Ask me every time/
+    /running Full access, not the Ask for approval/
   );
-  // Agent (workspace) is a boundary: with no resolved folder nothing is granted.
+  // Approve for me is a boundary: with no resolved folder nothing is granted.
   assert.match(
     effectivePolicyProblem(
-      { owner: "user_a", mode: "workspace", label: "Agent (workspace)", workspaceRoot: null },
+      { owner: "user_a", mode: "workspace", label: "Approve for me", workspaceRoot: null },
       { owner: "user_a", mode: "workspace", workspaceId: "ws_1" }
     ),
     /no folder\s+to stay inside/
   );
   assert.equal(
     effectivePolicyProblem(
-      { owner: "user_a", mode: "workspace", label: "Agent (workspace)", workspaceRoot: "C:\\work" },
+      { owner: "user_a", mode: "workspace", label: "Approve for me", workspaceRoot: "C:\\work" },
       { owner: "user_a", mode: "workspace", workspaceId: "ws_1" }
     ),
     ""
@@ -176,10 +177,10 @@ test("the selector only moves after the native layer adopts the mode", () => {
   assert.match(controlsSource, /Applying…/);
 });
 
-test("full access stays visibly marked and offers a one-click return to ask", () => {
+test("full access stays visibly marked and offers a one-click return to approval", () => {
   assert.match(controlsSource, /data-risk=\{selected\.id\}/);
   assert.match(controlsSource, /selected\.id === "full"/);
-  assert.match(controlsSource, /Return to Ask me every time/);
+  assert.match(controlsSource, /Return to Ask for approval/);
   assert.match(controlsSource, /choose\("ask"\)/);
   assert.match(controlsSource, /WINDOWS_PERMISSION_MODES\.map\(\(item, index\)/);
 });
@@ -224,6 +225,7 @@ test("the native layer, not the selector, decides every read", () => {
   assert.match(rustSource, /next\.mode\.breadth\(\) < existing\.mode\.breadth\(\)/);
   // Workspace mode blocks outside paths outright; no card can widen it.
   assert.match(rustSource, /policy\.mode == ToolMode::Workspace/);
+  assert.match(rustSource, /ToolMode::Full && policy\.workspace_root\.is_some/);
   assert.match(rustSource, /outside_workspace/);
   assert.match(rustSource, /workspace_required/);
   assert.match(rustSource, /requires_fresh_approval/);

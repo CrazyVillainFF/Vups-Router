@@ -358,7 +358,8 @@ test("the approval bridge is a named event and never a browser dialog", () => {
 
 test("the approval card is short, in-chat, and offers exactly three actions", () => {
   assert.match(cardSource, /className="vr-permission-card"/);
-  assert.match(cardSource, /VupsRouter wants permission/);
+  assert.match(cardSource, /Permission request/);
+  assert.match(cardSource, /VupsRouter is asking before this local operation runs/);
   assert.match(cardSource, /request\.canPersist === true/, "native eligibility decides the third action");
 
   // The required fields are present and the old explanations are gone.

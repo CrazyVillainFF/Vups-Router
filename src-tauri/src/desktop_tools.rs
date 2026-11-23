@@ -547,8 +547,8 @@ impl ToolMode {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Ask => "Ask me every time",
-            Self::Workspace => "Agent (workspace)",
+            Self::Ask => "Ask for approval",
+            Self::Workspace => "Approve for me",
             Self::Full => "Full access",
         }
     }
@@ -819,21 +819,43 @@ fn exact_resource_can_persist(path: &Path) -> bool {
     }
 }
 
-/// A chat-scoped answer is kept in memory, but it must still name a real target:
-/// an absolute local path that is not protected and not a link. A file that does
-/// not exist yet is a legitimate write target and is keyed by its exact path.
+/// A chat-scoped answer is kept in memory, but it must still name a real target.
+/// Filesystem operations stay out of protected locations. An application launch
+/// is different: the native layer already resolved one exact executable and the
+/// grant only authorizes that executable plus its exact arguments; allowing a
+/// packaged app under WindowsApps to be remembered does not grant file or shell
+/// access to that protected directory.
 fn chat_target_can_remember(prompt: &ApprovalPrompt) -> bool {
     let raw = prompt.scope_path.trim();
     if raw.is_empty() || is_network_path(raw) {
         return false;
     }
     let path = Path::new(raw);
-    if !path.is_absolute() || is_protected_system_path(path) {
+    if !path.is_absolute() {
+        return false;
+    }
+    let protected = is_protected_system_path(path);
+    if protected && prompt.action != "launch" {
         return false;
     }
     match fs::symlink_metadata(path) {
-        Ok(metadata) => !metadata.file_type().is_symlink(),
-        Err(_) => true,
+        Ok(metadata) => {
+            let launch_file = path
+                .extension()
+                .map(|extension| matches!(
+                    extension.to_string_lossy().to_ascii_lowercase().as_str(),
+                    "exe" | "com" | "bat" | "cmd" | "lnk"
+                ))
+                .unwrap_or(false);
+            metadata.is_file()
+                && !metadata.file_type().is_symlink()
+                && (prompt.action != "launch" || launch_file)
+        }
+        // A file write may target a new path, so chat-scoped write grants keep
+        // the exact-name behavior used by the existing authorization model.
+        // Launches must resolve to a real executable before they can be
+        // remembered.
+        Err(_) => prompt.action != "launch",
     }
 }
 
@@ -4002,11 +4024,13 @@ fn execute_guarded(
     // silently widening the workspace. App launches and shell commands have no
     // file path here: a shell is not sandboxed to a folder, so it is authorized
     // by its own card that names the exact command.
-    if policy.mode == ToolMode::Workspace {
+    if policy.mode == ToolMode::Workspace
+        || (policy.mode == ToolMode::Full && policy.workspace_root.is_some())
+    {
         let Some(root) = policy.workspace_root.as_deref() else {
             return ToolResponse::failure(
                 "workspace_required",
-                "Agent (workspace) mode has no folder it may write into: this chat is not bound \
+                "This permission mode has no folder it may write into: this chat is not bound \
                  to a project folder that exists, or the folder cannot be read. Nothing was read \
                  or changed.",
             );
@@ -4237,11 +4261,14 @@ pub async fn desktop_tool_set_policy(
     } else {
         None
     };
-    if mode == ToolMode::Workspace && workspace_root.is_none() && workspace_error.is_none() {
+    if matches!(mode, ToolMode::Workspace | ToolMode::Full)
+        && workspace_root.is_none()
+        && workspace_error.is_none()
+    {
         // Workspace mode is a boundary, not a hint. With no folder there is
         // nothing to contain the agent, so nothing is silently granted.
         workspace_error = Some(
-            "Choose a project folder for this chat before using Agent (workspace) access.".into(),
+                "Choose a project folder for this chat before using Approve for me access.".into(),
         );
     }
     let policy = ToolPolicy {
@@ -6560,6 +6587,44 @@ mod tests {
             scope.grants.grants.len() == 1,
             "the pre-seeded grant is not duplicated and no new one is stored"
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_chat_can_remember_one_protected_windows_app_but_not_a_protected_file() {
+        let root = PathBuf::from(std::env::var("WINDIR").expect("WINDIR is set"));
+        let executable = root.join("System32").join("notepad.exe");
+        if !executable.is_file() {
+            // Windows installations may provide Notepad as a packaged app
+            // without the classic System32 executable.
+            return;
+        }
+        let launch = ApprovalPrompt {
+            request_id: "launch".into(),
+            approval_key: "launch".into(),
+            operation_id: "turn".into(),
+            tool: "launch_app".into(),
+            action: "launch".into(),
+            scope_path: path_text(&executable),
+            scope_name: "Notepad".into(),
+            summary: "Launch Notepad".into(),
+            access: "launch".into(),
+            read_only: false,
+            modifies_data: false,
+            destructive: false,
+            command: Some(path_text(&executable)),
+            details: Vec::new(),
+            chat_id: "chat-a".into(),
+            can_persist: false,
+            expires_at: 0,
+        };
+        assert!(chat_target_can_remember(&launch));
+
+        let mut protected_file = launch.clone();
+        protected_file.action = "contents".into();
+        protected_file.access = "contents".into();
+        protected_file.scope_path = path_text(&root.join("win.ini"));
+        assert!(!chat_target_can_remember(&protected_file));
     }
 
     #[test]

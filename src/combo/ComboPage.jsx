@@ -25,6 +25,8 @@ import {
   mergeSelectedModels,
   providerOptions,
   selectAllModels,
+  selectWorkingModels,
+  selectionCatalogForSave,
   selectionForSave,
   statusFor,
   statusLabel,
@@ -569,9 +571,9 @@ export default function ComboPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  function persistSelection(next, { refreshAvailability = true } = {}) {
+  function persistSelection(next, { refreshAvailability = true, catalog = catalogModels } = {}) {
     const seq = ++saveSeq.current;
-    const payload = selectionForSave(next, catalogModels);
+    const payload = selectionForSave(next, selectionCatalogForSave(next, catalog));
     setSelected(next);
     setSaveState("saving");
     setSaveError("");
@@ -644,7 +646,32 @@ export default function ComboPage() {
       return;
     }
     setPanelNotice("");
-    persistSelection(next, { refreshAvailability: false });
+    persistSelection(next, { refreshAvailability: false, catalog: models });
+  }
+
+  // Select only models whose completed availability check is Working. Fetch
+  // the complete matching catalogue first so pagination/search cannot hide a
+  // verified model. Unknown and Not Working models are intentionally omitted.
+  async function selectAllWorking() {
+    let models = catalogModels;
+    const total = catalog.total || catalogModels.length;
+    if (catalogModels.length < total) {
+      try {
+        const data = await fetchComboState({
+          offset: 0,
+          limit: 0,
+          query,
+          provider: workingOnly ? "" : providerFilter
+        });
+        models = Array.isArray(data?.catalog?.models) ? data.catalog.models : models;
+      } catch (error) {
+        setPanelNotice(getApiErrorMessage(error));
+        return;
+      }
+    }
+    const next = selectWorkingModels(selectedRef.current, models, displayAvailability);
+    setPanelNotice(next.length === 0 ? "No verified Working models are available yet. Run Test All first." : "");
+    persistSelection(next, { refreshAvailability: false, catalog: models });
   }
 
   // Keep only the models a real check proved are working. The decision reads
@@ -842,6 +869,14 @@ export default function ComboPage() {
                 disabled={selected.length === 0}
               >
                 Unselect Not Working
+              </button>
+              <button
+                type="button"
+                className="combo-selection-btn"
+                onClick={selectAllWorking}
+                disabled={availabilityBusy || catalogModels.length === 0}
+              >
+                Select All Working
               </button>
               <button
                 type="button"

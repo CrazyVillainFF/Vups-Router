@@ -137,6 +137,36 @@ export function unselectNotWorkingModels(selected, availability) {
   );
 }
 
+/**
+ * Select every model that a completed availability check proved working.
+ *
+ * The catalogue is the source of model identity and availability is the
+ * source of health, so an unchecked or stale model can never enter the
+ * selection. Existing selection order is preserved and duplicate keys are
+ * ignored.
+ */
+export function selectWorkingModels(selected, catalogModels, availability) {
+  const map = availability instanceof Map ? availability : availabilityMap(availability);
+  const current = Array.isArray(selected) ? selected : [];
+  const next = [];
+  const seen = new Set();
+  for (const entry of current) {
+    const normalized = normalizeSelectedModel(entry);
+    if (!normalized || seen.has(normalized.key)) continue;
+    if (statusFor(map, normalized.key) !== "working") continue;
+    seen.add(normalized.key);
+    next.push(normalized);
+  }
+  for (const model of Array.isArray(catalogModels) ? catalogModels : []) {
+    const normalized = normalizeSelectedModel(model);
+    if (!normalized || seen.has(normalized.key)) continue;
+    if (statusFor(map, normalized.key) !== "working") continue;
+    seen.add(normalized.key);
+    next.push(normalized);
+  }
+  return next;
+}
+
 export function moveSelectedModel(selected, key, offset) {
   const list = Array.isArray(selected) ? [...selected] : [];
   const index = list.findIndex(entry => entry.key === key);
@@ -269,6 +299,26 @@ export function selectionForSave(selected, catalogModels) {
     .filter(entry => availableKeys.has(entry.key))
     .map(entry => normalizeSelectedModel(entry))
     .filter(Boolean);
+}
+
+// The library is paged, but a saved selection is not. When the user changes a
+// selection while viewing one page, retain the already-selected descriptors
+// that are not on that page as valid save candidates. A full catalogue passed
+// by Select All/Select All Working still wins; this union is only the safety
+// net for normal page-local changes.
+export function selectionCatalogForSave(selected, catalogModels) {
+  const result = [];
+  const seen = new Set();
+  for (const model of [
+    ...(Array.isArray(catalogModels) ? catalogModels : []),
+    ...(Array.isArray(selected) ? selected : [])
+  ]) {
+    const key = String(model?.key || "");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(model);
+  }
+  return result;
 }
 
 export function formatCheckedAt(value) {

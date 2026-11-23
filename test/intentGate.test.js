@@ -258,13 +258,9 @@ test("a greeting sent through the cloud tool loop never starts a terminal", asyn
 
 test("the cloud tool loop refuses the same failed call instead of running it twice", async () => {
   const executed = [];
-  const server = stubServer([
-    TERMINAL_ROUND,
-    TERMINAL_ROUND,
-    { type: "final", content: "It could not open.", message: { messageId: "m2" } }
-  ]);
+  const server = stubServer([]);
   try {
-    await runDesktopToolChat({
+    const result = await runDesktopToolChat({
       messages: [{ role: "user", content: "Open OpenCode in terminal." }],
       userText: "Open OpenCode in terminal.",
       executeTool: async (tool, args) => {
@@ -274,9 +270,8 @@ test("the cloud tool loop refuses the same failed call instead of running it twi
     });
 
     assert.equal(executed.length, 1, "the native layer is asked once");
-    const second = server.posted[1].body.messages.at(-1);
-    assert.equal(second.role, "tool");
-    assert.match(second.content, /repeat_blocked/);
+    assert.match(result.content, /No project folder is selected/);
+    assert.equal(server.posted.length, 0, "a deterministic action does not make a second provider round");
   } finally {
     server.restore();
   }

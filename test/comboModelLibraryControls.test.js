@@ -16,6 +16,7 @@ import {
   COMBO_MAX_WORKING_MODELS,
   availabilityMap,
   selectAllModels,
+  selectWorkingModels,
   selectionForSave,
   statusFor,
   toggleSelectedModel,
@@ -151,6 +152,39 @@ test("Unselect Not Working with no availability record keeps nothing", () => {
   assert.equal(unselectNotWorkingModels(selected, new Map()).length, 0);
 });
 
+test("Select All Working selects verified working models even when none were selected", () => {
+  const availability = availabilityMap([
+    { key: "saved:cfg-1:model-1", status: "working" },
+    { key: "saved:cfg-2:model-2", status: "not_working" },
+    { key: "saved:cfg-3:model-3", status: "working" },
+    { key: "saved:cfg-4:model-4", status: "unknown" }
+  ]);
+  const selected = selectWorkingModels([], LIBRARY, availability);
+  assert.deepEqual(selected.map(entry => entry.key), [
+    "saved:cfg-1:model-1",
+    "saved:cfg-3:model-3"
+  ]);
+});
+
+test("Select All Working preserves selected order and never duplicates models", () => {
+  const availability = availabilityMap(LIBRARY.map(model => ({ key: model.key, status: "working" })));
+  const selected = selectWorkingModels([LIBRARY[2], LIBRARY[0], LIBRARY[2]], LIBRARY, availability);
+  assert.deepEqual(selected.map(entry => entry.key), [
+    LIBRARY[2].key,
+    LIBRARY[0].key,
+    LIBRARY[1].key,
+    LIBRARY[3].key,
+    LIBRARY[4].key
+  ]);
+});
+
+test("Select All Working does not treat unchecked models as healthy", () => {
+  const selected = selectWorkingModels([], LIBRARY, availabilityMap([
+    { key: LIBRARY[0].key, status: "working" }
+  ]));
+  assert.deepEqual(selected.map(entry => entry.key), [LIBRARY[0].key]);
+});
+
 test("Unselect Not Working asks no model and reads the published availability", () => {
   const source = comboPage.slice(
     comboPage.indexOf("function unselectNotWorking()"),
@@ -169,8 +203,10 @@ test("Select All and Unselect Not Working sit together in the controls area", ()
   );
   assert.match(actions, />\s*Select All\s*</);
   assert.match(actions, />\s*Unselect Not Working\s*</);
+  assert.match(actions, />\s*Select All Working\s*</);
   assert.match(actions, /onClick=\{selectAll\}/);
   assert.match(actions, /onClick=\{unselectNotWorking\}/);
+  assert.match(actions, /onClick=\{selectAllWorking\}/);
 });
 
 test("both actions save through the existing selection persistence", () => {
@@ -182,12 +218,31 @@ test("both actions save through the existing selection persistence", () => {
     comboPage.indexOf("function unselectNotWorking()"),
     comboPage.indexOf("function retrySave()")
   );
-  for (const source of [selectAll, unselect]) {
+  const working = comboPage.slice(
+    comboPage.indexOf("async function selectAllWorking()"),
+    comboPage.indexOf("function unselectNotWorking()")
+  );
+  for (const source of [selectAll, unselect, working]) {
     assert.match(source, /persistSelection\(next/, "the selection is persisted");
   }
   // Selecting a model is not a reason to contact that model.
   assert.match(selectAll, /refreshAvailability: false/);
   assert.match(unselect, /refreshAvailability: false/);
+  assert.match(working, /refreshAvailability: false/);
+});
+
+test("bulk selection saves against the complete fetched catalogue", () => {
+  const selectAll = comboPage.slice(
+    comboPage.indexOf("async function selectAll()"),
+    comboPage.indexOf("async function selectAllWorking()")
+  );
+  const working = comboPage.slice(
+    comboPage.indexOf("async function selectAllWorking()"),
+    comboPage.indexOf("function unselectNotWorking()")
+  );
+  assert.match(selectAll, /persistSelection\(next, \{ refreshAvailability: false, catalog: models \}\)/);
+  assert.match(working, /persistSelection\(next, \{ refreshAvailability: false, catalog: models \}\)/);
+  assert.match(comboPage, /selectionForSave\(next, selectionCatalogForSave\(next, catalog\)\)/);
 });
 
 test("the controls are aligned, readable and responsive", () => {

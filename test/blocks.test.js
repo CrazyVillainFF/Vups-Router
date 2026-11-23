@@ -344,9 +344,11 @@ test("the 3D palettes state the same accent hexes as the CSS tokens", () => {
   }
 });
 
-test("the Blocks stylesheet bans gradients and glass", () => {
-  assert.doesNotMatch(blocksCss, /linear-gradient|radial-gradient|conic-gradient/);
-  assert.doesNotMatch(blocksCss, /blur\(/);
+test("the welcome uses restrained gradients while the rest of Blocks stays solid", () => {
+  assert.match(blocksCss, /\.vr-welcome::before[\s\S]*radial-gradient/);
+  assert.match(blocksCss, /\.vr-welcome-model[\s\S]*linear-gradient/);
+  assert.match(blocksCss, /\.vr-welcome-free[\s\S]*linear-gradient/);
+  assert.match(blocksCss, /\.vr-welcome::before[\s\S]*blur\(18px\)/);
   assert.doesNotMatch(sidebarCss, /linear-gradient|radial-gradient|blur\(/);
   /* Glass is banned outright, so the rule is "no blur anywhere", not "blur is
      switched off on this one selector" — a stray backdrop-filter in any other
@@ -367,24 +369,25 @@ test("orange is bound to the tokens and only to the allowed roles", () => {
   // The accent arrives through the token layer, never as a loose hex.
   assert.doesNotMatch(blocksCss, /#ff5b1f|#cf3f0e/i);
   assert.doesNotMatch(sidebarCss, /#ff5b1f|#cf3f0e/i);
-  // One emphasized hero word, not the whole headline.
-  assert.match(blocksCss, /\.vr-welcome-title span\s*\{\s*color: var\(--blocks-accent\)/);
+  // The neutral lead stays readable; only the requested spans carry gradients.
+  assert.match(blocksCss, /\.vr-welcome-connect\s*\{\s*color: var\(--blocks-ink\)/);
+  assert.match(blocksCss, /\.vr-welcome-model\s*\{/);
+  assert.match(blocksCss, /\.vr-welcome-free\s*\{[\s\S]*background-image:\s*linear-gradient/);
   assert.doesNotMatch(blocksCss, /\.vr-welcome-title\s*\{[^}]*--blocks-accent/);
   assert.match(
     blocksCss,
     /\.vr-prompt-bar \.prompt-bar__send\[data-armed\]\s*\{[^}]*background: var\(--blocks-accent\)/
   );
-  // Green means a genuine working status and nothing else.
+  // Green is reserved for the explicit free label and working status dot.
   assert.match(blocksCss, /\.vr-chat-header__dot\s*\{[^}]*background: var\(--blocks-success\)/);
-  assert.doesNotMatch(blocksCss, /\.vr-welcome[^}]*--blocks-success/);
 });
 
 test("the hero is centered display type at the specified scale", () => {
   assert.match(blocksCss, /\.vr-welcome\s*\{[^}]*text-align:\s*center/);
   assert.match(blocksCss, /\.vr-welcome-inner\s*\{[^}]*margin:\s*auto/);
-  assert.match(blocksCss, /font-size:\s*clamp\(40px,\s*4\.6vw,\s*72px\)/);
-  assert.match(blocksCss, /\.vr-welcome-title\s*\{[^}]*font-family:\s*var\(--blocks-display\)/);
-  assert.match(blocksCss, /\.vr-welcome-desc\s*\{[^}]*font:\s*400 12px\/1\.7 var\(--blocks-mono\)/);
+  assert.match(blocksCss, /font-size:\s*clamp\(2\.25rem,\s*5vw,\s*4rem\)/);
+  assert.match(blocksCss, /\.vr-welcome-title\s*\{[^}]*font-family:\s*var\(--blocks-ui\)/);
+  assert.match(blocksCss, /text-wrap:\s*balance/);
   assert.match(blocksCss, /opacity:\s*0\.035/);
 });
 
@@ -399,17 +402,12 @@ test("the usage bar is a 2px hairline of solid accent", () => {
   assert.match(sidebarCss, /\.vr-usage-bar > span\s*\{[^}]*background:\s*var\(--blocks-accent\)/);
 });
 
-test("the suggestions are a numbered list, not cards", () => {
-  assert.match(blocksCss, /\.vr-welcome-starter\s*\{[^}]*flex-direction:\s*row/);
-  assert.match(blocksCss, /\.vr-welcome-starter\s*\{[^}]*border:\s*0/);
-  assert.match(blocksCss, /\.vr-welcome-starter\s*\{[^}]*border-bottom:\s*1px solid var\(--blocks-line\)/);
-  assert.doesNotMatch(blocksCss, /\.vr-welcome-starter\s*\{[^}]*border-radius:\s*[6-9]px/);
-  assert.match(blocksCss, /\.vr-welcome-kbd\s*\{/);
+test("the welcome has no starter cards or hidden prompt list", () => {
+  assert.doesNotMatch(blocksCss, /\.vr-welcome-starter\b/);
+  assert.doesNotMatch(blocksCss, /\.vr-welcome-starters\b/);
   const page = read("src/ChatPage.jsx");
-  // Clicking a suggestion still only fills the composer through the real handler.
-  const starters = page.slice(page.indexOf("STARTER_PROMPTS.map"), page.indexOf("STARTER_PROMPTS.map") + 400);
-  assert.match(starters, /onStarter\(item\.prompt\)/);
-  assert.match(page, /onStarter=\{text => setDraftInsertion\(\{ text, key: Date\.now\(\) \}\)\}/);
+  const welcome = page.slice(page.indexOf("function WelcomeScreen"), page.indexOf("function MessageList"));
+  assert.doesNotMatch(welcome, /STARTER_PROMPTS|onStarter|Explain a codebase|Draft a bug report|Plan a release/);
 });
 
 test("the composer keeps solid surfaces and crisp focus", () => {

@@ -2,6 +2,7 @@ import { apiClient } from "./api.js";
 import { toRequestMessages } from "./chat.js";
 import { matchLocalFileTask } from "./localFileTask.js";
 import { toolAllowedForRequest, toolCallSignature, toolDenial } from "../localai/intentGate.js";
+import { matchDesktopIntents } from "../localai/localAgent.js";
 import { formatBytes } from "../chat/attachments.js";
 import {
   cancelDesktopToolApprovals,
@@ -418,7 +419,7 @@ const FAILURE_REMEDIES = {
   no_workspace:
     "No project folder is selected for this chat, so nothing was started. Choose a project folder, then try again.",
   workspace_required:
-    "Agent (workspace) mode needs a project folder for this chat before any local file can be read or changed.",
+    "Approve for me or Full access needs a project folder for this chat before any local file can be read or changed.",
   path_not_found: "The folder or file was not there, so the app made no changes and created nothing.",
   access_denied:
     "This is a Windows access decision, not a VupsRouter setting. The app made no permission, ownership or elevation changes.",
@@ -1132,6 +1133,43 @@ export async function runDesktopToolChat({
           label: "Local file lookup",
           message: `Local file lookup failed: ${code}`
         });
+      }
+    }
+
+    // Explicit Windows actions are routed from the user's exact words before
+    // a provider can answer with a generic "I cannot access your computer"
+    // refusal. The native bridge remains the permission and execution
+    // authority, and its receipt is the answer even if the model is unavailable.
+    const explicitIntents = matchDesktopIntents(userText || lastUserText(messages), {
+      workspaceRoot: workspacePath
+    });
+    if (explicitIntents.length > 0) {
+      for (let index = 0; index < explicitIntents.length; index += 1) {
+        const intent = explicitIntents[index];
+        await runLocalTool(intent.tool, intent.args, {
+          callId: `local_router_${index + 1}`,
+          conversation,
+          steps,
+          onProgress,
+          signal,
+          executeTool: executeForOperation,
+          onWorkspaceMutation
+        });
+      }
+      const content = localFilesystemSummary(steps);
+      if (content) {
+        onChunk?.(content);
+        return {
+          content,
+          conversationId: conversationId || null,
+          messageId: assistantMessageId || null,
+          finishReason: "stop",
+          saveWarning: null,
+          artifact: null,
+          artifacts: [],
+          continuedFile: null,
+          localSteps: steps
+        };
       }
     }
 

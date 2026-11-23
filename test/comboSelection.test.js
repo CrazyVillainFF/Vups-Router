@@ -14,6 +14,7 @@ import {
   removeSelectedModel,
   runPoolSummary,
   selectAllModels,
+  selectionCatalogForSave,
   selectionForSave,
   statusFor,
   statusLabel,
@@ -221,6 +222,14 @@ test("selectionForSave drops entries that no longer exist in the catalog", () =>
   assert.equal(payload[0].configId, "cfg-1");
   assert.equal(selectionForSave([{ key: "bad" }], CATALOG).length, 0);
   assert.deepEqual(selectionForSave(null, CATALOG), []);
+});
+
+test("paged saves retain selected models that are outside the visible page", () => {
+  const page = [CATALOG[0], CATALOG[1]];
+  const selected = CATALOG.map(model => normalizeSelectedModel(model));
+  const payload = selectionForSave(selected, selectionCatalogForSave(selected, page));
+  assert.equal(payload.length, selected.length);
+  assert.deepEqual(payload.map(entry => entry.key), selected.map(entry => entry.key));
 });
 
 test("runPoolSummary reports the real active and excluded counts", () => {

@@ -161,7 +161,7 @@ import {
   detectLocalRuntime,
   localAiSupported
 } from "./localai/localRuntime.js";
-import { desktopRequestOpensTerminal, runLocalAgent } from "./localai/localAgent.js";
+import { desktopRequestOpensTerminal, looksLikeDesktopActionRequest, runLocalAgent } from "./localai/localAgent.js";
 import { comboPlan, useLocalComboConfig } from "./localai/localCombo.js";
 import { runLocalCombo } from "./localai/localComboRun.js";
 import { buildRoutingPlan, planSummary, stageRoleLabel } from "./localai/localRouter.js";
@@ -205,7 +205,7 @@ import {
 } from "./localai/localRunStore.js";
 import { isStaleAnswerError, taskRunIsLive } from "./tasks/taskRunView.js";
 import { taskErrorLine } from "./tasks/taskProgress.js";
-import { isTerminalTaskState } from "./services/taskApi.js";
+import { isOpenTaskState, isTerminalTaskState } from "./services/taskApi.js";
 import { useTaskTracker } from "./tasks/TaskTrackerContext.jsx";
 import {
   buildCatalog,
@@ -1366,88 +1366,19 @@ function Message({
 
 // â”€â”€â”€ Welcome Screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-const STARTER_PROMPTS = [
-  {
-    title: "Explain a codebase",
-    hint: "Module map and risk notes",
-    prompt:
-      "Explain how this project is put together: the main modules, how they connect, and where the riskiest code lives."
-  },
-  {
-    title: "Draft a bug report",
-    hint: "Ask questions, then write it",
-    prompt:
-      "Help me write a bug report. Ask me for the symptom, the steps to reproduce, and the expected behavior, then draft it."
-  },
-  {
-    title: "Plan a release",
-    hint: "Checks, risks, rollback",
-    prompt: "Plan a release for this project: the checks to run, the risks to watch, and the rollback steps."
-  }
-];
-
-function WelcomeScreen({ configured, modelName, sharedActive, gatewayActive, vupsActive, sharedLoading, onStarter }) {
+function WelcomeScreen() {
   return (
     <div className="vr-welcome">
       <div className="vr-welcome-inner">
-        <p className="vr-welcome-eyebrow">
-          VupsRouter <em>AI</em>
-        </p>
+        <p className="vr-welcome-brand">VupsRouter</p>
         <h1 className="vr-welcome-title">
-          Ask once. We pick the <span>block.</span>
+          <span className="vr-welcome-connect">Connect Your</span>{" "}
+          <span className="vr-welcome-model">Free Model</span>{" "}
+          <span className="vr-welcome-free">100% Free</span>
         </h1>
-        <p className="vr-welcome-desc">
-          {configured
-            ? vupsActive
-              ? `Chatting with ${modelName || "Vups v3 Galax"}.`
-              : sharedActive
-                ? `Chatting with ${modelName || "the shared model"}.`
-                : gatewayActive
-                  ? `Chatting with ${modelName || "this model"} through the OmniRoute gateway.`
-                  : `Chatting with ${modelName || "your configured model"} through your own provider.`
-            : sharedLoading
-              ? "Checking for an available AI model..."
-              : "Vups v3 Galax is not configured on this server yet. Add your own AI provider in API settings."}
+        <p className="vr-welcome-subtitle">
+          Route every request to the best free AI model. No credit card. No limits.
         </p>
-        {configured ? (
-          <p className="vr-welcome-note">
-            The blocks are the models on this server. Pick one here or in the composer - the request
-            goes to that model and its provider, nothing else.
-          </p>
-        ) : null}
-        {configured && onStarter ? (
-          <section className="vr-welcome-start" aria-label="Starting points">
-            <p className="vr-welcome-start-label">
-              Start with a prompt. It fills the message box, and nothing is sent until you press Enter.
-              <span className="vr-welcome-start-keys">
-                <kbd className="vr-welcome-kbd">Enter</kbd> send
-                <kbd className="vr-welcome-kbd">Shift</kbd>
-                <kbd className="vr-welcome-kbd">Enter</kbd> newline
-              </span>
-            </p>
-            <div className="vr-welcome-starters">
-              {STARTER_PROMPTS.map((item, index) => (
-                <button
-                  key={item.title}
-                  type="button"
-                  className="vr-welcome-starter"
-                  onClick={() => onStarter(item.prompt)}
-                >
-                  <span className="vr-welcome-starter-num">{String(index + 1).padStart(2, "0")}</span>
-                  <span className="vr-welcome-starter-body">
-                    <span className="vr-welcome-starter-title">{item.title}</span>
-                    <span className="vr-welcome-starter-hint">{item.hint}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-        ) : null}
-        {!configured && !sharedLoading ? (
-          <Link className="vr-welcome-cta" to="/settings">
-            Open API settings
-          </Link>
-        ) : null}
       </div>
     </div>
   );
@@ -1900,21 +1831,43 @@ export default function ChatPage() {
     }
   }, [taskRuns, trackedTasks]);
 
-  // Ask and Agent (workspace) are account settings, so the stored mode is read
-  // under the owning account only: an empty owner is the signed-out guest key and
-  // never inherits what a signed-in account chose. Full access is an
-  // authorization, not a setting, so a saved or inherited `full` is refused and
-  // `dropped` is what lets the access menu say the restart happened.
+  // Event delivery is an optimization, not the source of truth. A desktop
+  // WebView can miss the terminal event while the backend still persists the
+  // answer successfully. Keep an authoritative detail read alive for the
+  // tasks this chat is actively showing so a missed event cannot leave the
+  // composer in "Waiting for a free slot" until the user refreshes.
+  const liveTaskKey = useMemo(() => trackedTasks
+    .filter(view => taskRuns[view.taskId] && isOpenTaskState(view.state))
+    .map(view => view.taskId)
+    .sort()
+    .join("|"), [taskRuns, trackedTasks]);
+
+  useEffect(() => {
+    if (!liveTaskKey) return undefined;
+    const ids = liveTaskKey.split("|").filter(Boolean);
+    let stopped = false;
+    const reconcile = () => {
+      for (const taskId of ids) {
+        if (stopped) return;
+        refreshTaskRun(taskId).catch(() => {});
+      }
+    };
+    reconcile();
+    const timer = setInterval(reconcile, 3000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [liveTaskKey, refreshTaskRun]);
+
+  // The selected mode is read under the owning account only: an empty owner is
+  // the signed-out guest key and never inherits what a signed-in account chose.
+  // The native bridge revalidates the owner and workspace before every tool call.
   useEffect(() => {
     if (nativeShell !== NATIVE_SHELLS.windows) return;
-    const { mode, dropped } = readPermissionMode(localBrowserStorage(), workspaceOwner);
+    const { mode } = readPermissionMode(localBrowserStorage(), workspaceOwner);
     setPermissionMode(mode);
-    setPermissionNotice(
-      dropped
-        ? `${permissionModeInfo(dropped).label} was not restored: it is authorized for one app ` +
-          `session only. Local access restarted at ${permissionModeInfo(mode).label.toLowerCase()}.`
-        : ""
-    );
+    setPermissionNotice("");
   }, [nativeShell, workspaceOwner]);
 
   useEffect(() => {
@@ -2470,7 +2423,7 @@ export default function ChatPage() {
     // refresh is the only thing that makes the real response appear.
     if (!run || run.settledState === record.state || run.settlingState === record.state) return;
     run.settlingState = record.state;
-    const conversationId = String(record.conversationId || run.conversationId || "");
+    let conversationId = String(record.conversationId || run.conversationId || "");
     try {
       record = await refreshTaskRun(run.taskId);
     } catch (error) {
@@ -2484,6 +2437,19 @@ export default function ChatPage() {
       run.settlingState = "";
       return;
     }
+    // The terminal notification can be the first read that names the durable
+    // conversation (and a reconnect can return a record with the id even when
+    // the initial task summary did not). Re-derive the target after the
+    // authoritative read; fencing against the pre-refresh id was the reason a
+    // real answer could be persisted yet only appear after reload.
+    conversationId = String(record.conversationId || run.conversationId || conversationId || "");
+    if (conversationId && run.conversationId !== conversationId) {
+      run.conversationId = conversationId;
+      setTaskRuns(previous => previous[run.taskId] ? {
+        ...previous,
+        [run.taskId]: { ...previous[run.taskId], conversationId }
+      } : previous);
+    }
     // Commit only after the authoritative read succeeds. If that read failed,
     // the next tracker poll is allowed to retry instead of leaving the turn
     // permanently stuck in its pre-refresh state.
@@ -2494,7 +2460,24 @@ export default function ChatPage() {
     } : previous);
     if (record.state === "completed") {
       if (loadedTaskRef.current !== conversationId) return;
-      const answer = record.output?.text || "";
+      let answer = record.output?.text || "";
+      // The task record is the normal source, but the conversation is the
+      // durable source of truth for deployments that return only output
+      // metadata in a terminal detail response. Reconcile it before ending the
+      // live turn, without switching chats or issuing a page reload.
+      if (!answer && conversationId) {
+        try {
+          const conversation = await getConversation(conversationId);
+          const saved = conversation?.messages?.find(message =>
+            message.role === "assistant" &&
+            String(message.messageId || "") === String(record.output?.messageId || record.assistantMessageId || "")
+          );
+          answer = String(saved?.content || "");
+        } catch {
+          // The next tracker reconciliation can retry the detail read; never
+          // manufacture a success or replace a useful task error here.
+        }
+      }
       setMessages(previous =>
         completeTurn(previous, run.assistantId, {
           // The answer is the answer. A run that produced one does not also
@@ -2881,7 +2864,7 @@ export default function ChatPage() {
   }
 
   // The selector only moves after the native layer has adopted the mode, so a
-  // drawer that says "Agent (workspace)" can never sit on top of a Full access
+  // drawer that says "Approve for me" can never sit on top of a Full access
   // policy. Saved grants survive; one-time approvals from the old mode do not.
   async function applyPermissionMode(mode) {
     if (!isPermissionMode(mode)) return false;
@@ -4145,7 +4128,11 @@ export default function ChatPage() {
         nativeShell === NATIVE_SHELLS.windows &&
         nativePolicyReady &&
         Boolean(workspaceOwner) &&
-        (Boolean(selectedRow?.local) || (imagePayload.length === 0 && !serverLacksToolEndpoint));
+        // A stale session probe must not turn an explicit Windows action into
+        // ordinary chat, where the model can only refuse the operation.
+        (Boolean(selectedRow?.local) ||
+          (imagePayload.length === 0 &&
+            (looksLikeDesktopActionRequest(requestText) || !serverLacksToolEndpoint)));
       // Local tools are a bonus on a plain question but the whole point of the
       // turn once a project folder is picked, so only the second case owes the
       // user an explanation when the server cannot run them.
@@ -5479,15 +5466,7 @@ export default function ChatPage() {
           ) : null}
         </header>
         {messages.length === 0 ? (
-          <WelcomeScreen
-            configured={canChat}
-            modelName={activeRow?.name || ""}
-            sharedActive={activeIsShared}
-            gatewayActive={activeIsGateway}
-            vupsActive={activeIsVups}
-            sharedLoading={shared === null && omniroute === null && !config?.configured}
-            onStarter={text => setDraftInsertion({ text, key: Date.now() })}
-          />
+          <WelcomeScreen />
         ) : (
           <MessageList
             messages={messages}
@@ -5712,7 +5691,7 @@ export default function ChatPage() {
       {fullAccessPending ? (
         <NativePermissionDialog
           title="Enable full access?"
-          description="The assistant may read, create, edit, rename, move, copy and delete files, launch apps, open files and links, and run PowerShell or cmd commands without a card for each ordinary action. Protected and sensitive Windows locations, force-terminating an app, and administrator rights still ask or stay blocked, and every action is audited."
+      description="The assistant may read, create, edit, rename, move, copy and delete files within the configured workspace, launch apps, open files and links, and run PowerShell or cmd commands without a card for each ordinary action. Protected and sensitive Windows locations, force-terminating an app, and administrator rights still ask or stay blocked, and every action is audited."
           confirmLabel="Enable full access"
           tone="danger"
           onCancel={() => setFullAccessPending(false)}

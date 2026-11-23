@@ -244,8 +244,8 @@ test("native UI wires direct chat, camera, folder access, and unavailable tools 
   assert.match(prompt, /onPickFolder/);
   assert.doesNotMatch(prompt, /folderInputRef|webkitdirectory/);
   assert.match(prompt, /capture="environment"/);
-  // The access menu stays a plain selector; long explanations are not shown.
-  assert.doesNotMatch(controls, /vr-permission__option-copy|These modes control/);
+  // Each of the three choices carries its short explanation in the menu.
+  assert.match(controls, /vr-permission__option-copy/);
   assert.match(chat, /permissionControl=\{/);
   assert.match(chat, /<NativeChatControls/);
   assert.match(prompt, /permissionControl/);
